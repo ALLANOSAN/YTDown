@@ -1020,20 +1020,22 @@ class DownloadService implements DownloadFeedService {
       String? syncWarning;
       final exportedPath = workingItem.exportedPath?.trim();
       if (workingItem.exportStatus == ExportStatus.exported) {
+        final storageService = StorageService.instance;
+        final observability = ObservabilityService.instance;
+
         if (exportedPath == null || exportedPath.isEmpty) {
           syncWarning =
               'Metadados salvos no app, mas nao foi possivel sincronizar o arquivo exportado.';
         }
 
         if (exportedPath != null && exportedPath.isNotEmpty) {
-          final syncResult =
-              await StorageService.instance.syncEditedFileToExported(
+          final syncResult = await storageService.syncEditedFileToExported(
             sourcePath: workingItem.outputPath,
             exportedPath: exportedPath,
           );
 
           if (syncResult.success) {
-            ObservabilityService.instance.info(
+            observability.info(
               'manual_metadata_export_sync_succeeded',
               context: {
                 'id': workingItem.id,
@@ -1051,7 +1053,7 @@ class DownloadService implements DownloadFeedService {
             );
             syncWarning =
                 'Metadados salvos no app, mas a copia exportada pode estar desatualizada: $syncError';
-            ObservabilityService.instance.warning(
+            observability.warning(
               'manual_metadata_export_sync_failed',
               context: {
                 'id': workingItem.id,
@@ -1223,7 +1225,10 @@ class DownloadService implements DownloadFeedService {
       }
     }
 
-    final allDownloads = await DatabaseService.instance.getAllDownloads();
+    final databaseService = DatabaseService.instance;
+    final observability = ObservabilityService.instance;
+
+    final allDownloads = await databaseService.getAllDownloads();
     final candidates = allDownloads.where(
       (item) {
         if (item.type != DownloadType.audio ||
@@ -1244,7 +1249,7 @@ class DownloadService implements DownloadFeedService {
       },
     ).toList();
 
-    ObservabilityService.instance.info(
+    observability.info(
       'manual_artist_batch_rewrite_started',
       context: {
         'currentArtist': currentArtist,
@@ -1375,7 +1380,10 @@ class DownloadService implements DownloadFeedService {
       }
     }
 
-    final allDownloads = await DatabaseService.instance.getAllDownloads();
+    final databaseService = DatabaseService.instance;
+    final observability = ObservabilityService.instance;
+
+    final allDownloads = await databaseService.getAllDownloads();
     final candidates = allDownloads.where(
       (item) {
         if (item.type != DownloadType.audio ||
@@ -1387,7 +1395,7 @@ class DownloadService implements DownloadFeedService {
       },
     ).toList();
 
-    ObservabilityService.instance.info(
+    observability.info(
       'manual_album_batch_rewrite_started',
       context: {
         'currentAlbum': currentAlbum,
@@ -1482,8 +1490,11 @@ class DownloadService implements DownloadFeedService {
   }) async {
     if (paths.isEmpty) return;
 
+    final observability = ObservabilityService.instance;
+    final chaquo = ChaquoDownloadService.instance;
+
     try {
-      ObservabilityService.instance.info(
+      observability.info(
         'batch_media_rescan_started',
         context: {
           'totalFiles': paths.length,
@@ -1491,8 +1502,7 @@ class DownloadService implements DownloadFeedService {
         },
       );
 
-      final rescanResult =
-          await ChaquoDownloadService.instance.batchRescanFiles(paths);
+      final rescanResult = await chaquo.batchRescanFiles(paths);
 
       final scanned = rescanResult['scanned'] ?? 0;
       final rescannedFailed = rescanResult['failed'] ?? 0;
@@ -1500,7 +1510,7 @@ class DownloadService implements DownloadFeedService {
       final timedOut = rescanResult['timeout'] ?? false;
       final durationMs = rescanResult['durationMs'] ?? 0;
 
-      ObservabilityService.instance.info(
+      observability.info(
         'batch_media_rescan_completed',
         context: {
           'totalFiles': paths.length,
@@ -1516,7 +1526,7 @@ class DownloadService implements DownloadFeedService {
       );
 
       if (timedOut) {
-        ObservabilityService.instance.warning(
+        observability.warning(
           'batch_media_rescan_timeout',
           context: {
             'totalFiles': paths.length,
@@ -1528,7 +1538,7 @@ class DownloadService implements DownloadFeedService {
         );
       }
     } catch (e, stackTrace) {
-      ObservabilityService.instance.warning(
+      observability.warning(
         'batch_media_rescan_failed',
         context: {
           'error': e.toString(),
@@ -1537,7 +1547,7 @@ class DownloadService implements DownloadFeedService {
           ...?context,
         },
       );
-      ObservabilityService.instance.error(
+      observability.error(
         'batch_media_rescan_error',
         context: {
           'error': e.toString(),

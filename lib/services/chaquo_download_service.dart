@@ -6,6 +6,31 @@ import 'package:flutter/services.dart';
 import '../utils/logger.dart';
 import 'observability_service.dart';
 
+class NativeJsonResponse {
+  NativeJsonResponse(this.raw);
+
+  final Map<String, dynamic> raw;
+
+  bool get success => raw['success'] == true;
+  String? get error => raw['error']?.toString();
+  String get message => raw['message']?.toString() ?? '';
+  String? get filename => raw['filename']?.toString();
+  bool get tagsInjected => raw['tags_injected'] == true;
+  Map<String, dynamic> get data {
+    final rawData = raw['data'];
+    if (rawData is Map) {
+      return Map<String, dynamic>.from(rawData);
+    }
+    return <String, dynamic>{};
+  }
+
+  String? get detectedTitle => raw['detected_title']?.toString();
+  String? get detectedArtist => raw['detected_artist']?.toString();
+  String? get detectedAlbum => raw['detected_album']?.toString();
+  bool get updateAvailable => raw['update_available'] == true;
+  bool get updated => raw['updated'] == true;
+}
+
 /// Serviço que usa Chaquo Python SDK para executar yt-dlp
 /// FFmpeg é localizado automaticamente via jniLibs (Android 10+ SELinux safe)
 class ChaquoDownloadService {
@@ -79,7 +104,7 @@ class ChaquoDownloadService {
     _initialized = false;
   }
 
-  Future<Map<String, dynamic>> _invokeJsonMethod({
+  Future<NativeJsonResponse> _invokeJsonMethod({
     required String method,
     required String nullResponseError,
     Map<String, dynamic> arguments = const <String, dynamic>{},
@@ -93,12 +118,15 @@ class ChaquoDownloadService {
       }
 
       final raw = await invocation;
-      return _decodeResponse(raw, nullResponseError);
+      final parsed = _decodeResponse(raw, nullResponseError);
+      return NativeJsonResponse(parsed);
     } catch (e) {
-      return {
-        'success': false,
-        'error': e.toString(),
-      };
+      return NativeJsonResponse(
+        {
+          'success': false,
+          'error': e.toString(),
+        },
+      );
     }
   }
 
@@ -116,7 +144,7 @@ class ChaquoDownloadService {
 
     if (raw is String) {
       try {
-        final dynamic decoded = jsonDecode(raw);
+        final decoded = jsonDecode(raw);
         if (decoded is Map) {
           return Map<String, dynamic>.from(decoded);
         }
@@ -146,11 +174,12 @@ class ChaquoDownloadService {
       return _runtimeUnavailableResult(_runtimeUnavailableGenericError);
     }
 
-    return _invokeJsonMethod(
+    return (await _invokeJsonMethod(
       method: 'checkYtDlpUpdate',
       arguments: {'forceRemote': forceRemote},
       nullResponseError: 'Resposta nula ao checar atualização do yt-dlp',
-    );
+    ))
+        .raw;
   }
 
   Future<Map<String, dynamic>> updateYtDlpIfNeeded({bool force = false}) async {
@@ -159,11 +188,12 @@ class ChaquoDownloadService {
       return _runtimeUnavailableResult(_runtimeUnavailableGenericError);
     }
 
-    return _invokeJsonMethod(
+    return (await _invokeJsonMethod(
       method: 'updateYtDlpIfNeeded',
       arguments: {'force': force},
       nullResponseError: 'Resposta nula ao atualizar yt-dlp',
-    );
+    ))
+        .raw;
   }
 
   Future<void> _checkAndUpdateYtDlpInBackground() async {
@@ -244,21 +274,21 @@ class ChaquoDownloadService {
     try {
       LocalLogger.debug('🔵 [ChaquoDownloadService] Buscando info: $url');
 
-      final result =
-          await platform.invokeMethod('fetchVideoInfo', {'url': url}).timeout(
+      final invocation = platform.invokeMethod('fetchVideoInfo', {'url': url});
+      final result = await invocation.timeout(
         const Duration(seconds: 30),
         onTimeout: () => throw TimeoutException(
             'Operação demorou demais para responder (timeout)'),
       );
 
-      final response = _parseResponseAsMap(result);
-      if (response['success'] == true) {
-        LocalLogger.debug(
-            '✅ [ChaquoDownloadService] Sucesso: ${response['data']['title']}');
-        return response['data'] as Map<String, dynamic>;
+      final response = _parseResponse(result);
+      if (response.success) {
+        final title = response.data['title']?.toString() ?? 'Sem título';
+        LocalLogger.debug('✅ [ChaquoDownloadService] Sucesso: $title');
+        return response.data;
       }
 
-      throw Exception(response['error'] ?? 'Erro desconhecido');
+      throw Exception(response.error ?? 'Erro desconhecido');
     } on TimeoutException catch (e) {
       ObservabilityService.instance
           .warning('fetch_timeout', context: {'url': url});
@@ -271,9 +301,10 @@ class ChaquoDownloadService {
     }
   }
 
-  Map<String, dynamic> _parseResponseAsMap(dynamic result) {
-    return _decodeResponse(
+  NativeJsonResponse _parseResponse(dynamic result) {
+    final decoded = _decodeResponse(
         result, 'Resposta inválida ao buscar informações do vídeo');
+    return NativeJsonResponse(decoded);
   }
 
   /// Inicia download (passa nativeLibDir para Python encontrar o ffmpeg)
@@ -316,18 +347,18 @@ class ChaquoDownloadService {
       ),
     );
 
-    if (response['success'] != true) {
+    if (!response.success) {
       LocalLogger.debug(
-          '❌ [ChaquoDownloadService] Erro no download: ${response['error']}');
-      return response;
+          '❌ [ChaquoDownloadService] Erro no download: ${response.error}');
+      return response.raw;
     }
 
-    final mode = response['mode'] ?? 'unknown';
-    final ffmpegUsed = response['ffmpeg_used'] ?? false;
+    final mode = response.raw['mode']?.toString() ?? 'unknown';
+    final ffmpegUsed = response.raw['ffmpeg_used'] ?? false;
     LocalLogger.debug(
         '✅ [ChaquoDownloadService] Modo: $mode, FFmpeg: $ffmpegUsed');
 
-    return response;
+    return response.raw;
   }
 
   Future<Map<String, dynamic>> rewriteMetadata({
@@ -342,7 +373,7 @@ class ChaquoDownloadService {
       return _runtimeUnavailableResult(_runtimeUnavailableRewriteError);
     }
 
-    return _invokeJsonMethod(
+    return (await _invokeJsonMethod(
       method: 'rewriteMetadata',
       arguments: {
         'filePath': filePath,
@@ -352,7 +383,8 @@ class ChaquoDownloadService {
         'artworkUrl': _trimOrNull(artworkUrl),
       },
       nullResponseError: 'Resposta nula ao regravar metadados',
-    );
+    ))
+        .raw;
   }
 
   /// Re-scaneia múltiplos arquivos no MediaStore em lote
@@ -363,11 +395,12 @@ class ChaquoDownloadService {
       return _runtimeUnavailableResult('Runtime Python indisponível');
     }
 
-    return _invokeJsonMethod(
+    return (await _invokeJsonMethod(
       method: 'batchRescanFiles',
       arguments: {'paths': paths},
       nullResponseError: 'Resposta nula ao reescanear arquivos',
-    );
+    ))
+        .raw;
   }
 
   bool get isInitialized => _initialized;

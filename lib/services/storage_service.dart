@@ -61,23 +61,23 @@ class StorageService {
 
     final mimeType = _guessMimeType(fileName, type);
 
-    if (Platform.isAndroid) {
-      return _invokeStorageChannel(
-        method: 'exportToPublicCollection',
-        arguments: {
-          'sourcePath': sourcePath,
-          'displayName': fileName,
-          'mediaType': _resolveMediaType(type),
-          'mimeType': mimeType,
-          'allowUserInteractionFallback': allowUserInteractionFallback,
-        },
+    if (!Platform.isAndroid) {
+      return _exportFileOutsideAndroid(
+        file: file,
+        type: type,
+        fileName: fileName,
       );
     }
 
-    return _exportFileOutsideAndroid(
-      file: file,
-      type: type,
-      fileName: fileName,
+    return _invokeStorageChannel(
+      method: 'exportToPublicCollection',
+      arguments: {
+        'sourcePath': sourcePath,
+        'displayName': fileName,
+        'mediaType': _resolveMediaType(type),
+        'mimeType': mimeType,
+        'allowUserInteractionFallback': allowUserInteractionFallback,
+      },
     );
   }
 
@@ -160,6 +160,7 @@ class StorageService {
     if (displayName == null || displayName.trim().isEmpty) {
       return p.basename(sourcePath);
     }
+
     return displayName;
   }
 

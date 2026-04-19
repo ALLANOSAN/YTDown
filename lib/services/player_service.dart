@@ -305,9 +305,10 @@ class PlayerService {
         if (_normalizeArtistForCompare(readValue(item)) == normalizedOld) {
           nextPlaylist.add(applyUpdate(item));
           changed = true;
-        } else {
-          nextPlaylist.add(item);
+          continue;
         }
+
+        nextPlaylist.add(item);
       }
 
       if (changed) {

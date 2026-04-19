@@ -196,20 +196,25 @@ class ChaquoDownloadService {
       final success = updateResult['success'] == true;
       final updated = updateResult['updated'] == true;
 
-      if (success && updated) {
-        ObservabilityService.instance.info(
-          'yt_dlp_updated_runtime',
-          context: {
-            'currentVersion': updateResult['current_version'] as Object?,
-            'latestVersion': updateResult['latest_version'] as Object?,
-          },
-        );
-      } else if (!success) {
+      if (!success) {
         ObservabilityService.instance.warning(
           'yt_dlp_update_runtime_failed',
           context: {'error': updateResult['error'] as Object?},
         );
+        return;
       }
+
+      if (!updated) {
+        return;
+      }
+
+      ObservabilityService.instance.info(
+        'yt_dlp_updated_runtime',
+        context: {
+          'currentVersion': updateResult['current_version'] as Object?,
+          'latestVersion': updateResult['latest_version'] as Object?,
+        },
+      );
     } catch (e) {
       ObservabilityService.instance.warning(
         'yt_dlp_update_background_exception',
@@ -267,7 +272,8 @@ class ChaquoDownloadService {
   }
 
   Map<String, dynamic> _parseResponseAsMap(dynamic result) {
-    return _decodeResponse(result, 'Resposta inválida ao buscar informações do vídeo');
+    return _decodeResponse(
+        result, 'Resposta inválida ao buscar informações do vídeo');
   }
 
   /// Inicia download (passa nativeLibDir para Python encontrar o ffmpeg)
@@ -310,15 +316,16 @@ class ChaquoDownloadService {
       ),
     );
 
-    if (response['success'] == true) {
-      final mode = response['mode'] ?? 'unknown';
-      final ffmpegUsed = response['ffmpeg_used'] ?? false;
-      LocalLogger.debug(
-          '✅ [ChaquoDownloadService] Modo: $mode, FFmpeg: $ffmpegUsed');
-    } else {
+    if (response['success'] != true) {
       LocalLogger.debug(
           '❌ [ChaquoDownloadService] Erro no download: ${response['error']}');
+      return response;
     }
+
+    final mode = response['mode'] ?? 'unknown';
+    final ffmpegUsed = response['ffmpeg_used'] ?? false;
+    LocalLogger.debug(
+        '✅ [ChaquoDownloadService] Modo: $mode, FFmpeg: $ffmpegUsed');
 
     return response;
   }

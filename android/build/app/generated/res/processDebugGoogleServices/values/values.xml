@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="gcm_defaultSenderId" translatable="false">1066388535658</string>
+    <string name="google_api_key" translatable="false">AIzaSyComQzby02g4ATP-BMLXo0IY8cSxgtx5OM</string>
+    <string name="google_app_id" translatable="false">1:1066388535658:android:f25646540aae04ea5a0d13</string>
+    <string name="google_crash_reporting_api_key" translatable="false">AIzaSyComQzby02g4ATP-BMLXo0IY8cSxgtx5OM</string>
+    <string name="google_storage_bucket" translatable="false">commeuappdownloader.firebasestorage.app</string>
+    <string name="project_id" translatable="false">commeuappdownloader</string>
+</resources>

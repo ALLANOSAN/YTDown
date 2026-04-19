@@ -1,0 +1,1 @@
+com.kasem.receive_sharing_intent

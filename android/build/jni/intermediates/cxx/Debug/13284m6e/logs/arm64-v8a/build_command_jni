@@ -1,0 +1,4 @@
+/home/allanosan/android-sdk/cmake/3.22.1/bin/ninja \
+  -C \
+  /home/allanosan/.pub-cache/hosted/pub.dev/jni-1.0.0/android/.cxx/Debug/13284m6e/arm64-v8a \
+  jni

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1066388535658",
+    "project_id": "commeuappdownloader",
+    "storage_bucket": "commeuappdownloader.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1066388535658:android:f25646540aae04ea5a0d13",
+        "android_client_info": {
+          "package_name": "com.seuapp.yt"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyComQzby02g4ATP-BMLXo0IY8cSxgtx5OM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

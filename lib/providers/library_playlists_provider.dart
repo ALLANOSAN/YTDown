@@ -5,12 +5,14 @@ import '../services/database_service.dart';
 class LibraryPlaylistsNotifier
     extends AsyncNotifier<List<Map<String, dynamic>>> {
   Future<void> _reloadPlaylists() async {
-    state = await AsyncValue.guard(DatabaseService.instance.getPlaylists);
+    final databaseService = DatabaseService.instance;
+    state = await AsyncValue.guard(databaseService.getPlaylists);
   }
 
   @override
   Future<List<Map<String, dynamic>>> build() async {
-    return DatabaseService.instance.getPlaylists();
+    final databaseService = DatabaseService.instance;
+    return databaseService.getPlaylists();
   }
 
   Future<void> refresh() async {
@@ -22,8 +24,11 @@ class LibraryPlaylistsNotifier
     final trimmed = name.trim();
     if (trimmed.isEmpty) return null;
 
-    final id = await DatabaseService.instance
-        .createPlaylist(trimmed, description: description);
+    final databaseService = DatabaseService.instance;
+    final id = await databaseService.createPlaylist(
+      trimmed,
+      description: description,
+    );
 
     // Refresh the list after creating a playlist.
     await _reloadPlaylists();
@@ -34,9 +39,10 @@ class LibraryPlaylistsNotifier
     required String playlistId,
     required List<String> trackIds,
   }) async {
+    final databaseService = DatabaseService.instance;
     var addedCount = 0;
     for (final trackId in trackIds) {
-      await DatabaseService.instance.addTrackToPlaylist(playlistId, trackId);
+      await databaseService.addTrackToPlaylist(playlistId, trackId);
       addedCount++;
     }
 

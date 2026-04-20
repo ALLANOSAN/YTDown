@@ -322,6 +322,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
       );
     }
 
+    final playerService = PlayerService.instance;
     return ListView.builder(
       itemCount: audioTracks.length,
       itemBuilder: (context, index) {
@@ -336,7 +337,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
           subtitle: Text(_trackSubtitle(item),
               style:
                   const TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
-          onTap: () => PlayerService.instance.playTrack(item),
+          onTap: () => playerService.playTrack(item),
         );
       },
     );
@@ -750,8 +751,10 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                                       return;
                                     }
 
+                                    final playerService =
+                                        PlayerService.instance;
                                     Navigator.pop(context);
-                                    PlayerService.instance.playPlaylist(
+                                    playerService.playPlaylist(
                                       items,
                                       initialIndex: index,
                                     );
@@ -930,7 +933,8 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
     _batchEditCurrentImageSource = currentImageUrl?.trim() ?? '';
     _batchEditImageSourceDraft = '';
     _batchEditHasCustomImage = false;
-    FocusManager.instance.primaryFocus?.unfocus();
+    final focusManager = FocusManager.instance;
+    focusManager.primaryFocus?.unfocus();
     setState(() {
       _batchEditSubmitting = false;
       _batchEditState = _LibraryBatchEditState(
@@ -969,7 +973,8 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
 
   void _closeBatchEditOverlay() {
     if (!mounted || _batchEditState == null) return;
-    FocusManager.instance.primaryFocus?.unfocus();
+    final focusManager = FocusManager.instance;
+    focusManager.primaryFocus?.unfocus();
     setState(() {
       _batchEditState = null;
       _batchEditSubmitting = false;
@@ -1050,8 +1055,8 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
   ) async {
     try {
       if (state.type == _LibraryBatchEditType.artist) {
-        final result =
-            await DownloadService.instance.rewriteArtistMetadataBatch(
+        final downloadService = DownloadService.instance;
+        final result = await downloadService.rewriteArtistMetadataBatch(
           currentArtist: state.currentName,
           newArtist: normalizedNewName,
           newArtistImageUrl:
@@ -1061,7 +1066,8 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
         if (result['success'] == true) {
           final appliedArtistImageUrl =
               _trimToNull(result['appliedArtistImageUrl']?.toString());
-          PlayerService.instance.applyArtistBatchMetadataUpdate(
+          final playerService = PlayerService.instance;
+          playerService.applyArtistBatchMetadataUpdate(
             oldArtist: state.currentName,
             newArtist: normalizedNewName,
             newArtistImageUrl: appliedArtistImageUrl,
@@ -1071,7 +1077,8 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
         return result;
       }
 
-      final result = await DownloadService.instance.rewriteAlbumMetadataBatch(
+      final downloadService = DownloadService.instance;
+      final result = await downloadService.rewriteAlbumMetadataBatch(
         currentAlbum: state.currentName,
         newAlbum: normalizedNewName,
         newAlbumImageUrl:
@@ -1081,7 +1088,8 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
       if (result['success'] == true) {
         final appliedAlbumImageUrl =
             _trimToNull(result['appliedAlbumImageUrl']?.toString());
-        PlayerService.instance.applyAlbumBatchMetadataUpdate(
+        final playerService = PlayerService.instance;
+        playerService.applyAlbumBatchMetadataUpdate(
           oldAlbum: state.currentName,
           newAlbum: normalizedNewName,
           newAlbumImageUrl: appliedAlbumImageUrl,

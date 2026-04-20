@@ -27,7 +27,7 @@ class _FakeDownloadService implements DownloadFeedService {
   }
 
   @override
-  Stream<DownloadItem?> get updates => _updatesStream;
+  Stream<DownloadItem?> updates() => _updatesStream;
 
   @override
   Future<List<DownloadItem>> getAllDownloads() async {

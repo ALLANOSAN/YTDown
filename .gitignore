@@ -32,6 +32,7 @@ migrate_working_dir/
 .pub/
 /build/
 /coverage/
+/test
 
 # Symbolication related
 app.*.symbols
@@ -48,3 +49,7 @@ app.*.map.json
 .secrets.json
 *.env
 
+
+# Erros
+
+build_error.txt

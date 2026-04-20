@@ -80,7 +80,8 @@ class VideoInfoHandler {
   }
 
   static Future<void> _releaseInputConnection() async {
-    FocusManager.instance.primaryFocus?.unfocus();
+    final focusManager = FocusManager.instance;
+    focusManager.primaryFocus?.unfocus();
     await SystemChannels.textInput.invokeMethod<void>('TextInput.hide');
     await Future<void>.delayed(const Duration(milliseconds: 150));
   }
@@ -90,7 +91,8 @@ class VideoInfoHandler {
     BuildContext context,
     String url,
   ) async {
-    final info = await DownloadService.instance.fetchVideoInfo(url);
+    final downloadService = DownloadService.instance;
+    final info = await downloadService.fetchVideoInfo(url);
     if (context.mounted) {
       await handleVideoInfo(context, info, url);
     }

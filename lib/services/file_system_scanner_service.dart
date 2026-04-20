@@ -71,7 +71,8 @@ class FileSystemScannerService {
   /// Encontra arquivos órfãos (existem no filesystem mas não no banco)
   Future<List<File>> findOrphanFiles() async {
     final files = await scanAudioFiles();
-    final dbItems = await DatabaseService.instance.getAllDownloads();
+    final databaseService = DatabaseService.instance;
+    final dbItems = await databaseService.getAllDownloads();
     final dbPaths = dbItems.map((item) => item.outputPath).toSet();
 
     final orphanFiles =
@@ -154,7 +155,8 @@ class FileSystemScannerService {
 
     // Otimização: scan apenas UMA vez
     final files = await scanAudioFiles();
-    final dbItems = await DatabaseService.instance.getAllDownloads();
+    final databaseService = DatabaseService.instance;
+    final dbItems = await databaseService.getAllDownloads();
     final dbPaths = dbItems.map((item) => item.outputPath).toSet();
     final orphanFiles =
         files.where((file) => !dbPaths.contains(file.path)).toList();
@@ -185,7 +187,8 @@ class FileSystemScannerService {
       try {
         await _yieldIfNeeded(index);
         final item = await _createDownloadItemFromFile(file);
-        await DatabaseService.instance.insertDownload(item);
+        final databaseService = DatabaseService.instance;
+        await databaseService.insertDownload(item);
         registered += 1;
         debugPrint('✅ Arquivo registrado: ${item.title}');
       } catch (e) {

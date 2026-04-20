@@ -20,7 +20,9 @@ echo "🚀 Iniciando build $BUILD_TYPE..."
 
 if [ "$BUILD_TYPE" = "release" ]; then
   flutter build apk --dart-define-from-file=$SECRETS_FILE 2>&1 | grep -v "Gradle build failed" || true
-else
+fi
+
+if [ "$BUILD_TYPE" != "release" ]; then
   flutter build apk --debug --dart-define-from-file=$SECRETS_FILE 2>&1 | grep -v "Gradle build failed" || true
 fi
 
@@ -35,11 +37,13 @@ if [ -f "$APK_PATH" ]; then
     echo "📱 Instalando no dispositivo..."
     adb install -r "$APK_PATH"
     echo "✅ Instalação concluída!"
-  else
-    echo "💡 Para instalar: ./build.sh debug install"
+    exit 0
   fi
-else
-  echo "⚠️  Aviso: APK não encontrado em $APK_PATH"
-  echo "   Verifique os logs acima para erros reais."
-  exit 1
+
+  echo "💡 Para instalar: ./build.sh debug install"
+  exit 0
 fi
+
+echo "⚠️  Aviso: APK não encontrado em $APK_PATH"
+echo "   Verifique os logs acima para erros reais."
+exit 1

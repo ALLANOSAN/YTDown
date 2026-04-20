@@ -230,7 +230,7 @@ object StorageService {
             }
 
             val file = File(exportedPath)
-            val success = if (file.exists()) file.delete() else true
+            val success = !file.exists() || file.delete()
             runOnMainThread { result.success(success) }
         } catch (e: Exception) {
             runOnMainThread { result.success(false) }

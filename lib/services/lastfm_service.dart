@@ -79,7 +79,8 @@ class LastFmService {
         logContext: logContext,
       );
     } catch (e) {
-      ObservabilityService.instance.error('lastfm_lookup_error', context: {
+      final observability = ObservabilityService.instance;
+      observability.error('lastfm_lookup_error', context: {
         'error': e.toString(),
         ...logContext,
       });
@@ -433,7 +434,8 @@ class LastFmService {
     final response = await http.get(url, headers: _defaultHeaders);
 
     if (response.statusCode != 200) {
-      ObservabilityService.instance.warning(
+      final observability = ObservabilityService.instance;
+      observability.warning(
         'lastfm_http_error',
         context: {
           'method': method,
@@ -451,7 +453,8 @@ class LastFmService {
 
     final data = Map<String, dynamic>.from(decoded);
     if (url.host == _lastFmHost && data['error'] != null) {
-      ObservabilityService.instance.warning(
+      final observability = ObservabilityService.instance;
+      observability.warning(
         'lastfm_api_error',
         context: {
           'method': method,

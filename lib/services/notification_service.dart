@@ -93,7 +93,8 @@ class NotificationService {
         AndroidFlutterLocalNotificationsPlugin>();
     final androidPermissionGranted =
         await androidPlugin?.requestNotificationsPermission();
-    ObservabilityService.instance.info(
+    final observability = ObservabilityService.instance;
+    observability.info(
       'notification_permission_checked',
       context: {
         'androidPermissionGranted': androidPermissionGranted,
@@ -105,7 +106,7 @@ class NotificationService {
             AndroidFlutterLocalNotificationsPlugin>()
         ?.createNotificationChannel(_downloadChannel);
 
-    ObservabilityService.instance.info(
+    observability.info(
       'notification_channel_ready',
       context: {
         'channelId': _channelId,

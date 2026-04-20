@@ -36,10 +36,15 @@ class PlayerService {
   final Map<String, Future<DownloadItem>> _artworkInFlight = {};
 
   // Streams de progresso
+  Stream<PlayerState> get playerStateStream => _player.playerStateStream;
   Stream<Duration> get positionStream => _player.positionStream;
   Stream<Duration?> get durationStream => _player.durationStream;
   Stream<Duration> get bufferedPositionStream => _player.bufferedPositionStream;
   Stream<SequenceState> get sequenceStateStream => _player.sequenceStateStream;
+
+  Future<void> initialize() async {
+    // Inicialização do serviço real
+  }
 
   Future<void> _resetPlaybackContext() async {
     await _sequenceStateSubscription?.cancel();
@@ -61,10 +66,11 @@ class PlayerService {
     // Cancela qualquer listener de playlist ativo e reseta referências
     await _resetPlaybackContext();
 
+    final observability = ObservabilityService.instance;
     final playableItem = await _resolvePlayableItem(item);
     if (playableItem == null) {
       debugPrint('❌ Arquivo de áudio não encontrado: ${item.outputPath}');
-      ObservabilityService.instance.warning(
+      observability.warning(
         'player_track_file_missing',
         context: {
           'id': item.id,
@@ -91,7 +97,7 @@ class PlayerService {
       await _player.play();
     } catch (e) {
       debugPrint("❌ Erro ao tocar música: $e");
-      ObservabilityService.instance.warning(
+      observability.warning(
         'player_play_track_failed',
         context: {
           'id': playableItem.id,
@@ -120,7 +126,8 @@ class PlayerService {
       outputPath: resolvedPath,
       format: _extractExtension(resolvedPath) ?? item.format,
     );
-    await DatabaseService.instance.updateDownload(updated);
+    final databaseService = DatabaseService.instance;
+    await databaseService.updateDownload(updated);
     return updated;
   }
 
@@ -149,6 +156,7 @@ class PlayerService {
       List<DownloadItem> items) async {
     final validItems = <DownloadItem>[];
 
+    final downloadService = DownloadService.instance;
     for (final item in items) {
       final file = File(item.outputPath);
       if (await file.exists()) {
@@ -158,7 +166,7 @@ class PlayerService {
 
       debugPrint('🧹 Limpando registro fantasma na playlist: ${item.title}');
       try {
-        await DownloadService.instance.deleteDownload(item);
+        await downloadService.deleteDownload(item);
       } catch (_) {}
     }
 
@@ -430,7 +438,8 @@ class PlayerService {
     final changed = updated.artistImageUrl != item.artistImageUrl ||
         updated.albumImageUrl != item.albumImageUrl;
     if (changed) {
-      await DatabaseService.instance.updateDownload(updated);
+      final databaseService = DatabaseService.instance;
+      await databaseService.updateDownload(updated);
     }
 
     return updated;
@@ -455,15 +464,18 @@ class PlayerService {
   }
 
   Future<String?> _getArtistImageCached(String artist) async {
-    return ArtworkCacheService.instance.getArtistImage(artist);
+    final artworkService = ArtworkCacheService.instance;
+    return artworkService.getArtistImage(artist);
   }
 
   Future<String?> _getAlbumCoverCached(String artist, String album) async {
-    return ArtworkCacheService.instance.getAlbumCover(artist, album);
+    final artworkService = ArtworkCacheService.instance;
+    return artworkService.getAlbumCover(artist, album);
   }
 
   Future<String?> _getTrackCoverCached(String artist, String title) async {
-    return ArtworkCacheService.instance.getTrackCover(artist, title);
+    final artworkService = ArtworkCacheService.instance;
+    return artworkService.getTrackCover(artist, title);
   }
 
   bool _isUnknownMetadata(String value) {

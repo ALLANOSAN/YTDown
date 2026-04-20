@@ -30,9 +30,9 @@ class DownloadCard extends ConsumerWidget {
     this.onTapSelection,
   });
 
-  bool get _isCompleted => item.status == DownloadStatus.completed;
-  bool get _isDownloading => item.status == DownloadStatus.downloading;
-  bool get _isFailed => item.status == DownloadStatus.failed;
+  bool _isCompleted() => item.status == DownloadStatus.completed;
+  bool _isDownloading() => item.status == DownloadStatus.downloading;
+  bool _isFailed() => item.status == DownloadStatus.failed;
 
   String? _trimToNull(String value) {
     final trimmed = value.trim();
@@ -42,7 +42,7 @@ class DownloadCard extends ConsumerWidget {
     return trimmed;
   }
 
-  Color get _exportStatusColor {
+  Color _exportStatusColor() {
     switch (item.exportStatus) {
       case ExportStatus.exported:
         return AppTheme.success;
@@ -53,7 +53,7 @@ class DownloadCard extends ConsumerWidget {
     }
   }
 
-  IconData get _exportStatusIcon {
+  IconData _exportStatusIcon() {
     switch (item.exportStatus) {
       case ExportStatus.exported:
         return Icons.check_circle_rounded;
@@ -124,7 +124,8 @@ class DownloadCard extends ConsumerWidget {
     );
 
     if (confirm == true && context.mounted) {
-      await DownloadService.instance.deleteDownload(item);
+      final downloadService = DownloadService.instance;
+      await downloadService.deleteDownload(item);
       onDeleted?.call();
     }
   }
@@ -152,7 +153,8 @@ class DownloadCard extends ConsumerWidget {
       context: context,
       builder: (dialogContext) {
         // Focar no primeiro campo apos o dialogo montar
-        WidgetsBinding.instance.addPostFrameCallback((_) {
+        final widgetsBinding = WidgetsBinding.instance;
+        widgetsBinding.addPostFrameCallback((_) {
           titleFocus.requestFocus();
         });
 
@@ -273,8 +275,9 @@ class DownloadCard extends ConsumerWidget {
                             errorMessage = null;
                           });
 
-                          final result = await DownloadService.instance
-                              .rewriteDownloadMetadata(
+                          final downloadService = DownloadService.instance;
+                          final result =
+                              await downloadService.rewriteDownloadMetadata(
                             downloadId: item.id,
                             title: trimmedTitle,
                             artist: _trimToNull(artistController.text),
@@ -344,22 +347,24 @@ class DownloadCard extends ConsumerWidget {
         container: true,
         label: 'Download ${item.title}',
         value: item.statusLabel,
-        button: _isCompleted,
-        hint: _isCompleted ? 'Toque para abrir o arquivo baixado' : null,
+        button: _isCompleted(),
+        hint: _isCompleted() ? 'Toque para abrir o arquivo baixado' : null,
         child: Tooltip(
-          message: _isCompleted
+          message: _isCompleted()
               ? 'Abrir arquivo baixado'
               : 'Status do download: ${item.statusLabel}',
           child: GestureDetector(
             onTap: isSelectionMode
                 ? onTapSelection
-                : (_isCompleted ? () => OpenFile.open(item.outputPath) : null),
+                : (_isCompleted()
+                    ? () => OpenFile.open(item.outputPath)
+                    : null),
             onLongPress: onLongPress,
             child: Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
                 gradient: LinearGradient(
-                  colors: _isDownloading
+                  colors: _isDownloading()
                       ? [AppTheme.card, AppTheme.surfaceElevated]
                       : const [AppTheme.card, AppTheme.card],
                   begin: Alignment.topLeft,
@@ -369,12 +374,12 @@ class DownloadCard extends ConsumerWidget {
                 border: Border.all(
                   color: isSelected
                       ? AppTheme.primary
-                      : _isDownloading
+                      : _isDownloading()
                           ? AppTheme.primary.withValues(alpha: 0.3)
                           : AppTheme.border,
-                  width: (isSelected || _isDownloading) ? 1.5 : 1,
+                  width: (isSelected || _isDownloading()) ? 1.5 : 1,
                 ),
-                boxShadow: (isSelected || _isDownloading)
+                boxShadow: (isSelected || _isDownloading())
                     ? [
                         BoxShadow(
                           color: AppTheme.primary.withValues(alpha: 0.15),
@@ -388,15 +393,15 @@ class DownloadCard extends ConsumerWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   _buildHeader(context),
-                  if (_isDownloading) ...[
+                  if (_isDownloading()) ...[
                     const SizedBox(height: 14),
                     _buildProgressBar(ref.watch(itemProgressProvider(item))),
                   ],
-                  if (_isFailed && item.errorMessage != null) ...[
+                  if (_isFailed() && item.errorMessage != null) ...[
                     const SizedBox(height: 12),
                     _buildError(),
                   ],
-                  if (_isCompleted) ...[
+                  if (_isCompleted()) ...[
                     const SizedBox(height: 12),
                     _buildFooter(),
                   ],
@@ -642,7 +647,7 @@ class DownloadCard extends ConsumerWidget {
                 ),
               ),
               const Divider(color: AppTheme.border),
-              if (_isCompleted) ...[
+              if (_isCompleted()) ...[
                 ListTile(
                   leading: const Icon(Icons.open_in_new_rounded,
                       color: AppTheme.textSecondary),
@@ -660,7 +665,8 @@ class DownloadCard extends ConsumerWidget {
                       style: TextStyle(color: AppTheme.textPrimary)),
                   onTap: () async {
                     Navigator.pop(sheetContext);
-                    await SharePlus.instance.share(
+                    final shareService = SharePlus.instance;
+                    await shareService.share(
                       ShareParams(files: [XFile(item.outputPath)]),
                     );
                   },
@@ -851,12 +857,12 @@ class DownloadCard extends ConsumerWidget {
         Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(_exportStatusIcon, color: _exportStatusColor, size: 14),
+            Icon(_exportStatusIcon(), color: _exportStatusColor(), size: 14),
             const SizedBox(width: 6),
             Text(
               item.exportStatusLabel,
               style: TextStyle(
-                color: _exportStatusColor,
+                color: _exportStatusColor(),
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
               ),

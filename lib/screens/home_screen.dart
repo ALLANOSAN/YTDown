@@ -19,6 +19,7 @@ import '../utils/common_utils.dart';
 import '../widgets/lazy_indexed_stack.dart';
 import '../providers/home_provider.dart';
 import '../providers/player_provider.dart';
+import '../providers/sharing_provider.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -67,7 +68,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   }
 
   void _openFullPlayer() {
-    if (PlayerService.instance.currentTrack == null) {
+    final playerService = PlayerService.instance;
+    if (playerService.currentTrack == null) {
       return;
     }
     _pushFullPlayerScreen();
@@ -101,24 +103,29 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   }
 
   void _initSharingIntent() {
-    _sharingSubscription = ReceiveSharingIntent.instance
-        .getMediaStream()
-        .listen((List<SharedMediaFile> files) {
+    final sharingIntent = ref.read(sharingIntentProvider);
+
+    _sharingSubscription =
+        sharingIntent.getMediaStream().listen((List<SharedMediaFile> files) {
       if (!mounted) return;
       final rawContent = files.isNotEmpty ? files.first.path : null;
       final url = rawContent != null ? _extractYoutubeUrl(rawContent) : null;
       if (url != null) {
         _handleUrl(url);
+      } else if (rawContent != null) {
+        _reportInvalidYoutubeUrl(ref.read(homeUiProvider.notifier));
       }
     }, onError: (_) {});
 
-    ReceiveSharingIntent.instance.getInitialMedia().then((files) {
+    sharingIntent.getInitialMedia().then((files) {
       if (!mounted) return;
       final rawContent = files.isNotEmpty ? files.first.path : null;
       final url = rawContent != null ? _extractYoutubeUrl(rawContent) : null;
       if (url != null) {
         _handleUrl(url);
-        ReceiveSharingIntent.instance.reset();
+        sharingIntent.reset();
+      } else if (rawContent != null) {
+        _reportInvalidYoutubeUrl(ref.read(homeUiProvider.notifier));
       }
     });
   }
@@ -161,7 +168,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   }
 
   void _logUrlSearch(String url) {
-    unawaited(DatabaseService.instance.insertSearchQuery(url));
+    try {
+      final databaseService = DatabaseService.instance;
+      unawaited(
+        databaseService.insertSearchQuery(url).catchError((_) {}),
+      );
+    } catch (_) {
+      // Ignore database logging failures in UI flows.
+    }
   }
 
   Future<void> _fetchVideoInfo(String url, dynamic uiNotifier) async {
@@ -383,7 +397,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                   icon: const Icon(Icons.close_rounded,
                       size: 16, color: AppTheme.textTertiary),
                   onPressed: () async {
-                    await DatabaseService.instance.deleteSearchQuery(query);
+                    final databaseService = DatabaseService.instance;
+                    await databaseService.deleteSearchQuery(query);
                     ref.invalidate(recentSearchesProvider);
                   },
                 ),
@@ -598,6 +613,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                   ],
           ),
           child: IconButton(
+            key: const Key('home_search_button'),
             tooltip: 'Buscar vídeo',
             onPressed: isLoading
                 ? null

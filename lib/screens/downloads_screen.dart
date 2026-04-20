@@ -1,5 +1,3 @@
-import "package:animated_list_plus/animated_list_plus.dart";
-import "package:animated_list_plus/transitions.dart";
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/download_item.dart';
@@ -24,6 +22,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen>
   bool _isSelectionMode = false;
   bool _isDeletingSelection = false;
   final Set<String> _selectedDownloadIds = <String>{};
+  final Set<String> _dismissedDownloadIds = <String>{};
 
   @override
   bool get wantKeepAlive => true;
@@ -198,9 +197,10 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen>
 
   Future<int> _deleteDownloads(List<DownloadItem> items) async {
     var deletedCount = 0;
+    final downloadService = DownloadService.instance;
     for (final item in items) {
       try {
-        await DownloadService.instance.deleteDownload(item);
+        await downloadService.deleteDownload(item);
         deletedCount++;
       } catch (_) {
         // Ignora falhas individuais para continuar o lote.
@@ -331,7 +331,9 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen>
   }
 
   Widget _buildList(List<DownloadItem> allItems, DownloadType? tabType) {
-    final filtered = _filterAndSortDownloads(allItems, tabType);
+    final filtered = _filterAndSortDownloads(allItems, tabType)
+        .where((item) => !_dismissedDownloadIds.contains(item.id))
+        .toList();
     final showDiagnostics = tabType == null;
 
     if (filtered.isEmpty) {
@@ -354,33 +356,50 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen>
         /* Adicionar recarregamento futuramente se necessario */
       },
       color: AppTheme.primary,
-      child: ImplicitlyAnimatedList<Object>(
+      child: ListView.separated(
         padding: const EdgeInsets.symmetric(vertical: 8),
-        items: dynamicItems,
-        areItemsTheSame: (a, b) {
-          if (a is String && b is String) return a == b;
-          if (a is DownloadItem && b is DownloadItem) return a.id == b.id;
-          return false;
-        },
-        itemBuilder: (context, animation, item, index) {
-          return SizeFadeTransition(
-            sizeFraction: 0.7,
-            curve: Curves.easeInOut,
-            animation: animation,
-            child: Builder(builder: (context) {
-              if (item is String) {
-                return _buildDiagnosticsPanel();
-              }
-              final dl = item as DownloadItem;
-              return DownloadCard(
-                key: ValueKey(item.id),
-                item: dl,
-                isSelectionMode: _isSelectionMode,
-                isSelected: _isSelectedDownload(dl.id),
-                onLongPress: () => _startSelectionMode(dl.id),
-                onTapSelection: () => _toggleDownloadSelection(dl.id),
-              );
-            }),
+        itemCount: dynamicItems.length,
+        separatorBuilder: (_, __) => const SizedBox(height: 8),
+        itemBuilder: (context, index) {
+          final item = dynamicItems[index];
+          if (item is String) {
+            return _buildDiagnosticsPanel();
+          }
+          final dl = item as DownloadItem;
+          return Dismissible(
+            key: ValueKey('dismiss_${dl.id}'),
+            direction: DismissDirection.endToStart,
+            movementDuration: const Duration(milliseconds: 200),
+            resizeDuration: const Duration(milliseconds: 150),
+            background: Container(
+              alignment: Alignment.centerRight,
+              padding: const EdgeInsets.only(right: 20),
+              decoration: BoxDecoration(
+                color: AppTheme.error,
+                borderRadius: BorderRadius.circular(18),
+              ),
+              child: const Icon(Icons.delete_rounded,
+                  color: Colors.white, size: 28),
+            ),
+            confirmDismiss: (direction) async {
+              setState(() {
+                _dismissedDownloadIds.add(dl.id);
+              });
+              final downloadService = DownloadService.instance;
+              await downloadService.deleteDownload(dl).then((_) {
+                ref.invalidate(downloadsProvider);
+              });
+              return true;
+            },
+            onDismissed: (direction) {},
+            child: DownloadCard(
+              key: ValueKey(item.id),
+              item: dl,
+              isSelectionMode: _isSelectionMode,
+              isSelected: _isSelectedDownload(dl.id),
+              onLongPress: () => _startSelectionMode(dl.id),
+              onTapSelection: () => _toggleDownloadSelection(dl.id),
+            ),
           );
         },
       ),
@@ -674,7 +693,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen>
                         runSpacing: 8,
                         children: [
                           OutlinedButton.icon(
-                            onPressed: diagnostics.isBusy
+                            onPressed: diagnostics.isBusy()
                                 ? null
                                 : () => notifier.checkYtDlpUpdate(
                                     forceRemote: true),
@@ -695,7 +714,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen>
                             ),
                           ),
                           ElevatedButton.icon(
-                            onPressed: diagnostics.isBusy
+                            onPressed: diagnostics.isBusy()
                                 ? null
                                 : notifier.updateYtDlpNow,
                             icon: diagnostics.isUpdatingYtDlp
@@ -716,7 +735,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen>
                             ),
                           ),
                           OutlinedButton.icon(
-                            onPressed: diagnostics.isBusy
+                            onPressed: diagnostics.isBusy()
                                 ? null
                                 : notifier.addMissingArtworkBatch,
                             icon: diagnostics.isRepairingMetadata

@@ -40,7 +40,8 @@ Future<void> _bootstrapApplication() async {
 Future<void> _initializeFirebaseAndLogger() async {
   try {
     await Firebase.initializeApp();
-    FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterFatalError;
+    final crashlytics = FirebaseCrashlytics.instance;
+    FlutterError.onError = crashlytics.recordFlutterFatalError;
 
     LocalLogger.initialize();
     LocalLogger.info('✅ Firebase inicializado com sucesso.');
@@ -50,8 +51,11 @@ Future<void> _initializeFirebaseAndLogger() async {
 }
 
 Future<void> _initializeCoreServices() async {
-  await NotificationService.instance.init();
-  await ObservabilityService.instance.init();
+  final notificationService = NotificationService.instance;
+  final observabilityService = ObservabilityService.instance;
+
+  await notificationService.init();
+  await observabilityService.init();
 
   try {
     await _initializeBackgroundAudio();
@@ -89,7 +93,8 @@ class _AppLifecycleManagerState extends State<_AppLifecycleManager>
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this);
+    final widgetsBinding = WidgetsBinding.instance;
+    widgetsBinding.addObserver(this);
   }
 
   @override
@@ -102,7 +107,8 @@ class _AppLifecycleManagerState extends State<_AppLifecycleManager>
   @override
   void dispose() {
     _disposeServices();
-    WidgetsBinding.instance.removeObserver(this);
+    final widgetsBinding = WidgetsBinding.instance;
+    widgetsBinding.removeObserver(this);
     super.dispose();
   }
 
@@ -112,10 +118,15 @@ class _AppLifecycleManagerState extends State<_AppLifecycleManager>
 
     debugPrint('🧹 Liberando recursos do app...');
 
-    DownloadService.instance.dispose();
-    NotificationService.instance.dispose();
-    ObservabilityService.instance.dispose();
-    unawaited(PlayerService.instance.dispose());
+    final downloadService = DownloadService.instance;
+    final notificationService = NotificationService.instance;
+    final observabilityService = ObservabilityService.instance;
+    final playerService = PlayerService.instance;
+
+    downloadService.dispose();
+    notificationService.dispose();
+    observabilityService.dispose();
+    unawaited(playerService.dispose());
   }
 
   @override

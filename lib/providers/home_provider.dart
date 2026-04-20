@@ -4,13 +4,15 @@ import '../services/database_service.dart';
 // Provider para as Buscas Recentes
 final recentSearchesProvider =
     FutureProvider.autoDispose<List<String>>((ref) async {
-  return DatabaseService.instance.getRecentSearches();
+  final databaseService = DatabaseService.instance;
+  return databaseService.getRecentSearches();
 });
 
 // Provider para os Favoritos
 final favoritesProvider =
     FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
-  return DatabaseService.instance.getFavorites();
+  final databaseService = DatabaseService.instance;
+  return databaseService.getFavorites();
 });
 
 // StateNotifier para isolar o estado de UI da Home (carregando processos, erros)

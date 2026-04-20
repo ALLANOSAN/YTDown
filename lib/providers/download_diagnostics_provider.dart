@@ -44,7 +44,7 @@ class DownloadDiagnosticsState {
   final bool lastMessageIsError;
   final DateTime? lastCheckedAt;
 
-  bool get isBusy =>
+  bool isBusy() =>
       isCheckingYtDlp ||
       isUpdatingYtDlp ||
       isRepairingMetadata ||
@@ -92,35 +92,38 @@ class DownloadDiagnosticsState {
 class DownloadDiagnosticsNotifier
     extends AsyncNotifier<DownloadDiagnosticsState> {
   StreamSubscription<DownloadFailureTelemetry>? _telemetrySubscription;
+  final _observabilityService = ObservabilityService.instance;
+  final _databaseService = DatabaseService.instance;
+  final _chaquoService = ChaquoDownloadService.instance;
 
-  DownloadDiagnosticsState? get _currentState => state.asData?.value;
+  DownloadDiagnosticsState? _currentState() => state.asData?.value;
 
-  bool get _isBusyOrUnavailable {
-    final current = _currentState;
-    return current == null || current.isBusy;
+  bool _isBusyOrUnavailable() {
+    final current = _currentState();
+    return current == null || current.isBusy();
   }
 
   @override
   Future<DownloadDiagnosticsState> build() async {
-    await ObservabilityService.instance.init();
+    await _observabilityService.init();
 
     _telemetrySubscription =
-        ObservabilityService.instance.downloadFailureStream.listen((telemetry) {
+        _observabilityService.downloadFailureStream.listen((telemetry) {
       _patch((state) => state.copyWith(telemetry: telemetry));
     });
     ref.onDispose(() {
       _telemetrySubscription?.cancel();
     });
 
-    final autoExportEnabled =
-        await DatabaseService.instance.getAutoExportEnabled();
+    final autoExportEnabled = await _databaseService.getAutoExportEnabled();
 
     String? currentVersion;
     String? latestVersion;
     var updateAvailable = false;
 
-    final checkResult = await ChaquoDownloadService.instance
-        .checkYtDlpUpdate(forceRemote: false);
+    final checkResult = await _chaquoService.checkYtDlpUpdate(
+      forceRemote: false,
+    );
     if (checkResult['success'] == true) {
       currentVersion = checkResult['current_version']?.toString();
       latestVersion = checkResult['latest_version']?.toString();
@@ -128,7 +131,7 @@ class DownloadDiagnosticsNotifier
     }
 
     return DownloadDiagnosticsState(
-      telemetry: ObservabilityService.instance.currentDownloadFailureTelemetry,
+      telemetry: _observabilityService.currentDownloadFailureTelemetry,
       autoExportEnabled: autoExportEnabled,
       isExpanded: false,
       isCheckingYtDlp: false,
@@ -148,7 +151,7 @@ class DownloadDiagnosticsNotifier
   }
 
   Future<void> setAutoExportEnabled(bool enabled) async {
-    final previous = _currentState;
+    final previous = _currentState();
     if (previous == null) return;
 
     _patch((current) => current.copyWith(
@@ -158,7 +161,7 @@ class DownloadDiagnosticsNotifier
         ));
 
     try {
-      await DatabaseService.instance.setAutoExportEnabled(enabled);
+      await _databaseService.setAutoExportEnabled(enabled);
       _patch((current) => current.copyWith(
             isSavingAutoExport: false,
             lastMessage: enabled
@@ -177,7 +180,7 @@ class DownloadDiagnosticsNotifier
   }
 
   Future<void> checkYtDlpUpdate({bool forceRemote = true}) async {
-    if (_isBusyOrUnavailable) {
+    if (_isBusyOrUnavailable()) {
       return;
     }
 
@@ -186,8 +189,9 @@ class DownloadDiagnosticsNotifier
           lastMessage: null,
         ));
 
-    final result = await ChaquoDownloadService.instance
-        .checkYtDlpUpdate(forceRemote: forceRemote);
+    final result = await _chaquoService.checkYtDlpUpdate(
+      forceRemote: forceRemote,
+    );
 
     if (result['success'] != true) {
       _patch((state) => state.copyWith(
@@ -218,7 +222,7 @@ class DownloadDiagnosticsNotifier
   }
 
   Future<void> updateYtDlpNow() async {
-    if (_isBusyOrUnavailable) {
+    if (_isBusyOrUnavailable()) {
       return;
     }
 
@@ -227,8 +231,7 @@ class DownloadDiagnosticsNotifier
           lastMessage: null,
         ));
 
-    final result =
-        await ChaquoDownloadService.instance.updateYtDlpIfNeeded(force: true);
+    final result = await _chaquoService.updateYtDlpIfNeeded(force: true);
 
     if (result['success'] != true) {
       _patch((state) => state.copyWith(
@@ -257,8 +260,9 @@ class DownloadDiagnosticsNotifier
         ));
 
     // Sincroniza estado final com a resposta de checagem local (cache/metadata)
-    final checkResult = await ChaquoDownloadService.instance
-        .checkYtDlpUpdate(forceRemote: false);
+    final checkResult = await _chaquoService.checkYtDlpUpdate(
+      forceRemote: false,
+    );
     if (checkResult['success'] == true) {
       _patch((state) => state.copyWith(
             currentYtDlpVersion: checkResult['current_version']?.toString(),
@@ -270,7 +274,7 @@ class DownloadDiagnosticsNotifier
   }
 
   Future<void> repairMetadataBatch() async {
-    if (_isBusyOrUnavailable) {
+    if (_isBusyOrUnavailable()) {
       return;
     }
 
@@ -282,7 +286,8 @@ class DownloadDiagnosticsNotifier
         ));
 
     try {
-      final result = await DownloadService.instance.repairAudioMetadataBatch(
+      final downloadService = DownloadService.instance;
+      final result = await downloadService.repairAudioMetadataBatch(
         onProgress: (processed, total) {
           _patch((state) => state.copyWith(
                 repairProcessed: processed,
@@ -314,7 +319,7 @@ class DownloadDiagnosticsNotifier
   }
 
   Future<void> addMissingArtworkBatch() async {
-    if (_isBusyOrUnavailable) {
+    if (_isBusyOrUnavailable()) {
       return;
     }
 
@@ -326,7 +331,8 @@ class DownloadDiagnosticsNotifier
         ));
 
     try {
-      final result = await DownloadService.instance.addMissingArtworkBatch(
+      final downloadService = DownloadService.instance;
+      final result = await downloadService.addMissingArtworkBatch(
         onProgress: (processed, total) {
           _patch((state) => state.copyWith(
                 repairProcessed: processed,

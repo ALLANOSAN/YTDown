@@ -19,6 +19,15 @@ import 'download_progress_service.dart';
 import 'foreground_task_service.dart';
 import 'artwork_manager.dart';
 
+final _databaseService = DatabaseService.instance;
+final _notificationService = NotificationService.instance;
+final _observabilityService = ObservabilityService.instance;
+final _chaquoDownloadService = ChaquoDownloadService.instance;
+final _storageService = StorageService.instance;
+final _artworkCacheService = ArtworkCacheService.instance;
+final _downloadQueueService = DownloadQueueService.instance;
+final _downloadProgressService = DownloadProgressService.instance;
+
 class MetadataBatchRepairResult {
   const MetadataBatchRepairResult({
     required this.totalCandidates,
@@ -135,7 +144,7 @@ class DownloadService implements DownloadFeedService {
 
   final _updateController = StreamController<DownloadItem?>.broadcast();
   @override
-  Stream<DownloadItem?> get updates => _updateController.stream;
+  Stream<DownloadItem?> updates() => _updateController.stream;
 
   final ArtworkManager _artworkManager = ArtworkManager();
   final ArtworkLookupCache _artistArtworkLookup = ArtworkLookupCache();
@@ -155,7 +164,7 @@ class DownloadService implements DownloadFeedService {
 
   /// Executa uma ação de I/O de maneira serial (bloqueada) por ID
   Future<T> _withLock<T>(String id, Future<T> Function() action) {
-    return DownloadQueueService.instance.withLock(id, action);
+    return _downloadQueueService.withLock(id, action);
   }
 
   void _clearArtworkLookupCaches({bool includeArtworkService = false}) {
@@ -168,7 +177,7 @@ class DownloadService implements DownloadFeedService {
   /// Libera recursos do serviço
   void dispose() {
     _artworkManager.clear(includeService: true);
-    DownloadProgressService.instance.dispose();
+    _downloadProgressService.dispose();
   }
 
   @visibleForTesting
@@ -208,20 +217,20 @@ class DownloadService implements DownloadFeedService {
     _getArtistImageOverride = null;
     _getAlbumCoverOverride = null;
     _getTrackCoverOverride = null;
-    ArtworkCacheService.instance.resetTestOverrides();
+    _artworkCacheService.resetTestOverrides();
     _clearArtworkLookupCaches(includeArtworkService: true);
   }
 
   /// Obtém metadados do vídeo usando Chaquo Python + yt-dlp
   Future<Map<String, dynamic>> fetchVideoInfo(String url) async {
-    ObservabilityService.instance.info(
+    _observabilityService.info(
       'fetch_video_info_started',
       context: {'url': url},
     );
 
     try {
-      final info = await ChaquoDownloadService.instance.fetchVideoInfo(url);
-      ObservabilityService.instance.info(
+      final info = await _chaquoDownloadService.fetchVideoInfo(url);
+      _observabilityService.info(
         'fetch_video_info_succeeded',
         context: {
           'url': url,
@@ -231,7 +240,7 @@ class DownloadService implements DownloadFeedService {
       return info;
     } catch (e) {
       final simplified = _simplifyError(e.toString());
-      ObservabilityService.instance.error(
+      _observabilityService.error(
         'fetch_video_info_failed',
         context: {
           'url': url,
@@ -315,9 +324,9 @@ class DownloadService implements DownloadFeedService {
       format: format,
       quality: quality,
     ).catchError((error) {
-      ObservabilityService.instance.error('playlist_download_failed',
+      _observabilityService.error('playlist_download_failed',
           context: {'title': playlistTitle, 'error': error.toString()});
-      NotificationService.instance.showDownloadFailed(
+      _notificationService.showDownloadFailed(
           'playlist_error', 'Playlist: $playlistTitle', error.toString());
     }));
   }
@@ -378,14 +387,14 @@ class DownloadService implements DownloadFeedService {
     var workingItem = _applyMetadataFallbacks(item);
     workingItem = await _attachArtwork(workingItem);
 
-    await DatabaseService.instance.insertDownload(workingItem);
-    DownloadProgressService.instance.addUpdate(workingItem);
+    await _databaseService.insertDownload(workingItem);
+    _downloadProgressService.addUpdate(workingItem);
     _showDownloadStarted(
       workingItem.id,
       workingItem.title,
     );
 
-    ObservabilityService.instance.info(
+    _observabilityService.info(
       'download_started',
       context: {
         'id': workingItem.id,
@@ -397,15 +406,14 @@ class DownloadService implements DownloadFeedService {
     );
 
     // Atualiza para 'baixando' ANTES de iniciar a task pesada
-    AppForegroundService.instance
-        .updateCount(DownloadQueueService.instance.totalActiveTasks + 1);
+    final appForegroundService = AppForegroundService.instance;
+    appForegroundService
+        .updateCount(_downloadQueueService.totalActiveTasks + 1);
 
-    await DownloadQueueService.instance
-        .add(() => _executeDownload(workingItem));
+    await _downloadQueueService.add(() => _executeDownload(workingItem));
 
     // Ao final, atualiza de novo
-    AppForegroundService.instance
-        .updateCount(DownloadQueueService.instance.totalActiveTasks);
+    appForegroundService.updateCount(_downloadQueueService.totalActiveTasks);
   }
 
   Future<void> _executeDownload(DownloadItem item) async {
@@ -425,12 +433,13 @@ class DownloadService implements DownloadFeedService {
         );
 
         if (result['success'] == true) {
-          await _handleSuccessfulDownload(workingItem, result);
+          workingItem = await _handleSuccessfulDownload(workingItem, result);
           return;
         }
-        await _handleFailedDownload(workingItem, result);
+
+        workingItem = await _handleFailedDownload(workingItem, result);
       } catch (error) {
-        await _handleDownloadException(workingItem, error);
+        workingItem = await _handleDownloadException(workingItem, error);
       } finally {
         await _finalizeDownload(workingItem);
       }
@@ -439,18 +448,17 @@ class DownloadService implements DownloadFeedService {
 
   Future<void> _initializeDownloadProgress(DownloadItem workingItem) async {
     workingItem = workingItem.copyWith(status: DownloadStatus.downloading);
-    DownloadProgressService.instance.addUpdate(workingItem);
+    _downloadProgressService.addUpdate(workingItem);
   }
 
-  Future<void> _handleSuccessfulDownload(
+  Future<DownloadItem> _handleSuccessfulDownload(
       DownloadItem workingItem, Map<String, dynamic> result) async {
     workingItem = await _processDownloadResult(workingItem, result);
     final file = File(workingItem.outputPath);
     final fileExists = await file.exists();
 
     if (!fileExists) {
-      await _handleMissingFileAfterDownload(workingItem);
-      return;
+      return await _handleMissingFileAfterDownload(workingItem);
     }
 
     workingItem = await _attachArtwork(workingItem);
@@ -467,7 +475,7 @@ class DownloadService implements DownloadFeedService {
       workingItem.id,
       workingItem.title,
     );
-    ObservabilityService.instance.info(
+    _observabilityService.info(
       'download_completed',
       context: {
         'id': workingItem.id,
@@ -477,6 +485,7 @@ class DownloadService implements DownloadFeedService {
         'tagsInjected': result['tags_injected'] == true,
       },
     );
+    return workingItem;
   }
 
   Future<DownloadItem> _processDownloadResult(
@@ -521,7 +530,8 @@ class DownloadService implements DownloadFeedService {
     return workingItem;
   }
 
-  Future<void> _handleMissingFileAfterDownload(DownloadItem workingItem) async {
+  Future<DownloadItem> _handleMissingFileAfterDownload(
+      DownloadItem workingItem) async {
     workingItem = workingItem.copyWith(
       status: DownloadStatus.failed,
       errorMessage: 'Arquivo não encontrado após concluir o download',
@@ -531,15 +541,16 @@ class DownloadService implements DownloadFeedService {
       workingItem.title,
       workingItem.errorMessage!,
     );
-    ObservabilityService.instance.trackDownloadFailure(
+    _observabilityService.trackDownloadFailure(
       downloadId: workingItem.id,
       title: workingItem.title,
       source: 'download_file_missing_after_success',
       errorMessage: workingItem.errorMessage!,
     );
+    return workingItem;
   }
 
-  Future<void> _handleFailedDownload(
+  Future<DownloadItem> _handleFailedDownload(
       DownloadItem workingItem, Map<String, dynamic> result) async {
     workingItem = workingItem.copyWith(
       status: DownloadStatus.failed,
@@ -552,15 +563,16 @@ class DownloadService implements DownloadFeedService {
       workingItem.title,
       workingItem.errorMessage!,
     );
-    ObservabilityService.instance.trackDownloadFailure(
+    _observabilityService.trackDownloadFailure(
       downloadId: workingItem.id,
       title: workingItem.title,
       source: 'chaquo_download_result_false',
       errorMessage: workingItem.errorMessage!,
     );
+    return workingItem;
   }
 
-  Future<void> _handleDownloadException(
+  Future<DownloadItem> _handleDownloadException(
       DownloadItem workingItem, Object e) async {
     workingItem = workingItem.copyWith(
       status: DownloadStatus.failed,
@@ -571,17 +583,18 @@ class DownloadService implements DownloadFeedService {
       workingItem.title,
       workingItem.errorMessage!,
     );
-    ObservabilityService.instance.trackDownloadFailure(
+    _observabilityService.trackDownloadFailure(
       downloadId: workingItem.id,
       title: workingItem.title,
       source: 'download_exception',
       errorMessage: workingItem.errorMessage!,
     );
+    return workingItem;
   }
 
   Future<void> _finalizeDownload(DownloadItem workingItem) async {
-    await DatabaseService.instance.updateDownload(workingItem);
-    DownloadProgressService.instance.addUpdate(workingItem);
+    await _databaseService.updateDownload(workingItem);
+    _downloadProgressService.addUpdate(workingItem);
   }
 
   DownloadItem _applyMetadataFallbacks(
@@ -765,7 +778,7 @@ class DownloadService implements DownloadFeedService {
       );
     } catch (e, stackTrace) {
       // Keep flow resilient: artwork is optional.
-      ObservabilityService.instance.warning(
+      _observabilityService.warning(
         'artwork_lookup_exception',
         context: {
           'id': item.id,
@@ -814,7 +827,7 @@ class DownloadService implements DownloadFeedService {
   Future<Directory> _getDownloadsDir(DownloadType type) async {
     final override = _getSandboxDownloadsDirOverride;
     if (override != null) return override(type);
-    return StorageService.instance.getSandboxDownloadsDir(type);
+    return _storageService.getSandboxDownloadsDir(type);
   }
 
   Future<Map<String, dynamic>> rewriteDownloadMetadata({
@@ -826,7 +839,7 @@ class DownloadService implements DownloadFeedService {
     String? albumImageUrl,
   }) async {
     return _withLock(downloadId, () async {
-      final allDownloads = await DatabaseService.instance.getAllDownloads();
+      final allDownloads = await _databaseService.getAllDownloads();
       DownloadItem? item;
       for (final candidate in allDownloads) {
         if (candidate.id == downloadId) {
@@ -977,7 +990,7 @@ class DownloadService implements DownloadFeedService {
           rewriteResult['error']?.toString() ??
               'Falha ao regravar metadados manualmente',
         );
-        ObservabilityService.instance.warning(
+        _observabilityService.warning(
           'manual_metadata_rewrite_failed',
           context: {
             'id': workingItem.id,
@@ -1020,8 +1033,8 @@ class DownloadService implements DownloadFeedService {
       String? syncWarning;
       final exportedPath = workingItem.exportedPath?.trim();
       if (workingItem.exportStatus == ExportStatus.exported) {
-        final storageService = StorageService.instance;
-        final observability = ObservabilityService.instance;
+        final storageService = _storageService;
+        final observability = _observabilityService;
 
         if (exportedPath == null || exportedPath.isEmpty) {
           syncWarning =
@@ -1067,10 +1080,10 @@ class DownloadService implements DownloadFeedService {
         }
       }
 
-      await DatabaseService.instance.updateDownload(workingItem);
-      DownloadProgressService.instance.addUpdate(workingItem);
+      await _databaseService.updateDownload(workingItem);
+      _downloadProgressService.addUpdate(workingItem);
 
-      ObservabilityService.instance.info(
+      _observabilityService.info(
         'manual_metadata_rewrite_succeeded',
         context: {
           'id': workingItem.id,
@@ -1225,8 +1238,8 @@ class DownloadService implements DownloadFeedService {
       }
     }
 
-    final databaseService = DatabaseService.instance;
-    final observability = ObservabilityService.instance;
+    final databaseService = _databaseService;
+    final observability = _observabilityService;
 
     final allDownloads = await databaseService.getAllDownloads();
     final candidates = allDownloads.where(
@@ -1313,7 +1326,7 @@ class DownloadService implements DownloadFeedService {
       },
     );
 
-    ObservabilityService.instance.info(
+    _observabilityService.info(
       'manual_artist_batch_rewrite_finished',
       context: {
         'currentArtist': currentArtist,
@@ -1380,8 +1393,8 @@ class DownloadService implements DownloadFeedService {
       }
     }
 
-    final databaseService = DatabaseService.instance;
-    final observability = ObservabilityService.instance;
+    final databaseService = _databaseService;
+    final observability = _observabilityService;
 
     final allDownloads = await databaseService.getAllDownloads();
     final candidates = allDownloads.where(
@@ -1460,7 +1473,7 @@ class DownloadService implements DownloadFeedService {
       },
     );
 
-    ObservabilityService.instance.info(
+    _observabilityService.info(
       'manual_album_batch_rewrite_finished',
       context: {
         'currentAlbum': currentAlbum,
@@ -1490,8 +1503,8 @@ class DownloadService implements DownloadFeedService {
   }) async {
     if (paths.isEmpty) return;
 
-    final observability = ObservabilityService.instance;
-    final chaquo = ChaquoDownloadService.instance;
+    final observability = _observabilityService;
+    final chaquo = _chaquoDownloadService;
 
     try {
       observability.info(
@@ -1568,17 +1581,16 @@ class DownloadService implements DownloadFeedService {
         source: 'manual',
         allowUserInteractionFallback: true,
       );
-      await DatabaseService.instance.updateDownload(workingItem);
-      DownloadProgressService.instance.addUpdate(workingItem);
+      await _databaseService.updateDownload(workingItem);
+      _downloadProgressService.addUpdate(workingItem);
     });
 
-    AppForegroundService.instance
-        .updateCount(DownloadQueueService.instance.totalActiveTasks);
+    final appForegroundService = AppForegroundService.instance;
+    appForegroundService.updateCount(_downloadQueueService.totalActiveTasks);
   }
 
   Future<DownloadItem> _applyAutoExportPolicy(DownloadItem item) async {
-    final shouldAutoExport =
-        await DatabaseService.instance.getAutoExportEnabled();
+    final shouldAutoExport = await _databaseService.getAutoExportEnabled();
     if (!shouldAutoExport) return item;
 
     return _exportItem(
@@ -1612,7 +1624,7 @@ class DownloadService implements DownloadFeedService {
         exportStatus: ExportStatus.exported,
         exportedPath: result.exportedPath,
       );
-      ObservabilityService.instance.info(
+      _observabilityService.info(
         'download_exported',
         context: {
           'id': updatedItem.id,
@@ -1641,7 +1653,7 @@ class DownloadService implements DownloadFeedService {
     final sdkInt = sdkRaw is int ? sdkRaw : int.tryParse('$sdkRaw');
 
     try {
-      await DatabaseService.instance.insertExportFailureEvent(
+      await _databaseService.insertExportFailureEvent(
         downloadId: updatedItem.id,
         title: updatedItem.title,
         source: source,
@@ -1657,7 +1669,7 @@ class DownloadService implements DownloadFeedService {
         errorMessage: result.error ?? 'Falha desconhecida na exportação',
       );
     } catch (e) {
-      ObservabilityService.instance.warning(
+      _observabilityService.warning(
         'download_export_failure_persist_failed',
         context: {
           'id': updatedItem.id,
@@ -1667,7 +1679,7 @@ class DownloadService implements DownloadFeedService {
       );
     }
 
-    ObservabilityService.instance.warning(
+    _observabilityService.warning(
       'download_export_failed',
       context: {
         'id': updatedItem.id,
@@ -1684,7 +1696,7 @@ class DownloadService implements DownloadFeedService {
 
   Future<void> deleteDownload(DownloadItem item) async {
     await _withLock(item.id, () async {
-      await DatabaseService.instance.deleteDownload(item.id);
+      await _databaseService.deleteDownload(item.id);
 
       // Apagar arquivo
       try {
@@ -1693,7 +1705,7 @@ class DownloadService implements DownloadFeedService {
           await file.delete();
         }
       } catch (e) {
-        ObservabilityService.instance.warning(
+        _observabilityService.warning(
           'delete_download_file_failed',
           context: {
             'id': item.id,
@@ -1706,9 +1718,9 @@ class DownloadService implements DownloadFeedService {
       // Apagar arquivo exportado publicamente (MediaStore/Downloads/Music) no Android
       if (item.exportedPath != null && item.exportedPath!.isNotEmpty) {
         try {
-          await StorageService.instance.deleteExportedFile(item.exportedPath!);
+          await _storageService.deleteExportedFile(item.exportedPath!);
         } catch (e) {
-          ObservabilityService.instance.warning(
+          _observabilityService.warning(
             'delete_exported_file_failed',
             context: {
               'id': item.id,
@@ -1724,7 +1736,7 @@ class DownloadService implements DownloadFeedService {
   Future<MetadataBatchRepairResult> repairAudioMetadataBatch({
     void Function(int processed, int total)? onProgress,
   }) async {
-    final allDownloads = await DatabaseService.instance.getAllDownloads();
+    final allDownloads = await _databaseService.getAllDownloads();
     final audioCandidates = allDownloads
         .where((item) =>
             item.type == DownloadType.audio &&
@@ -1759,7 +1771,7 @@ class DownloadService implements DownloadFeedService {
               await _resolveOutputPathAfterDownload(workingItem.outputPath);
           if (resolvedPath == null) {
             failed++;
-            ObservabilityService.instance.warning(
+            _observabilityService.warning(
               'metadata_batch_repair_missing_file',
               context: {
                 'id': workingItem.id,
@@ -1802,7 +1814,7 @@ class DownloadService implements DownloadFeedService {
           final success = rewriteResult['success'] == true;
           if (!success) {
             failed++;
-            ObservabilityService.instance.warning(
+            _observabilityService.warning(
               'metadata_batch_repair_failed',
               context: {
                 'id': workingItem.id,
@@ -1829,12 +1841,12 @@ class DownloadService implements DownloadFeedService {
                 workingItem.copyWith(fileSizeBytes: await file.length());
           }
 
-          await DatabaseService.instance.updateDownload(workingItem);
-          DownloadProgressService.instance.addUpdate(workingItem);
+          await _databaseService.updateDownload(workingItem);
+          _downloadProgressService.addUpdate(workingItem);
           repaired++;
         } catch (e) {
           failed++;
-          ObservabilityService.instance.warning(
+          _observabilityService.warning(
             'metadata_batch_repair_exception',
             context: {
               'id': workingItem.id,
@@ -1850,7 +1862,7 @@ class DownloadService implements DownloadFeedService {
       onProgress?.call(processed, audioCandidates.length);
     }
 
-    ObservabilityService.instance.info(
+    _observabilityService.info(
       'metadata_batch_repair_finished',
       context: {
         'candidates': audioCandidates.length,
@@ -1871,7 +1883,7 @@ class DownloadService implements DownloadFeedService {
   Future<ArtworkBatchApplyResult> addMissingArtworkBatch({
     void Function(int processed, int total)? onProgress,
   }) async {
-    final allDownloads = await DatabaseService.instance.getAllDownloads();
+    final allDownloads = await _databaseService.getAllDownloads();
     final candidates = allDownloads
         .where(
           (item) =>
@@ -1883,7 +1895,7 @@ class DownloadService implements DownloadFeedService {
     // Atualização em lote deve consultar capa mais recente, não só dados em cache.
     _clearArtworkLookupCaches(includeArtworkService: true);
 
-    ObservabilityService.instance.info(
+    _observabilityService.info(
       'artwork_batch_apply_started',
       context: {'candidates': candidates.length},
     );
@@ -1920,7 +1932,7 @@ class DownloadService implements DownloadFeedService {
           final file = File(workingItem.outputPath);
           if (!await file.exists()) {
             failed++;
-            ObservabilityService.instance.warning(
+            _observabilityService.warning(
               'artwork_batch_apply_file_missing',
               context: {
                 'id': workingItem.id,
@@ -1941,7 +1953,7 @@ class DownloadService implements DownloadFeedService {
 
           if (rewriteResult['success'] != true) {
             failed++;
-            ObservabilityService.instance.warning(
+            _observabilityService.warning(
               'artwork_batch_apply_embed_failed',
               context: {
                 'id': workingItem.id,
@@ -1956,12 +1968,12 @@ class DownloadService implements DownloadFeedService {
             return;
           }
 
-          await DatabaseService.instance.updateDownload(workingItem);
-          DownloadProgressService.instance.addUpdate(workingItem);
+          await _databaseService.updateDownload(workingItem);
+          _downloadProgressService.addUpdate(workingItem);
 
           updated++;
         } catch (e) {
-          ObservabilityService.instance.warning(
+          _observabilityService.warning(
             'artwork_batch_apply_exception',
             context: {
               'id': workingItem.id,
@@ -1977,7 +1989,7 @@ class DownloadService implements DownloadFeedService {
       onProgress?.call(processed, candidates.length);
     }
 
-    ObservabilityService.instance.info(
+    _observabilityService.info(
       'artwork_batch_apply_finished',
       context: {
         'candidates': candidates.length,
@@ -1997,7 +2009,7 @@ class DownloadService implements DownloadFeedService {
 
   @override
   Future<List<DownloadItem>> getAllDownloads() async {
-    return DatabaseService.instance.getAllDownloads();
+    return _databaseService.getAllDownloads();
   }
 
   bool _hasArtwork(String? url) {
@@ -2029,7 +2041,7 @@ class DownloadService implements DownloadFeedService {
       );
     }
 
-    return ChaquoDownloadService.instance.downloadVideo(
+    return _chaquoDownloadService.downloadVideo(
       url: url,
       outputPath: outputPath,
       type: type,
@@ -2047,7 +2059,7 @@ class DownloadService implements DownloadFeedService {
       override(id, title);
       return;
     }
-    NotificationService.instance.showDownloadStarted(id, title);
+    _notificationService.showDownloadStarted(id, title);
   }
 
   void _showDownloadCompleted(String id, String title) {
@@ -2056,7 +2068,7 @@ class DownloadService implements DownloadFeedService {
       override(id, title);
       return;
     }
-    NotificationService.instance.showDownloadCompleted(id, title);
+    _notificationService.showDownloadCompleted(id, title);
   }
 
   void _showDownloadFailed(String id, String title, String error) {
@@ -2065,7 +2077,7 @@ class DownloadService implements DownloadFeedService {
       override(id, title, error);
       return;
     }
-    NotificationService.instance.showDownloadFailed(id, title, error);
+    _notificationService.showDownloadFailed(id, title, error);
   }
 
   Future<ExportResult> _exportToPublicCollection({
@@ -2082,7 +2094,7 @@ class DownloadService implements DownloadFeedService {
       );
     }
 
-    return StorageService.instance.exportToPublicCollection(
+    return _storageService.exportToPublicCollection(
       sourcePath: sourcePath,
       type: type,
       allowUserInteractionFallback: allowUserInteractionFallback,
@@ -2107,7 +2119,7 @@ class DownloadService implements DownloadFeedService {
       );
     }
 
-    return ChaquoDownloadService.instance.rewriteMetadata(
+    return _chaquoDownloadService.rewriteMetadata(
       filePath: filePath,
       title: title,
       artist: artist,
@@ -2119,7 +2131,7 @@ class DownloadService implements DownloadFeedService {
   Future<String?> _getArtistImage(String artist) async {
     final override = _getArtistImageOverride;
     if (override != null) return override(artist);
-    return ArtworkCacheService.instance.getArtistImage(artist);
+    return _artworkCacheService.getArtistImage(artist);
   }
 
   Future<String?> _getArtistImageCached(String artist) async {
@@ -2133,7 +2145,7 @@ class DownloadService implements DownloadFeedService {
   Future<String?> _getAlbumCover(String artist, String album) async {
     final override = _getAlbumCoverOverride;
     if (override != null) return override(artist, album);
-    return ArtworkCacheService.instance.getAlbumCover(artist, album);
+    return _artworkCacheService.getAlbumCover(artist, album);
   }
 
   Future<String?> _getAlbumCoverCached(String artist, String album) async {
@@ -2147,7 +2159,7 @@ class DownloadService implements DownloadFeedService {
   Future<String?> _getTrackCover(String artist, String title) async {
     final override = _getTrackCoverOverride;
     if (override != null) return override(artist, title);
-    return ArtworkCacheService.instance.getTrackCover(artist, title);
+    return _artworkCacheService.getTrackCover(artist, title);
   }
 
   Future<String?> _getTrackCoverCached(String artist, String title) async {

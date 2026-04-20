@@ -178,8 +178,9 @@ class _PlaylistSelectionScreenState
     final processedEntries = indicesToDownload
         .map((index) => _withGlobalMetadata(_entries[index]))
         .toList();
+    final downloadService = DownloadService.instance;
 
-    await DownloadService.instance.startDownload(
+    await downloadService.startDownload(
       url: widget.url,
       title: widget.title.replaceFirst('Playlist: ', ''),
       thumbnail: widget.thumbnail,

@@ -155,15 +155,14 @@ class ObservabilityService {
 
   Future<void> _loadTelemetryFromDatabase() async {
     try {
-      final prunedCount = await DatabaseService.instance
-          .pruneDownloadFailureEvents(keepDays: _defaultFailureRetentionDays);
-      final total = await DatabaseService.instance.getDownloadFailureTotal();
-      final byReason =
-          await DatabaseService.instance.getDownloadFailureCountByReason();
-      final byDay = await DatabaseService.instance
-          .getDownloadFailureHistoryByDay(
-              limitDays: _defaultFailureHistoryDays);
-      final last = await DatabaseService.instance.getLastDownloadFailureEvent();
+      final databaseService = DatabaseService.instance;
+      final prunedCount = await databaseService.pruneDownloadFailureEvents(
+          keepDays: _defaultFailureRetentionDays);
+      final total = await databaseService.getDownloadFailureTotal();
+      final byReason = await databaseService.getDownloadFailureCountByReason();
+      final byDay = await databaseService.getDownloadFailureHistoryByDay(
+          limitDays: _defaultFailureHistoryDays);
+      final last = await databaseService.getLastDownloadFailureEvent();
 
       _downloadFailuresTotal = total;
       _downloadFailuresByReason
@@ -208,7 +207,8 @@ class ObservabilityService {
     required DateTime occurredAt,
   }) async {
     try {
-      await DatabaseService.instance.insertDownloadFailureEvent(
+      final databaseService = DatabaseService.instance;
+      await databaseService.insertDownloadFailureEvent(
         downloadId: downloadId,
         title: title,
         source: source,

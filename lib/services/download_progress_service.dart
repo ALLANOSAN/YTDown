@@ -9,7 +9,7 @@ class DownloadProgressService {
       StreamController<DownloadItem?>.broadcast();
   bool _isDisposed = false;
 
-  Stream<DownloadItem?> get updates => _updatesController.stream;
+  Stream<DownloadItem?> updates() => _updatesController.stream;
 
   void addUpdate(DownloadItem? item) {
     if (_isDisposed || _updatesController.isClosed) return;

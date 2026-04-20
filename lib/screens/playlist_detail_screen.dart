@@ -12,14 +12,14 @@ class PlaylistDetailScreen extends ConsumerWidget {
   final Map<String, dynamic> playlist;
   const PlaylistDetailScreen({super.key, required this.playlist});
 
-  String get _playlistId => playlist['id']?.toString() ?? '';
+  String _playlistId() => playlist['id']?.toString() ?? '';
 
-  String get _playlistName => playlist['name']?.toString() ?? 'Playlist';
+  String _playlistName() => playlist['name']?.toString() ?? 'Playlist';
 
-  String? get _playlistThumbnail => playlist['thumbnail']?.toString();
+  String? _playlistThumbnail() => playlist['thumbnail']?.toString();
 
   void _refreshTracks(WidgetRef ref) {
-    ref.invalidate(playlistTracksProvider(_playlistId));
+    ref.invalidate(playlistTracksProvider(_playlistId()));
   }
 
   List<DownloadItem> _audioDownloads(List<DownloadItem> downloads) {
@@ -52,16 +52,17 @@ class PlaylistDetailScreen extends ConsumerWidget {
       pinned: true,
       backgroundColor: AppTheme.card,
       flexibleSpace: FlexibleSpaceBar(
-        title: Text(_playlistName),
+        title: Text(_playlistName()),
         background: Stack(
           fit: StackFit.expand,
           children: [
-            if (_playlistThumbnail != null && _playlistThumbnail!.isNotEmpty)
+            if (_playlistThumbnail() != null &&
+                _playlistThumbnail()!.isNotEmpty)
               CachedNetworkImage(
-                imageUrl: _playlistThumbnail!,
+                imageUrl: _playlistThumbnail()!,
                 fit: BoxFit.cover,
               ),
-            if (_playlistThumbnail == null || _playlistThumbnail!.isEmpty)
+            if (_playlistThumbnail() == null || _playlistThumbnail()!.isEmpty)
               Container(
                 color: AppTheme.card,
                 child: const Icon(
@@ -91,7 +92,7 @@ class PlaylistDetailScreen extends ConsumerWidget {
   }
 
   Widget _buildTrackList(WidgetRef ref) {
-    final tracksAsync = ref.watch(playlistTracksProvider(_playlistId));
+    final tracksAsync = ref.watch(playlistTracksProvider(_playlistId()));
 
     return tracksAsync.when(
       data: (tracks) {
@@ -127,13 +128,15 @@ class PlaylistDetailScreen extends ConsumerWidget {
                   icon: const Icon(Icons.remove_circle_outline_rounded,
                       color: AppTheme.textSecondary, size: 20),
                   onPressed: () async {
-                    await DatabaseService.instance
-                        .removeTrackFromPlaylist(_playlistId, track.id);
+                    final databaseService = DatabaseService.instance;
+                    await databaseService.removeTrackFromPlaylist(
+                        _playlistId(), track.id);
                     _refreshTracks(ref);
                   },
                 ),
                 onTap: () {
-                  PlayerService.instance.playTrack(track);
+                  final playerService = PlayerService.instance;
+                  playerService.playTrack(track);
                 },
               );
             },
@@ -152,7 +155,8 @@ class PlaylistDetailScreen extends ConsumerWidget {
   }
 
   void _showAddSongsPanel(BuildContext context, WidgetRef ref) async {
-    final downloads = await DatabaseService.instance.getAllDownloads();
+    final databaseService = DatabaseService.instance;
+    final downloads = await databaseService.getAllDownloads();
     final audioDownloads = _audioDownloads(downloads);
 
     if (!context.mounted) return;
@@ -190,8 +194,9 @@ class PlaylistDetailScreen extends ConsumerWidget {
                       title: Text(item.title,
                           style: const TextStyle(color: AppTheme.textPrimary)),
                       onTap: () async {
-                        await DatabaseService.instance
-                            .addTrackToPlaylist(_playlistId, item.id);
+                        final databaseService = DatabaseService.instance;
+                        await databaseService.addTrackToPlaylist(
+                            _playlistId(), item.id);
                         if (context.mounted) Navigator.pop(context);
                         _refreshTracks(ref);
                       },

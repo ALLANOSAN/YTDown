@@ -79,6 +79,7 @@ class ArtworkCacheService {
     if (!CommonUtils.hasText(artist)) return null;
 
     final key = _normalizeKeyPart(artist);
+    final lastFmService = LastFmService.instance;
     return _loadWithCache(
       key: key,
       cache: _artistCache,
@@ -87,7 +88,7 @@ class ArtworkCacheService {
         if (_getArtistImageOverride != null) {
           return _getArtistImageOverride!(artist);
         }
-        return LastFmService.instance.getArtistImage(artist);
+        return lastFmService.getArtistImage(artist);
       },
     );
   }
@@ -98,6 +99,7 @@ class ArtworkCacheService {
     }
 
     final key = _buildPairKey(artist, album);
+    final lastFmService = LastFmService.instance;
     return _loadWithCache(
       key: key,
       cache: _albumCache,
@@ -106,7 +108,7 @@ class ArtworkCacheService {
         if (_getAlbumCoverOverride != null) {
           return _getAlbumCoverOverride!(artist, album);
         }
-        return LastFmService.instance.getAlbumCover(artist, album);
+        return lastFmService.getAlbumCover(artist, album);
       },
     );
   }
@@ -117,6 +119,7 @@ class ArtworkCacheService {
     }
 
     final key = _buildPairKey(artist, title);
+    final lastFmService = LastFmService.instance;
     return _loadWithCache(
       key: key,
       cache: _trackCache,
@@ -125,7 +128,7 @@ class ArtworkCacheService {
         if (_getTrackCoverOverride != null) {
           return _getTrackCoverOverride!(artist, title);
         }
-        return LastFmService.instance.getTrackCover(artist, title);
+        return lastFmService.getTrackCover(artist, title);
       },
     );
   }
@@ -138,7 +141,8 @@ class ArtworkCacheService {
     _albumInFlight.clear();
     _trackInFlight.clear();
     if (includeUpstream) {
-      LastFmService.instance.clearCache();
+      final lastFmService = LastFmService.instance;
+      lastFmService.clearCache();
     }
   }
 }

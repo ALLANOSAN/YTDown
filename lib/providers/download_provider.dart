@@ -24,7 +24,8 @@ class DownloadsNotifier extends AsyncNotifier<List<DownloadItem>> {
   @override
   Future<List<DownloadItem>> build() async {
     // Load initial data
-    final items = await ref.read(downloadServiceProvider).getAllDownloads();
+    final downloadService = ref.read(downloadServiceProvider);
+    final items = await downloadService.getAllDownloads();
 
     // Listen to updates (like new items or status changes)
     ref.listen<AsyncValue<DownloadItem?>>(
@@ -114,11 +115,13 @@ final downloadsProvider =
 });
 
 final downloadUpdatesProvider = StreamProvider<DownloadItem?>((ref) {
-  return DownloadProgressService.instance.updates;
+  final progressService = DownloadProgressService.instance;
+  return progressService.updates();
 });
 
 final downloadProgressProvider = StreamProvider<Map<int, int>>((ref) {
-  return NotificationService.instance.progressStream;
+  final notificationService = NotificationService.instance;
+  return notificationService.progressStream;
 });
 
 final itemProgressProvider = Provider.family<double, DownloadItem>((ref, item) {

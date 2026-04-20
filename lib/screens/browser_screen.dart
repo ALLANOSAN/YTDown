@@ -19,9 +19,9 @@ class _BrowserScreenState extends ConsumerState<BrowserScreen> {
   InAppWebViewController? _webViewController;
   final TextEditingController _urlController = TextEditingController();
 
-  BrowserState get _browserState => ref.read(browserProvider);
+  BrowserState _browserState() => ref.read(browserProvider);
 
-  BrowserNotifier get _browserNotifier => ref.read(browserProvider.notifier);
+  BrowserNotifier _browserNotifier() => ref.read(browserProvider.notifier);
 
   void _loadUrl(String url) {
     _webViewController?.loadUrl(urlRequest: URLRequest(url: WebUri(url)));
@@ -63,31 +63,32 @@ class _BrowserScreenState extends ConsumerState<BrowserScreen> {
   }
 
   void _checkUrl(String url) {
-    if (url == _browserState.currentUrl) return;
-    _browserNotifier.setUrl(url);
+    if (url == _browserState().currentUrl) return;
+    _browserNotifier().setUrl(url);
     _urlController.text = url;
   }
 
   Future<void> _handleDownload() async {
-    final browserState = _browserState;
+    final browserState = _browserState();
     if (!browserState.isYoutube || browserState.isLoading) return;
 
-    _browserNotifier.setLoading(true);
+    _browserNotifier().setLoading(true);
     HapticFeedback.mediumImpact();
 
     try {
-      final info = await DownloadService.instance
-          .fetchVideoInfo(browserState.currentUrl);
+      final downloadService = DownloadService.instance;
+      final info =
+          await downloadService.fetchVideoInfo(browserState.currentUrl);
       if (!mounted) return;
 
-      _browserNotifier.setLoading(false);
+      _browserNotifier().setLoading(false);
 
       // Usa o handler centralizado para evitar duplicação
       await VideoInfoHandler.handleVideoInfo(
           context, info, browserState.currentUrl);
     } catch (e) {
       if (!mounted) return;
-      _browserNotifier.setLoading(false);
+      _browserNotifier().setLoading(false);
       _showBrowserErrorSnackBar('Erro ao processar link do YouTube');
     }
   }
@@ -151,7 +152,7 @@ class _BrowserScreenState extends ConsumerState<BrowserScreen> {
           Expanded(
             child: InAppWebView(
               initialUrlRequest: URLRequest(
-                  url: WebUri(_browserState
+                  url: WebUri(_browserState()
                       .currentUrl)), // read here to prevent recreation of webview
               initialSettings: InAppWebViewSettings(
                 javaScriptEnabled: true,
@@ -168,21 +169,21 @@ class _BrowserScreenState extends ConsumerState<BrowserScreen> {
               ),
               onWebViewCreated: (controller) {
                 _webViewController = controller;
-                _urlController.text = _browserState.currentUrl;
+                _urlController.text = _browserState().currentUrl;
               },
               onProgressChanged: (controller, progress) {
                 if (!mounted) return;
-                _browserNotifier.setProgress(progress / 100);
+                _browserNotifier().setProgress(progress / 100);
               },
               onLoadStart: (controller, url) {
-                final currentState = _browserState;
+                final currentState = _browserState();
                 if (url != null && url.toString() != currentState.currentUrl) {
-                  _browserNotifier.setInitialLoad(false);
+                  _browserNotifier().setInitialLoad(false);
                 }
               },
               onLoadStop: (controller, url) {
                 if (!mounted) return;
-                _browserNotifier.setInitialLoad(false);
+                _browserNotifier().setInitialLoad(false);
                 if (url != null) _checkUrl(url.toString());
               },
               onUpdateVisitedHistory: (controller, url, isReload) {
@@ -206,11 +207,11 @@ class _BrowserScreenState extends ConsumerState<BrowserScreen> {
                   return;
                 }
 
-                final currentState = _browserState;
+                final currentState = _browserState();
 
                 // Ignora erros na carga inicial
                 if (currentState.isInitialLoad) {
-                  _browserNotifier.setInitialLoad(false);
+                  _browserNotifier().setInitialLoad(false);
                   return;
                 }
 
@@ -218,7 +219,7 @@ class _BrowserScreenState extends ConsumerState<BrowserScreen> {
                 if (currentState.hasShownError) return;
 
                 // Mostra erro apenas para erros reais
-                _browserNotifier.setHasShownError(true);
+                _browserNotifier().setHasShownError(true);
                 ScaffoldMessenger.of(context)
                     .showSnackBar(
                       SnackBar(
@@ -231,7 +232,7 @@ class _BrowserScreenState extends ConsumerState<BrowserScreen> {
                     )
                     .closed
                     .then((_) {
-                  if (mounted) _browserNotifier.setHasShownError(false);
+                  if (mounted) _browserNotifier().setHasShownError(false);
                 });
               },
               onReceivedHttpError: (controller, request, errorResponse) {
@@ -251,16 +252,16 @@ class _BrowserScreenState extends ConsumerState<BrowserScreen> {
                   return;
                 }
 
-                final currentState = _browserState;
+                final currentState = _browserState();
 
                 if (currentState.isInitialLoad) {
-                  _browserNotifier.setInitialLoad(false);
+                  _browserNotifier().setInitialLoad(false);
                   return;
                 }
 
                 if (currentState.hasShownError) return;
 
-                _browserNotifier.setHasShownError(true);
+                _browserNotifier().setHasShownError(true);
                 ScaffoldMessenger.of(context)
                     .showSnackBar(
                       SnackBar(
@@ -277,7 +278,7 @@ class _BrowserScreenState extends ConsumerState<BrowserScreen> {
                     )
                     .closed
                     .then((_) {
-                  if (mounted) _browserNotifier.setHasShownError(false);
+                  if (mounted) _browserNotifier().setHasShownError(false);
                 });
               },
             ),

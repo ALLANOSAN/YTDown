@@ -64,87 +64,103 @@ class MainActivity : AudioServiceActivity() {
             flutterEngine.dartExecutor.binaryMessenger,
             "com.example.ytdown/chaquo"
         ).setMethodCallHandler { call, result ->
-            when (call.method) {
-                "initialize" -> {
-                    PythonBridge.initializePython(this)
-                    result.success(null)
-                }
-                "fetchVideoInfo" -> {
-                    val url = call.argument<String>("url") ?: ""
-                    launchIo("fetchVideoInfo") {
-                        DownloadService.fetchVideoInfo(this@MainActivity, url, result)
-                    }
-                }
-                "downloadVideo" -> {
-                    val url = call.argument<String>("url") ?: ""
-                    val outputPath = call.argument<String>("outputPath") ?: ""
-                    val type = call.argument<String>("type") ?: "video"
-                    val format = call.argument<String>("format") ?: ""
-                    val quality = call.argument<String>("quality") ?: "best"
-                    val artist = call.argument<String>("artist")?.trim()?.takeIf { it.isNotEmpty() }
-                    val album = call.argument<String>("album")?.trim()?.takeIf { it.isNotEmpty() }
-                    val artworkUrl = call.argument<String>("artworkUrl")?.trim()?.takeIf { it.isNotEmpty() }
-                    launchIo("downloadVideo") {
-                        DownloadService.downloadVideo(
-                            this@MainActivity,
-                            url,
-                            outputPath,
-                            type,
-                            format,
-                            quality,
-                            artist,
-                            album,
-                            artworkUrl,
-                            result,
-                        )
-                    }
-                }
-                "rewriteMetadata" -> {
-                    val filePath = call.argument<String>("filePath") ?: ""
-                    val title = call.argument<String>("title") ?: ""
-                    val artist = call.argument<String>("artist")?.trim()?.takeIf { it.isNotEmpty() }
-                    val album = call.argument<String>("album")?.trim()?.takeIf { it.isNotEmpty() }
-                    val artworkUrl = call.argument<String>("artworkUrl")?.trim()?.takeIf { it.isNotEmpty() }
-                    launchIo("rewriteMetadata") {
-                        DownloadService.rewriteMetadata(
-                            this@MainActivity,
-                            filePath,
-                            title,
-                            artist,
-                            album,
-                            artworkUrl,
-                            result,
-                        )
-                    }
-                }
-                "checkYtDlpUpdate" -> {
-                    val forceRemote = call.argument<Boolean>("forceRemote") ?: false
-                    launchIo("checkYtDlpUpdate") {
-                        DownloadService.checkYtDlpUpdate(this@MainActivity, forceRemote, result)
-                    }
-                }
-                "batchRescanFiles" -> {
-                    val paths = call.argument<List<String>>("paths") ?: emptyList()
-                    launchIo("batchRescanFiles") {
-                        DownloadService.batchRescanFiles(this@MainActivity, paths, result)
-                    }
-                }
-                "updateYtDlpIfNeeded" -> {
-                    val force = call.argument<Boolean>("force") ?: false
-                    launchIo("updateYtDlpIfNeeded") {
-                        DownloadService.updateYtDlpIfNeeded(this@MainActivity, force, result)
-                    }
-                }
-                "getNativeLibDir" -> {
-                    result.success(applicationInfo.nativeLibraryDir)
-                }
-                "checkFfmpeg" -> {
-                    launchIo("checkFfmpeg") {
-                        DownloadService.checkFfmpeg(this@MainActivity, result)
-                    }
-                }
-                else -> result.notImplemented()
+            if (call.method == "initialize") {
+                PythonBridge.initializePython(this)
+                result.success(null)
+                return@setMethodCallHandler
             }
+
+            if (call.method == "fetchVideoInfo") {
+                val url = call.argument<String>("url") ?: ""
+                launchIo("fetchVideoInfo") {
+                    DownloadService.fetchVideoInfo(this@MainActivity, url, result)
+                }
+                return@setMethodCallHandler
+            }
+
+            if (call.method == "downloadVideo") {
+                val url = call.argument<String>("url") ?: ""
+                val outputPath = call.argument<String>("outputPath") ?: ""
+                val type = call.argument<String>("type") ?: "video"
+                val format = call.argument<String>("format") ?: ""
+                val quality = call.argument<String>("quality") ?: "best"
+                val artist = call.argument<String>("artist")?.trim()?.takeIf { it.isNotEmpty() }
+                val album = call.argument<String>("album")?.trim()?.takeIf { it.isNotEmpty() }
+                val artworkUrl = call.argument<String>("artworkUrl")?.trim()?.takeIf { it.isNotEmpty() }
+                launchIo("downloadVideo") {
+                    DownloadService.downloadVideo(
+                        this@MainActivity,
+                        url,
+                        outputPath,
+                        type,
+                        format,
+                        quality,
+                        artist,
+                        album,
+                        artworkUrl,
+                        result,
+                    )
+                }
+                return@setMethodCallHandler
+            }
+
+            if (call.method == "rewriteMetadata") {
+                val filePath = call.argument<String>("filePath") ?: ""
+                val title = call.argument<String>("title") ?: ""
+                val artist = call.argument<String>("artist")?.trim()?.takeIf { it.isNotEmpty() }
+                val album = call.argument<String>("album")?.trim()?.takeIf { it.isNotEmpty() }
+                val artworkUrl = call.argument<String>("artworkUrl")?.trim()?.takeIf { it.isNotEmpty() }
+                launchIo("rewriteMetadata") {
+                    DownloadService.rewriteMetadata(
+                        this@MainActivity,
+                        filePath,
+                        title,
+                        artist,
+                        album,
+                        artworkUrl,
+                        result,
+                    )
+                }
+                return@setMethodCallHandler
+            }
+
+            if (call.method == "checkYtDlpUpdate") {
+                val forceRemote = call.argument<Boolean>("forceRemote") ?: false
+                launchIo("checkYtDlpUpdate") {
+                    DownloadService.checkYtDlpUpdate(this@MainActivity, forceRemote, result)
+                }
+                return@setMethodCallHandler
+            }
+
+            if (call.method == "batchRescanFiles") {
+                val paths = call.argument<List<String>>("paths") ?: emptyList()
+                launchIo("batchRescanFiles") {
+                    DownloadService.batchRescanFiles(this@MainActivity, paths, result)
+                }
+                return@setMethodCallHandler
+            }
+
+            if (call.method == "updateYtDlpIfNeeded") {
+                val force = call.argument<Boolean>("force") ?: false
+                launchIo("updateYtDlpIfNeeded") {
+                    DownloadService.updateYtDlpIfNeeded(this@MainActivity, force, result)
+                }
+                return@setMethodCallHandler
+            }
+
+            if (call.method == "getNativeLibDir") {
+                result.success(applicationInfo.nativeLibraryDir)
+                return@setMethodCallHandler
+            }
+
+            if (call.method == "checkFfmpeg") {
+                launchIo("checkFfmpeg") {
+                    DownloadService.checkFfmpeg(this@MainActivity, result)
+                }
+                return@setMethodCallHandler
+            }
+
+            result.notImplemented()
         }
 
         MethodChannel(
@@ -162,45 +178,49 @@ class MainActivity : AudioServiceActivity() {
             flutterEngine.dartExecutor.binaryMessenger,
             "com.example.ytdown/storage"
         ).setMethodCallHandler { call, result ->
-            when (call.method) {
-                "exportToPublicCollection" -> {
-                    val sourcePath = call.argument<String>("sourcePath") ?: ""
-                    val displayName = call.argument<String>("displayName") ?: ""
-                    val mediaType = call.argument<String>("mediaType") ?: "downloads"
-                    val mimeType = call.argument<String>("mimeType") ?: "application/octet-stream"
-                    val allowUserInteractionFallback = call.argument<Boolean>("allowUserInteractionFallback") ?: false
-                    launchIo("exportToPublicCollection") {
-                        StorageService.exportToPublicCollection(
-                            this@MainActivity,
-                            FilePath(sourcePath),
-                            displayName,
-                            MediaType(mediaType),
-                            MimeType(mimeType),
-                            allowUserInteractionFallback,
-                            result,
-                        )
-                    }
+            if (call.method == "exportToPublicCollection") {
+                val sourcePath = call.argument<String>("sourcePath") ?: ""
+                val displayName = call.argument<String>("displayName") ?: ""
+                val mediaType = call.argument<String>("mediaType") ?: "downloads"
+                val mimeType = call.argument<String>("mimeType") ?: "application/octet-stream"
+                val allowUserInteractionFallback = call.argument<Boolean>("allowUserInteractionFallback") ?: false
+                launchIo("exportToPublicCollection") {
+                    StorageService.exportToPublicCollection(
+                        this@MainActivity,
+                        FilePath(sourcePath),
+                        displayName,
+                        MediaType(mediaType),
+                        MimeType(mimeType),
+                        allowUserInteractionFallback,
+                        result,
+                    )
                 }
-                "syncEditedExportedFile" -> {
-                    val sourcePath = call.argument<String>("sourcePath") ?: ""
-                    val exportedPath = call.argument<String>("exportedPath") ?: ""
-                    launchIo("syncEditedExportedFile") {
-                        StorageService.syncEditedExportedFile(
-                            this@MainActivity,
-                            sourcePath,
-                            exportedPath,
-                            result,
-                        )
-                    }
-                }
-                "deleteExportedFile" -> {
-                    val exportedPath = call.argument<String>("exportedPath") ?: ""
-                    launchIo("deleteExportedFile") {
-                        StorageService.deleteExportedFile(this@MainActivity, exportedPath, result)
-                    }
-                }
-                else -> result.notImplemented()
+                return@setMethodCallHandler
             }
+
+            if (call.method == "syncEditedExportedFile") {
+                val sourcePath = call.argument<String>("sourcePath") ?: ""
+                val exportedPath = call.argument<String>("exportedPath") ?: ""
+                launchIo("syncEditedExportedFile") {
+                    StorageService.syncEditedExportedFile(
+                        this@MainActivity,
+                        sourcePath,
+                        exportedPath,
+                        result,
+                    )
+                }
+                return@setMethodCallHandler
+            }
+
+            if (call.method == "deleteExportedFile") {
+                val exportedPath = call.argument<String>("exportedPath") ?: ""
+                launchIo("deleteExportedFile") {
+                    StorageService.deleteExportedFile(this@MainActivity, exportedPath, result)
+                }
+                return@setMethodCallHandler
+            }
+
+            result.notImplemented()
         }
 
         val channel = MethodChannel(

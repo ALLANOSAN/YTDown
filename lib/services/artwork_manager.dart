@@ -25,7 +25,8 @@ class ArtworkManager {
     _trackInFlight.clear();
 
     if (includeService) {
-      ArtworkCacheService.instance.clear();
+      final artworkCacheService = ArtworkCacheService.instance;
+      artworkCacheService.clear();
     }
   }
 

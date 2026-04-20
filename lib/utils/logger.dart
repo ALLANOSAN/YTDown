@@ -34,7 +34,8 @@ class LocalLogger {
 
   static void _logReleaseMessage(String level, String message) {
     if (!kReleaseMode) return;
-    FirebaseCrashlytics.instance.log('[$level] ${_sanitize(message)}');
+    final crashlytics = FirebaseCrashlytics.instance;
+    crashlytics.log('[$level] ${_sanitize(message)}');
   }
 
   static void _recordReleaseError(
@@ -45,7 +46,8 @@ class LocalLogger {
   }) {
     if (!kReleaseMode) return;
 
-    FirebaseCrashlytics.instance.recordError(
+    final crashlytics = FirebaseCrashlytics.instance;
+    crashlytics.recordError(
       error ?? Exception(_sanitize(message)),
       stackTrace,
       reason: _sanitize(message),
@@ -56,7 +58,8 @@ class LocalLogger {
   static void initialize() {
     if (kReleaseMode) {
       // Registrar no Crashlytics que ele foi iniciado
-      FirebaseCrashlytics.instance.log('Logger inicializado.');
+      final crashlytics = FirebaseCrashlytics.instance;
+      crashlytics.log('Logger inicializado.');
     }
   }
 

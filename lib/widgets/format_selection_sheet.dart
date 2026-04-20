@@ -64,21 +64,33 @@ class _FormatSelectionSheetState extends State<FormatSelectionSheet>
   }
 
   Future<void> _checkFavorite() async {
-    final isFav = await DatabaseService.instance.isFavorite(widget.url);
-    if (mounted) {
-      setState(() => _isFavorite = isFav);
+    try {
+      final databaseService = DatabaseService.instance;
+      final isFav = await databaseService.isFavorite(widget.url);
+      if (mounted) {
+        setState(() => _isFavorite = isFav);
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() => _isFavorite = false);
+      }
     }
   }
 
   Future<void> _toggleFavorite() async {
-    await DatabaseService.instance.toggleFavorite(
-      url: widget.url,
-      title: widget.title,
-      thumbnail: widget.thumbnail,
-      type: widget.isPlaylist ? 'playlist' : 'video',
-    );
-    _checkFavorite();
-    HapticFeedback.mediumImpact();
+    try {
+      final databaseService = DatabaseService.instance;
+      await databaseService.toggleFavorite(
+        url: widget.url,
+        title: widget.title,
+        thumbnail: widget.thumbnail,
+        type: widget.isPlaylist ? 'playlist' : 'video',
+      );
+      _checkFavorite();
+      HapticFeedback.mediumImpact();
+    } catch (_) {
+      // Ignore favorite toggle errors in UI flow.
+    }
   }
 
   @override
@@ -105,7 +117,7 @@ class _FormatSelectionSheetState extends State<FormatSelectionSheet>
     return trimmed;
   }
 
-  String get _videoTitleWithContext {
+  String _videoTitleWithContext() {
     if (!widget.isPlaylist || widget.entries == null) {
       return widget.title;
     }
@@ -132,8 +144,9 @@ class _FormatSelectionSheetState extends State<FormatSelectionSheet>
     HapticFeedback.heavyImpact();
 
     final isAudio = _tabController.index == 0;
+    final downloadService = DownloadService.instance;
 
-    await DownloadService.instance.startDownload(
+    await downloadService.startDownload(
       url: widget.url,
       title: widget.title,
       thumbnail: widget.thumbnail,
@@ -223,7 +236,7 @@ class _FormatSelectionSheetState extends State<FormatSelectionSheet>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  _videoTitleWithContext,
+                  _videoTitleWithContext(),
                   style: const TextStyle(
                     color: AppTheme.textPrimary,
                     fontSize: 13,

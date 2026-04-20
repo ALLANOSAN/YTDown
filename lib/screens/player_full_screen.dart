@@ -119,9 +119,9 @@ class PlayerFullScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final playerService = ref.read(playerServiceProvider);
     final trackAsync = ref.watch(currentTrackProvider);
-    final track = trackAsync.value ??
-        PlayerService.instance.currentTrack; // Fallback sync value
+    final track = trackAsync.value ?? playerService.currentTrack;
 
     if (track == null) {
       return const Scaffold(
@@ -173,9 +173,9 @@ class PlayerFullScreen extends ConsumerWidget {
                   const Spacer(),
                   _buildTrackInfo(track),
                   const SizedBox(height: 40),
-                  _buildProgressBar(ref),
+                  _buildProgressBar(ref, playerService),
                   const SizedBox(height: 40),
-                  _buildControls(ref),
+                  _buildControls(ref, playerService),
                   const Spacer(flex: 2),
                 ],
               ),
@@ -269,28 +269,44 @@ class PlayerFullScreen extends ConsumerWidget {
   }
 
   Widget _buildTrackInfo(DownloadItem track) {
-    return Column(
-      children: [
-        Text(
-          track.title,
-          style: const TextStyle(
-              color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
-          textAlign: TextAlign.center,
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-        ).animate().fadeIn(duration: 600.ms).slideY(begin: 0.2),
-        const SizedBox(height: 12),
-        Text(
-          _trackArtistAlbumLabel(track),
-          style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.7), fontSize: 16),
-          textAlign: TextAlign.center,
-        ).animate().fadeIn(delay: 200.ms, duration: 600.ms).slideY(begin: 0.2),
-      ],
+    return Semantics(
+      label: _trackArtistAlbumLabel(track),
+      child: Column(
+        children: [
+          Text(
+            track.title,
+            style: const TextStyle(
+                color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
+            textAlign: TextAlign.center,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ).animate().fadeIn(duration: 600.ms).slideY(begin: 0.2),
+          const SizedBox(height: 12),
+          Text(
+            track.artist ?? _unknownArtistLabel,
+            style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.7), fontSize: 16),
+            textAlign: TextAlign.center,
+          )
+              .animate()
+              .fadeIn(delay: 200.ms, duration: 600.ms)
+              .slideY(begin: 0.2),
+          const SizedBox(height: 6),
+          Text(
+            track.album ?? _unknownAlbumLabel,
+            style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.65), fontSize: 14),
+            textAlign: TextAlign.center,
+          )
+              .animate()
+              .fadeIn(delay: 300.ms, duration: 600.ms)
+              .slideY(begin: 0.2),
+        ],
+      ),
     );
   }
 
-  Widget _buildProgressBar(WidgetRef ref) {
+  Widget _buildProgressBar(WidgetRef ref, PlayerService playerService) {
     final position = ref.watch(positionProvider).value ?? Duration.zero;
     final duration = ref.watch(durationProvider).value ?? Duration.zero;
 
@@ -313,8 +329,7 @@ class PlayerFullScreen extends ConsumerWidget {
                 ? duration.inMilliseconds.toDouble()
                 : 1.0,
             onChanged: (value) {
-              PlayerService.instance
-                  .seek(Duration(milliseconds: value.toInt()));
+              playerService.seek(Duration(milliseconds: value.toInt()));
             },
           ),
         ),
@@ -338,7 +353,7 @@ class PlayerFullScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildControls(WidgetRef ref) {
+  Widget _buildControls(WidgetRef ref, PlayerService playerService) {
     final playerState = ref.watch(playerStateProvider).value;
     final playing = playerState?.playing ?? false;
     final loopMode = ref.watch(loopModeProvider).value ?? LoopMode.off;
@@ -350,41 +365,52 @@ class PlayerFullScreen extends ConsumerWidget {
     final repeatColor =
         loopMode == LoopMode.off ? Colors.white54 : Colors.white;
 
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+    return Wrap(
+      alignment: WrapAlignment.center,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      spacing: 12,
+      runSpacing: 8,
       children: [
         IconButton(
+          constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+          padding: const EdgeInsets.all(8),
           icon: const Icon(Icons.shuffle_rounded,
               color: Colors.white54, size: 24),
           onPressed: () {},
         ),
         IconButton(
+          constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+          padding: const EdgeInsets.all(8),
           icon: const Icon(Icons.skip_previous_rounded,
-              color: Colors.white, size: 48),
-          onPressed: () => PlayerService.instance.previous(),
+              color: Colors.white, size: 44),
+          onPressed: () => playerService.previous(),
         ),
         Container(
-          width: 80,
-          height: 80,
+          width: 72,
+          height: 72,
           decoration:
               const BoxDecoration(shape: BoxShape.circle, color: Colors.white),
           child: IconButton(
+            constraints: const BoxConstraints(minWidth: 56, minHeight: 56),
             icon: Icon(playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                color: Colors.black, size: 48),
-            onPressed: () => playing
-                ? PlayerService.instance.pause()
-                : PlayerService.instance.resume(),
+                color: Colors.black, size: 42),
+            onPressed: () =>
+                playing ? playerService.pause() : playerService.resume(),
           ),
         ),
         IconButton(
+          constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+          padding: const EdgeInsets.all(8),
           icon: const Icon(Icons.skip_next_rounded,
-              color: Colors.white, size: 48),
-          onPressed: () => PlayerService.instance.next(),
+              color: Colors.white, size: 44),
+          onPressed: () => playerService.next(),
         ),
         IconButton(
+          constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+          padding: const EdgeInsets.all(8),
           icon: Icon(repeatIcon, color: repeatColor, size: 30),
           tooltip: 'Repetir',
-          onPressed: () => PlayerService.instance.cycleLoopMode(),
+          onPressed: () => playerService.cycleLoopMode(),
         ),
       ],
     );

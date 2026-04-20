@@ -197,10 +197,11 @@ class ChaquoDownloadService {
   }
 
   Future<void> _checkAndUpdateYtDlpInBackground() async {
+    final observability = ObservabilityService.instance;
     try {
       final check = await checkYtDlpUpdate(forceRemote: false);
       if (check['success'] != true) {
-        ObservabilityService.instance.warning(
+        observability.warning(
           'yt_dlp_update_check_failed',
           context: {'error': check['error'] as Object?},
         );
@@ -211,7 +212,7 @@ class ChaquoDownloadService {
       final latestVersion = check['latest_version']?.toString();
       final updateAvailable = check['update_available'] == true;
 
-      ObservabilityService.instance.info(
+      observability.info(
         'yt_dlp_update_check',
         context: {
           'currentVersion': currentVersion,
@@ -227,7 +228,7 @@ class ChaquoDownloadService {
       final updated = updateResult['updated'] == true;
 
       if (!success) {
-        ObservabilityService.instance.warning(
+        observability.warning(
           'yt_dlp_update_runtime_failed',
           context: {'error': updateResult['error'] as Object?},
         );
@@ -238,7 +239,7 @@ class ChaquoDownloadService {
         return;
       }
 
-      ObservabilityService.instance.info(
+      observability.info(
         'yt_dlp_updated_runtime',
         context: {
           'currentVersion': updateResult['current_version'] as Object?,
@@ -246,7 +247,7 @@ class ChaquoDownloadService {
         },
       );
     } catch (e) {
-      ObservabilityService.instance.warning(
+      observability.warning(
         'yt_dlp_update_background_exception',
         context: {'error': e.toString()},
       );
@@ -271,6 +272,7 @@ class ChaquoDownloadService {
       throw Exception(_runtimeUnavailableDownloadError);
     }
 
+    final observability = ObservabilityService.instance;
     try {
       LocalLogger.debug('🔵 [ChaquoDownloadService] Buscando info: $url');
 
@@ -290,8 +292,7 @@ class ChaquoDownloadService {
 
       throw Exception(response.error ?? 'Erro desconhecido');
     } on TimeoutException catch (e) {
-      ObservabilityService.instance
-          .warning('fetch_timeout', context: {'url': url});
+      observability.warning('fetch_timeout', context: {'url': url});
       LocalLogger.debug('❌ [ChaquoDownloadService] Timeout: $e');
       throw Exception(
           'Serviço de extração não respondeu a tempo. Verifique sua conexão.');

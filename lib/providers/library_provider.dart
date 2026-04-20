@@ -124,8 +124,9 @@ class LibraryNotifier extends AsyncNotifier<LibraryState> {
 
     if (forceScan || !scanComplete) {
       _markScanningInCurrentState();
+      final scannerService = FileSystemScannerService.instance;
 
-      final result = await FileSystemScannerService.instance.performFullScan();
+      final result = await scannerService.performFullScan();
       if (result.hasOrphans) {
         debugPrint(
             '✅ ${result.filesRegistered} arquivos órfãos encontrados e registrados!');

@@ -19,12 +19,12 @@ final currentTrackProvider = StreamProvider<DownloadItem?>((ref) {
 
 final positionProvider = StreamProvider<Duration>((ref) {
   final playerService = _watchPlayerService(ref);
-  return playerService.player.positionStream;
+  return playerService.positionStream;
 });
 
 final playerStateProvider = StreamProvider<PlayerState>((ref) {
   final playerService = _watchPlayerService(ref);
-  return playerService.player.playerStateStream;
+  return playerService.playerStateStream;
 });
 
 final durationProvider = StreamProvider<Duration?>((ref) {
@@ -39,6 +39,9 @@ final loopModeProvider = StreamProvider<LoopMode>((ref) {
 
 class ArtToggleNotifier extends Notifier<bool> {
   Timer? _timer;
+  final bool enableTimer;
+
+  ArtToggleNotifier({this.enableTimer = true});
 
   void _cancelTimer() {
     _timer?.cancel();
@@ -56,6 +59,7 @@ class ArtToggleNotifier extends Notifier<bool> {
 
   void _startTimer() {
     _cancelTimer();
+    if (!enableTimer) return;
     _timer = Timer.periodic(const Duration(seconds: 10), _onTick);
   }
 

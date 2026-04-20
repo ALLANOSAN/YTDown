@@ -49,7 +49,17 @@ app.*.map.json
 .secrets.json
 *.env
 
-
 # Erros
 
 build_error.txt
+
+# Ignorar APKs e binários grandes
+*.apk
+*.tar.gz
+*.so
+*.bin
+
+# Ignorar intermediários do Android (garante que builds não sejam versionados)
+android/build/
+android/app/outputs/
+android/app/intermediates/

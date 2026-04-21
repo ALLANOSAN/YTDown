@@ -11,7 +11,7 @@ class DownloadWorker(
     context: Context,
     params: WorkerParameters,
     private val repository: DownloadRepository,
-    private val ytDlp: YtDlpWrapper
+    private val engine: DownloadEngine
 ) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result {

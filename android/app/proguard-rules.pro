@@ -1,16 +1,4 @@
 # ============================================
-# Flutter
-# ============================================
--keep class io.flutter.app.** { *; }
--keep class io.flutter.plugin.** { *; }
--keep class io.flutter.util.** { *; }
--keep class io.flutter.view.** { *; }
--keep class io.flutter.** { *; }
--keep class io.flutter.embedding.engine.** { *; }
--keep class io.flutter.embedding.** { *; }
--keep class io.flutter.plugins.** { *; }
-
-# ============================================
 # Chaquopy / Python
 # ============================================
 -keep class com.chaquo.python.** { *; }
@@ -31,23 +19,6 @@
 -dontwarn kotlinx.**
 
 # ============================================
-# Dart model classes (reflection / serialization)
-# ============================================
-# DownloadItem, DownloadStatus, DownloadType, ExportStatus, FormatOptions
-# These classes use toMap()/fromMap() serialization patterns
--keep class com.example.ytdown.** { *; }
--keepclassmembers class com.example.ytdown.** {
-    *** toMap();
-    <init>(java.util.Map);
-}
-
-# Keep enum values (used in serialization)
--keepclassmembers enum * {
-    public static **[] values();
-    public static ** valueOf(java.lang.String);
-}
-
-# ============================================
 # General serialization safety
 # ============================================
 -keepattributes *Annotation*, Signature, InnerClasses, EnclosingMethod
@@ -62,18 +33,40 @@
 -keep interface androidx.** { *; }
 
 # ============================================
+# Room Database & WorkManager
+# ============================================
+# Room: Necessário para que as queries e o banco de dados funcionem
+-keep class * extends androidx.room.RoomDatabase
+-dontwarn androidx.room.paging.**
+
+# WorkManager: Garante que os workers de download não sejam removidos
+-keep class * extends androidx.work.ListenableWorker
+-keep class * extends androidx.work.Worker
+
+# ============================================
 # FFmpeg / Media
 # ============================================
 -dontwarn com.arthenica.**
 -keep class com.arthenica.** { *; }
 
 # ============================================
+# JNI / Native Bridge
+# ============================================
+# Mantém todos os métodos nativos (JNI). Vital para Chaquopy e bibliotecas .so
+-keepclasseswithmembernames class * {
+    native <methods>;
+}
+
+# ============================================
+# Domain Models & Serialization
+# ============================================
+# Mantém as classes de domínio e Value Classes. 
+# Se o R8 renomear os campos, o JSON vindo do Python não será mapeado corretamente.
+-keep class com.example.ytdown.core.domain.** { *; }
+-keep class com.example.ytdown.core.business.** { *; }
+-keepclassmembers class com.example.ytdown.core.domain.** { *; }
+
+# ============================================
 # Desugar / JDK
 # ============================================
 -dontwarn java.lang.invoke.LambdaMetafactory
-
-# ============================================
-# Google Play Core (referenced by Flutter but not needed for non-Play-Store builds)
-# ============================================
--dontwarn com.google.android.play.core.**
--keep class com.google.android.play.core.** { *; }

@@ -31,12 +31,19 @@ class DownloadMetadataManager(
     fun rewriteMetadata(
         context: Context,
         path: FilePath,
-        title: MediaTitle
+        metadata: MediaMetadata
     ) {
         val mime = resolver.fromPath(path)
         scanner.scanSync(path, mime)
         
         // Chamar ponte Python para os metadados reais
-        PythonBridge.invokePythonJson(context, "rewrite_file_metadata", path.value, title.value)
+        PythonBridge.invokePythonJson(
+            context, 
+            "rewrite_file_metadata", 
+            path.value, 
+            metadata.title.value,
+            metadata.artist.value,
+            metadata.album.value
+        )
     }
 }

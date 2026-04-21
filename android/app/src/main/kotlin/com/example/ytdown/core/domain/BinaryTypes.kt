@@ -26,6 +26,12 @@ value class ArtistName(val value: String)
 @JvmInline
 value class AlbumName(val value: String)
 
+data class MediaMetadata(
+    val title: MediaTitle,
+    val artist: ArtistName,
+    val album: AlbumName
+)
+
 data class BinaryConfig(val name: String, val asset: AssetPath)
 
 @JvmInline

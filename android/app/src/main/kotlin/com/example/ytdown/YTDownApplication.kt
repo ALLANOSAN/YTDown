@@ -5,3 +5,7 @@ import dagger.hilt.android.HiltAndroidApp
 
 @HiltAndroidApp
 class YTDownApplication : Application()
+    override fun onCreate() {
+        super.onCreate()
+        PythonBridge.initializePython(this)
+    }

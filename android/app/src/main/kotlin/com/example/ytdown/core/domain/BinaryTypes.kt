@@ -32,6 +32,25 @@ data class MediaMetadata(
     val album: AlbumName
 )
 
+data class VideoPreviewItem(
+    val title: MediaTitle,
+    val url: VideoUrl,
+    val thumbnail: String?,
+    val duration: Long,
+    val isSelected: Boolean = true // Para seleção em playlists
+)
+
+data class DownloadOptions(
+    val type: DownloadType,
+    val format: String, // Ex: "mp3", "mp4"
+    val quality: String // Ex: "192", "1080p"
+)
+
+enum class DownloadType(val value: String) {
+    AUDIO("audio"),
+    VIDEO("video")
+}
+
 data class BinaryConfig(val name: String, val asset: AssetPath)
 
 @JvmInline

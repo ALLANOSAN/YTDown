@@ -353,36 +353,6 @@ def check_yt_dlp_update(
         )
 
 
-def _extract_runtime_package_archive(
-    package_url,
-    temp_package_path,
-    extract_dir,
-    is_safe_path,
-):
-    if package_url.endswith(".whl") or package_url.endswith(".zip"):
-        with zipfile.ZipFile(temp_package_path, "r") as zf:
-            for member in zf.namelist():
-                if not is_safe_path(extract_dir, member):
-                    raise Exception(
-                        f"Caminho inseguro detectado na extração (Zip Slip): {member}"
-                    )
-            zf.extractall(extract_dir)
-        return
-
-    if package_url.endswith(".tar.gz") or package_url.endswith(".tgz"):
-        with tarfile.open(temp_package_path, "r:gz") as tf:
-            for member in tf.getmembers():
-                if not is_safe_path(extract_dir, member.name):
-                    raise Exception(
-                        "Caminho inseguro detectado na extração "
-                        f"(Zip Slip): {member.name}"
-                    )
-            tf.extractall(extract_dir)
-        return
-
-    raise Exception("Formato de pacote não suportado para atualização runtime")
-
-
 def _install_yt_dlp_package(app_files_dir, package_url, expected_sha256=None):
     _ensure_runtime_root(app_files_dir)
     runtime_pkg = _runtime_yt_dlp_dir(app_files_dir)
@@ -417,12 +387,24 @@ def _install_yt_dlp_package(app_files_dir, package_url, expected_sha256=None):
                     f"(esperado={expected_sha256}, atual={actual_sha256})"
                 )
 
-        _extract_runtime_package_archive(
-            package_url,
-            temp_package_path,
-            extract_dir,
-            _is_safe_path,
-        )
+        if package_url.endswith(".whl") or package_url.endswith(".zip"):
+            with zipfile.ZipFile(temp_package_path, "r") as zf:
+                for member in zf.namelist():
+                    if not _is_safe_path(extract_dir, member):
+                        raise Exception(
+                            f"Caminho inseguro detectado na extração (Zip Slip): {member}"
+                        )
+                zf.extractall(extract_dir)
+        elif package_url.endswith(".tar.gz") or package_url.endswith(".tgz"):
+            with tarfile.open(temp_package_path, "r:gz") as tf:
+                for member in tf.getmembers():
+                    if not _is_safe_path(extract_dir, member.name):
+                        raise Exception(
+                            f"Caminho inseguro detectado na extração (Zip Slip): {member.name}"
+                        )
+                tf.extractall(extract_dir)
+        else:
+            raise Exception("Formato de pacote não suportado para atualização runtime")
 
         source_pkg_dir = None
         for root, dirs, files in os.walk(extract_dir):
@@ -576,19 +558,12 @@ def _guess_artist_from_title(title):
     return ""
 
 
-def _first_resolved_metadata_value(candidates):
-    for candidate in candidates:
-        normalized = _strip_generated_suffix(candidate)
-        if normalized and not _is_unknown_label(normalized):
-            return normalized
-    return ""
-
-
 def _resolve_metadata(title, artist, album, info):
     resolved_title = _strip_generated_suffix(title or info.get("title") or "Sem título")
     if not resolved_title or _is_unknown_label(resolved_title):
         resolved_title = "Sem título"
 
+    resolved_artist = ""
     artist_candidates = [
         artist,
         info.get("artist"),
@@ -599,39 +574,37 @@ def _resolve_metadata(title, artist, album, info):
         info.get("uploader_id"),
         _guess_artist_from_title(resolved_title),
     ]
-    resolved_artist = _first_resolved_metadata_value(artist_candidates)
+    for candidate in artist_candidates:
+        normalized = _strip_generated_suffix(candidate)
+        if normalized and not _is_unknown_label(normalized):
+            resolved_artist = normalized
+            break
 
     if not resolved_artist:
         title_artist_fallback = _guess_artist_from_title(resolved_title)
         if title_artist_fallback and not _is_unknown_label(title_artist_fallback):
             resolved_artist = title_artist_fallback
-    if not resolved_artist and resolved_title and not _is_unknown_label(resolved_title):
-        resolved_artist = resolved_title
-    if not resolved_artist:
-        resolved_artist = "YTDown"
+        elif resolved_title and not _is_unknown_label(resolved_title):
+            resolved_artist = resolved_title
+        else:
+            resolved_artist = "YTDown"
 
+    resolved_album = ""
     album_candidates = [
         album,
         info.get("album"),
         info.get("playlist_title"),
     ]
-    resolved_album = _first_resolved_metadata_value(album_candidates)
+    for candidate in album_candidates:
+        normalized = _strip_generated_suffix(candidate)
+        if normalized and not _is_unknown_label(normalized):
+            resolved_album = normalized
+            break
 
     if not resolved_album:
         resolved_album = "YTDown"
 
     return resolved_title, resolved_artist, resolved_album
-
-
-def _map_fetch_video_info_error_message(error_msg):
-    normalized = str(error_msg)
-    if "Sign in to confirm" in normalized:
-        return "YouTube bloqueou a requisição (Bot check)"
-    if "Video unavailable" in normalized:
-        return "Vídeo indisponível"
-    if "confirm your age" in normalized:
-        return "Vídeo com restrição de idade"
-    return normalized
 
 
 def fetch_video_info(url, app_files_dir=None):
@@ -666,9 +639,6 @@ def fetch_video_info(url, app_files_dir=None):
                 )
 
             is_playlist = info.get("_type", "video") == "playlist"
-            entries = None
-            if is_playlist:
-                entries = info.get("entries", [])
 
             return json.dumps(
                 {
@@ -682,12 +652,19 @@ def fetch_video_info(url, app_files_dir=None):
                         "artist": info.get("artist") or info.get("uploader", ""),
                         "album": info.get("album", "YTDown"),
                         "is_playlist": is_playlist,
-                        "entries": entries,
+                        "entries": info.get("entries", []) if is_playlist else None,
                     },
                 }
             )
     except Exception as e:
-        error_msg = _map_fetch_video_info_error_message(str(e))
+        error_msg = str(e)
+        if "Sign in to confirm" in error_msg:
+            error_msg = "YouTube bloqueou a requisição (Bot check)"
+        elif "Video unavailable" in error_msg:
+            error_msg = "Vídeo indisponível"
+        elif "confirm your age" in error_msg:
+            error_msg = "Vídeo com restrição de idade"
+
         return json.dumps(
             _failure_payload(
                 error_msg,
@@ -695,137 +672,6 @@ def fetch_video_info(url, app_files_dir=None):
                 retryable=_is_retryable_network_error(e),
             )
         )
-
-
-def _resolve_ffmpeg_binary(native_lib_dir):
-    if not native_lib_dir:
-        return None
-
-    potential_ffmpeg = os.path.join(native_lib_dir, "libffmpeg.so")
-    if os.path.exists(potential_ffmpeg):
-        return potential_ffmpeg
-
-    return os.path.join(native_lib_dir, "ffmpeg")
-
-
-def _resolve_audio_codec(selected_format, quality):
-    allowed_audio_formats = {"mp3", "m4a", "aac", "flac", "wav", "opus", "ogg"}
-    if selected_format in allowed_audio_formats:
-        return selected_format
-    if str(quality) == "320":
-        return "mp3"
-    return "m4a"
-
-
-def _resolve_preferred_audio_quality(quality, desired_codec):
-    preferred_quality = "192"
-    quality_str = str(quality)
-    if quality_str.isdigit():
-        preferred_quality = quality_str
-    if desired_codec in {"wav", "flac"}:
-        return "0"
-    return preferred_quality
-
-
-def _resolve_audio_fallback_extension(desired_codec):
-    if desired_codec == "aac":
-        return "m4a"
-    return desired_codec
-
-
-def _resolve_video_container(selected_format):
-    supported_containers = {"mp4", "mkv", "webm"}
-    if selected_format in supported_containers:
-        return selected_format
-    return "mp4"
-
-
-def _resolve_video_height(quality):
-    quality_text = str(quality)
-    if quality_text == "best":
-        return "1080"
-    normalized_height = quality_text.replace("p", "")
-    if normalized_height.isdigit():
-        return normalized_height
-    return "1080"
-
-
-def _build_audio_download_options(
-    ydl_opts, selected_format, quality, has_ffmpeg, output_path
-):
-    desired_codec = _resolve_audio_codec(selected_format, quality)
-    preferred_quality = _resolve_preferred_audio_quality(quality, desired_codec)
-
-    if has_ffmpeg:
-        ydl_opts.update(
-            {
-                "format": "bestaudio/best",
-                "postprocessors": [
-                    {
-                        "key": "FFmpegExtractAudio",
-                        "preferredcodec": desired_codec,
-                        "preferredquality": preferred_quality,
-                    }
-                ],
-            }
-        )
-        return ydl_opts, output_path
-
-    fallback_ext = _resolve_audio_fallback_extension(desired_codec)
-    if fallback_ext in {"mp3", "wav", "flac", "ogg"}:
-        old_ext = fallback_ext
-        print(f"⚠️ Forçando fallback de {old_ext} para m4a devido a falta de FFmpeg")
-        fallback_ext = "m4a"
-        if output_path.lower().endswith(f".{old_ext}"):
-            output_path = output_path[: -(len(old_ext) + 1)] + ".m4a"
-
-    ydl_opts.update(
-        {
-            "format": f"bestaudio[ext={fallback_ext}]/bestaudio/best",
-            "outtmpl": output_path,
-        }
-    )
-    return ydl_opts, output_path
-
-
-def _build_video_download_options(ydl_opts, selected_format, quality, has_ffmpeg):
-    desired_container = _resolve_video_container(selected_format)
-    height = _resolve_video_height(quality)
-
-    if has_ffmpeg:
-        ydl_opts.update(
-            {
-                "format": f"bestvideo[height<={height}]+bestaudio/best[height<={height}]",
-                "merge_output_format": desired_container,
-            }
-        )
-        return ydl_opts, None
-
-    ydl_opts.update(
-        {
-            "format": f"best[height<={height}][ext={desired_container}]/best[height<={height}]",
-        }
-    )
-    return ydl_opts, None
-
-
-def _build_download_options(
-    ydl_opts, format_type, selected_format, quality, has_ffmpeg, output_path
-):
-    if format_type == "audio":
-        return _build_audio_download_options(
-            ydl_opts,
-            selected_format,
-            quality,
-            has_ffmpeg,
-            output_path,
-        )
-    return _build_video_download_options(
-        ydl_opts,
-        selected_format,
-        quality,
-        has_ffmpeg,
-    )
 
 
 def download_video(
@@ -854,12 +700,23 @@ def download_video(
             downloaded = d.get("downloaded_bytes", 0)
             if total > 0:
                 progress_data["percent"] = int((downloaded / total) * 100)
-        if d["status"] == "finished":
+        elif d["status"] == "finished":
             progress_data["percent"] = 100
 
-    ffmpeg_bin = _resolve_ffmpeg_binary(native_lib_dir)
-
-    has_ffmpeg = bool(ffmpeg_bin and os.path.exists(ffmpeg_bin))
+    # Configuração de FFmpeg
+    ffmpeg_bin = None
+    if native_lib_dir:
+        # No Android, binários nativos estão em jniLibs -> nativeLibDir
+        # Normalmente ffmpeg está em libffmpeg.so, mas chaquo-ffmpeg empacota como binários
+        # Tentamos localizar o binário executável
+        potential_ffmpeg = os.path.join(
+            native_lib_dir, "libffmpeg.so"
+        )  # Alguns casos renomeiam
+        if os.path.exists(potential_ffmpeg):
+            ffmpeg_bin = potential_ffmpeg
+        else:
+            # Caso padrão chaquo-ffmpeg
+            ffmpeg_bin = os.path.join(native_lib_dir, "ffmpeg")
 
     ydl_opts = {
         "outtmpl": output_path,
@@ -871,21 +728,83 @@ def download_video(
         "nocheckcertificate": True,
     }
 
-    if has_ffmpeg:
+    if ffmpeg_bin and os.path.exists(ffmpeg_bin):
         ydl_opts["ffmpeg_location"] = ffmpeg_bin
         print(f"🚀 Usando FFmpeg: {ffmpeg_bin}")
-    if not has_ffmpeg:
+    else:
         print("⚠️ FFmpeg não encontrado, usando modo nativo limitado")
 
     selected_format = _normalize_text(selected_format).lower()
-    ydl_opts, output_path = _build_download_options(
-        ydl_opts,
-        format_type,
-        selected_format,
-        quality,
-        has_ffmpeg,
-        output_path,
-    )
+
+    if format_type == "audio":
+        allowed_audio_formats = {"mp3", "m4a", "aac", "flac", "wav", "opus", "ogg"}
+        desired_codec = (
+            selected_format
+            if selected_format in allowed_audio_formats
+            else ("mp3" if str(quality) == "320" else "m4a")
+        )
+
+        preferred_quality = str(quality) if str(quality).isdigit() else "192"
+        if desired_codec in {"wav", "flac"}:
+            preferred_quality = "0"
+
+        if ffmpeg_bin and os.path.exists(ffmpeg_bin):
+            # Conversão profissional com FFmpeg
+            ydl_opts.update(
+                {
+                    "format": "bestaudio/best",
+                    "postprocessors": [
+                        {
+                            "key": "FFmpegExtractAudio",
+                            "preferredcodec": desired_codec,
+                            "preferredquality": preferred_quality,
+                        }
+                    ],
+                }
+            )
+        else:
+            # Fallback nativo
+            fallback_ext = "m4a" if desired_codec == "aac" else desired_codec
+
+            # Impede MP3/WAV falso sem FFmpeg renomeando para o container real
+            if fallback_ext in {"mp3", "wav", "flac", "ogg"}:
+                old_ext = fallback_ext
+                print(
+                    f"⚠️ Forçando fallback de {old_ext} para m4a devido a falta de FFmpeg"
+                )
+                fallback_ext = "m4a"
+                if output_path.lower().endswith(f".{old_ext}"):
+                    output_path = output_path[: -(len(old_ext) + 1)] + ".m4a"
+                    ydl_opts["outtmpl"] = output_path
+
+            ydl_opts.update(
+                {
+                    "format": f"bestaudio[ext={fallback_ext}]/bestaudio/best",
+                }
+            )
+    else:
+        # Video download
+        desired_container = (
+            selected_format if selected_format in {"mp4", "mkv", "webm"} else "mp4"
+        )
+        height = (
+            quality.replace("p", "")
+            if quality != "best" and quality.replace("p", "").isdigit()
+            else "1080"
+        )
+        if ffmpeg_bin and os.path.exists(ffmpeg_bin):
+            ydl_opts.update(
+                {
+                    "format": f"bestvideo[height<={height}]+bestaudio/best[height<={height}]",
+                    "merge_output_format": desired_container,
+                }
+            )
+        else:
+            ydl_opts.update(
+                {
+                    "format": f"best[height<={height}][ext={desired_container}]/best[height<={height}]",
+                }
+            )
 
     try:
         yt_dlp_module = _get_yt_dlp_module(app_files_dir)
@@ -941,7 +860,7 @@ def download_video(
                         print(f"   🎤 Artista: {resolved_artist}")
                         print(f"   💿 Álbum: {resolved_album}")
                         print(f"   📁 Arquivo: {final_filename}")
-                    if not tags_injected:
+                    else:
                         print("⚠️ Não foi possível injetar tags")
                 except Exception as e:
                     print(f"❌ Erro ao injetar tags: {str(e)}")
@@ -986,18 +905,11 @@ def _find_downloaded_file(orig_filename, format_type):
     base_name = os.path.splitext(orig_filename)[0]
     dir_name = os.path.dirname(orig_filename)
 
-    extensions = {
-        "audio": [
-            ".m4a",
-            ".webm",
-            ".mp3",
-            ".flac",
-            ".wav",
-            ".aac",
-            ".ogg",
-            ".opus",
-        ],
-    }.get(format_type, [".mp4", ".mkv", ".webm", ".avi"])
+    # Extensões possíveis para áudio
+    if format_type == "audio":
+        extensions = [".m4a", ".webm", ".mp3", ".flac", ".wav", ".aac", ".ogg", ".opus"]
+    else:
+        extensions = [".mp4", ".mkv", ".webm", ".avi"]
 
     for ext in extensions:
         candidate = base_name + ext
@@ -1055,9 +967,7 @@ def _download_thumbnail_bytes(thumbnail_url):
             if len(data) > _MAX_THUMBNAIL_BYTES:
                 print("⚠️ Capa local excede limite ao ler bytes")
                 return None
-            if not data:
-                return None
-            return data
+            return data if data else None
         except Exception as e:
             print(f"⚠️ Falha ao ler capa local: {str(e)}")
             return None
@@ -1090,9 +1000,7 @@ def _download_thumbnail_bytes(thumbnail_url):
             max_bytes=_MAX_THUMBNAIL_BYTES,
             label="thumbnail_download",
         )
-        if not data:
-            return None
-        return data
+        return data if data else None
     except Exception as e:
         print(f"⚠️ Não foi possível baixar thumbnail para APIC: {str(e)}")
         return None
@@ -1105,30 +1013,9 @@ def _set_vorbis_like_tags(audio, title, artist, album):
 
 
 def _verify_vorbis_like_tags(audio):
-    if audio is None:
-        return False
-    title = audio.get("title")
-    artist = audio.get("artist")
+    title = audio.get("title") if audio is not None else None
+    artist = audio.get("artist") if audio is not None else None
     return bool(title) and bool(artist)
-
-
-def _write_vorbis_like_tags_for_file(
-    filepath,
-    title,
-    artist,
-    album,
-    format_label,
-    loader,
-):
-    audio = loader(filepath)
-    _set_vorbis_like_tags(audio, title, artist, album)
-    audio.save()
-
-    verify = loader(filepath)
-    ok = _verify_vorbis_like_tags(verify)
-    if ok:
-        print(f"✅ Tags {format_label} injetadas")
-    return ok
 
 
 def _normalize_tag_value(value):
@@ -1185,10 +1072,7 @@ def _write_mp3_id3_tags(filepath, title, artist, album, thumbnail_url=None):
 
         # VERIFICAÇÃO PÓS-GRAVAÇÃO
         verify_tags = ID3(filepath)
-        verified_tpe1 = ""
-        verified_tpe1_value = verify_tags.get("TPE1")
-        if verified_tpe1_value:
-            verified_tpe1 = str(verified_tpe1_value)
+        verified_tpe1 = str(verify_tags.get("TPE1")) if verify_tags.get("TPE1") else ""
 
         print(
             f"[METADATA_SUCCESS] MP3 tags gravados: file={filepath}, "
@@ -1246,9 +1130,9 @@ def _write_mp4_m4a_tags(filepath, title, artist, album, thumbnail_url=None):
             mime = _guess_image_mime(thumbnail_url, image_data)
             if mime == "image/png":
                 audio["covr"] = [MP4Cover(image_data, imageformat=MP4Cover.FORMAT_PNG)]
-            if mime == "image/jpeg":
+            elif mime == "image/jpeg":
                 audio["covr"] = [MP4Cover(image_data, imageformat=MP4Cover.FORMAT_JPEG)]
-            if mime not in {"image/png", "image/jpeg"}:
+            else:
                 print("⚠️ Capa WebP ignorada para MP4/M4A (formato não suportado)")
 
         audio.save()
@@ -1282,66 +1166,71 @@ def _force_metadata_with_mutagen(
                 print("✅ Tags MP3 (ID3 direto no arquivo) injetadas")
             return ok
 
-        if ext in ("m4a", "mp4"):
+        elif ext in ("m4a", "mp4"):
             ok = _write_mp4_m4a_tags(filepath, title, artist, album, thumbnail_url)
             if ok:
                 print("✅ Tags M4A/MP4 (arquivo físico) injetadas")
             return ok
 
-        if ext == "flac":
+        elif ext == "flac":
             from mutagen.flac import FLAC
 
-            return _write_vorbis_like_tags_for_file(
-                filepath,
-                title,
-                artist,
-                album,
-                "FLAC",
-                FLAC,
-            )
+            audio = FLAC(filepath)
+            _set_vorbis_like_tags(audio, title, artist, album)
+            audio.save()
 
-        if ext == "webm":
+            verify = FLAC(filepath)
+            ok = _verify_vorbis_like_tags(verify)
+            if ok:
+                print("✅ Tags FLAC injetadas")
+            return ok
+
+        elif ext == "webm":
             # WebM usa tags Ogg Vorbis
             from mutagen.oggvorbis import OggVorbis
 
             try:
-                return _write_vorbis_like_tags_for_file(
-                    filepath,
-                    title,
-                    artist,
-                    album,
-                    "WebM",
-                    OggVorbis,
-                )
+                audio = OggVorbis(filepath)
             except Exception:
                 print("⚠️ WebM não suporta tags completas")
                 return False
 
-        if ext == "ogg":
+            _set_vorbis_like_tags(audio, title, artist, album)
+            audio.save()
+
+            verify = OggVorbis(filepath)
+            ok = _verify_vorbis_like_tags(verify)
+            if ok:
+                print("✅ Tags WebM injetadas")
+            return ok
+
+        elif ext == "ogg":
             from mutagen.oggvorbis import OggVorbis
 
-            return _write_vorbis_like_tags_for_file(
-                filepath,
-                title,
-                artist,
-                album,
-                "OGG",
-                OggVorbis,
-            )
+            audio = OggVorbis(filepath)
+            _set_vorbis_like_tags(audio, title, artist, album)
+            audio.save()
 
-        if ext == "opus":
+            verify = OggVorbis(filepath)
+            ok = _verify_vorbis_like_tags(verify)
+            if ok:
+                print("✅ Tags OGG injetadas")
+            return ok
+
+        elif ext == "opus":
             from mutagen.oggopus import OggOpus
 
-            return _write_vorbis_like_tags_for_file(
-                filepath,
-                title,
-                artist,
-                album,
-                "OPUS",
-                OggOpus,
-            )
+            audio = OggOpus(filepath)
+            _set_vorbis_like_tags(audio, title, artist, album)
+            audio.save()
 
-        if ext == "wav":
+            verify = OggOpus(filepath)
+            ok = _verify_vorbis_like_tags(verify)
+            if ok:
+                print("✅ Tags OPUS injetadas")
+            return ok
+
+        elif ext == "wav":
             from mutagen.wave import WAVE
             from mutagen.id3 import ID3, TIT2, TPE1, TALB, TPE2
 
@@ -1369,15 +1258,16 @@ def _force_metadata_with_mutagen(
                 print("✅ Tags WAV (ID3) injetadas")
             return ok
 
-        if ext == "aac":
+        elif ext == "aac":
             # AAC em container MP4/M4A costuma aceitar os mesmos átomos.
             ok = _write_mp4_m4a_tags(filepath, title, artist, album, thumbnail_url)
             if ok:
                 print("✅ Tags AAC (container MP4) injetadas")
             return ok
 
-        print(f"⚠️ Formato não suportado: {ext}")
-        return False
+        else:
+            print(f"⚠️ Formato não suportado: {ext}")
+            return False
 
     except ImportError as e:
         print(f"❌ Mutagen não importado: {str(e)}")
@@ -1388,26 +1278,6 @@ def _force_metadata_with_mutagen(
 
         traceback.print_exc()
         return False
-
-
-def _resolve_explicit_title_for_rewrite(value, fallback_title):
-    normalized = _strip_generated_suffix(value)
-    if normalized:
-        return normalized
-    return fallback_title
-
-
-def _resolve_explicit_metadata_for_rewrite(value):
-    normalized = _strip_generated_suffix(value)
-    if normalized:
-        return normalized
-    return str(value).strip()
-
-
-def _resolve_rewrite_metadata_value(explicit_value, fallback_value, resolver):
-    if explicit_value is None:
-        return fallback_value
-    return resolver(explicit_value)
 
 
 def rewrite_file_metadata(
@@ -1436,33 +1306,52 @@ def rewrite_file_metadata(
         # Para edição manual: usa parâmetros fornecidos diretamente
         # Para reparo automático: usa fallbacks inteligentes
         fallback_title = os.path.splitext(os.path.basename(filepath))[0]
-        fallback_seed_title = title or fallback_title
-        (
-            fallback_resolved_title,
-            fallback_resolved_artist,
-            fallback_resolved_album,
-        ) = _resolve_metadata(
-            fallback_seed_title,
-            None,
-            None,
-            {},
-        )
 
-        resolved_title = _resolve_rewrite_metadata_value(
-            title,
-            fallback_resolved_title,
-            lambda value: _resolve_explicit_title_for_rewrite(value, fallback_title),
-        )
-        resolved_artist = _resolve_rewrite_metadata_value(
-            artist,
-            fallback_resolved_artist,
-            _resolve_explicit_metadata_for_rewrite,
-        )
-        resolved_album = _resolve_rewrite_metadata_value(
-            album,
-            fallback_resolved_album,
-            _resolve_explicit_metadata_for_rewrite,
-        )
+        if title is not None:
+            # Título foi explicitamente fornecido - usar diretamente
+            resolved_title = _strip_generated_suffix(title)
+            if not resolved_title:
+                resolved_title = fallback_title
+        else:
+            # Sem título fornecido - tentar resolver com info vazio
+            resolved_title, _, _ = _resolve_metadata(
+                fallback_title,
+                None,
+                None,
+                {},
+            )
+
+        if artist is not None:
+            # Artista foi explicitamente fornecido - usar diretamente
+            resolved_artist = _strip_generated_suffix(artist)
+            # Se ficou vazio após normalização, usar o valor original
+            if not resolved_artist:
+                resolved_artist = artist.strip()
+            # Se ainda está vazio, o usuário quis deixar em branco
+            if not resolved_artist:
+                resolved_artist = ""
+        else:
+            # Sem artista fornecido - tentar resolver com info vazio
+            _, resolved_artist, _ = _resolve_metadata(
+                title or fallback_title,
+                None,
+                None,
+                {},
+            )
+
+        if album is not None:
+            # Album foi explicitamente fornecido - usar diretamente
+            resolved_album = _strip_generated_suffix(album)
+            if not resolved_album:
+                resolved_album = album.strip()
+        else:
+            # Sem album fornecido - tentar resolver com info vazio
+            _, _, resolved_album = _resolve_metadata(
+                title or fallback_title,
+                None,
+                None,
+                {},
+            )
 
         print(
             f"[METADATA_REWRITE] Iniciando gravação: file={filepath}, "
@@ -1479,10 +1368,6 @@ def rewrite_file_metadata(
             artwork_url,
         )
 
-        error_message = None
-        if not tags_injected:
-            error_message = "Falha ao injetar tags no arquivo"
-
         payload = {
             "success": tags_injected,
             "tags_injected": tags_injected,
@@ -1490,7 +1375,7 @@ def rewrite_file_metadata(
             "artist": resolved_artist,
             "album": resolved_album,
             "filePath": filepath,
-            "error": error_message,
+            "error": None if tags_injected else "Falha ao injetar tags no arquivo",
         }
         if not tags_injected:
             payload["stage"] = "metadata_write_validation"

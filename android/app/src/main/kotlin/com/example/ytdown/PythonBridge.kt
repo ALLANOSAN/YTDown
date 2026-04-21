@@ -7,11 +7,13 @@ import com.chaquo.python.android.AndroidPlatform
 
 object PythonBridge {
     private var pythonInitialized = false
+    lateinit var applicationContext: Context
+        private set
 
     fun initializePython(context: Context) {
-        if (pythonInitialized) {
-            return
-        }
+        if (pythonInitialized) return
+
+        applicationContext = context.applicationContext
 
         if (!Python.isStarted()) {
             Python.start(AndroidPlatform(context))
@@ -19,16 +21,13 @@ object PythonBridge {
         pythonInitialized = true
     }
 
-    fun invokePythonJson(context: Context, methodName: String, vararg args: Any?): String {
-        initializePython(context)
+    fun invokePythonJson(methodName: String, vararg args: Any?): String {
+        // Garante que o Python foi inicializado. Se não, lança exceção.
+        if (!pythonInitialized) throw IllegalStateException("PythonBridge não inicializado. Chame initializePython(context) primeiro.")
         return ytdownModule().callAttr(methodName, *args).toString()
     }
 
-    private fun ytdownModule(): PyObject {
-        return Python.getInstance().getModule("ytdown")
-    }
+    private fun ytdownModule(): PyObject = Python.getInstance().getModule("ytdown")
 
-    fun appFilesDirPath(context: Context): String {
-        return context.filesDir.absolutePath
-    }
+    fun appFilesDirPath(context: Context): String = context.filesDir.absolutePath
 }

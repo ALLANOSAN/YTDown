@@ -13,9 +13,10 @@ class DownloadEngine(
         context: Context, 
         url: VideoUrl, 
         output: File, 
-        metadata: MediaMetadata
+        metadata: MediaMetadata,
+        options: DownloadOptions
     ): ExitCode {
-        val result = ytDlp.downloadVideo(url.value, output)
+        val result = ytDlp.downloadVideo(url, output, options)
         
         if (result.isSuccess()) {
             metadataManager.rewriteMetadata(context, FilePath(output.absolutePath), metadata)

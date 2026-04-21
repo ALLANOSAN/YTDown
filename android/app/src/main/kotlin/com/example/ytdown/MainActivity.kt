@@ -1,6 +1,7 @@
 package com.example.ytdown
 
 import android.Manifest
+import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -8,7 +9,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.lifecycle.lifecycleScope
-import com.example.ytdown.core.domain.AssetPath
+import com.example.ytdown.core.domain.*
 import com.example.ytdown.core.infrastructure.*
 import com.example.ytdown.ui.theme.YTDownTheme
 import com.example.ytdown.ui.DownloadViewModel
@@ -33,6 +34,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         checkAndRequestPermissions()
+        handleSharedIntent(intent)
 
         // Garantir que os binários estão prontos antes da UI pesada
         lifecycleScope.launch {
@@ -44,6 +46,19 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleSharedIntent(intent)
+    }
+
+    private fun handleSharedIntent(intent: Intent?) {
+        val action = intent?.action
+        if (action != Intent.ACTION_SEND) return
+        
+        val sharedText = intent.getStringExtra(Intent.EXTRA_TEXT) ?: return
+        viewModel.onUrlInputChanged(sharedText) // Define a URL no estado de input
     }
 
     private fun checkAndRequestPermissions() {

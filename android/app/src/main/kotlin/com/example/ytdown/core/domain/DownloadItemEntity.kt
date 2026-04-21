@@ -11,6 +11,8 @@ data class DownloadItemEntity(
     val filePath: String,
     val status: String, // "pending", "downloading", "completed", "failed"
     val progress: Double,
+    val artist: String = "",
+    val album: String = "",
     val timestamp: Long = System.currentTimeMillis(),
     val thumbnailPath: String? = null,
     val format: String = "mp3"

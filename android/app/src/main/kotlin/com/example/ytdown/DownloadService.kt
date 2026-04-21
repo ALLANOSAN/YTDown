@@ -5,10 +5,13 @@ import android.util.Log
 import com.example.ytdown.core.domain.*
 import com.example.ytdown.core.infrastructure.MediaScanner
 import com.example.ytdown.core.infrastructure.MimeTypeResolver
+import com.example.ytdown.core.business.MediaInfoParser
+
+class MetadataTools(val scanner: MediaScanner, val resolver: MimeTypeResolver)
 
 class DownloadMetadataManager(
-    private val scanner: MediaScanner,
-    private val resolver: MimeTypeResolver
+    private val tools: MetadataTools,
+    private val parser: MediaInfoParser
 ) {
     private const val TAG = "DownloadService"
 

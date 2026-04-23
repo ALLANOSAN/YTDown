@@ -15,5 +15,7 @@ data class DownloadItemEntity(
     val album: String = "",
     val timestamp: Long = System.currentTimeMillis(),
     val thumbnailPath: String? = null,
+    val artistImageUrl: String? = null,
+    val albumImageUrl: String? = null,
     val format: String = "mp3"
 )

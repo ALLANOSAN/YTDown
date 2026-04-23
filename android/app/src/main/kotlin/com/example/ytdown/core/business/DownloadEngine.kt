@@ -1,8 +1,7 @@
 package com.example.ytdown.core.business
 
-import android.content.Context
-import com.example.ytdown.core.domain.*
 import com.example.ytdown.DownloadMetadataManager
+import com.example.ytdown.core.domain.*
 import java.io.File
 
 class DownloadEngine(
@@ -10,16 +9,16 @@ class DownloadEngine(
     private val metadataManager: DownloadMetadataManager
 ) {
     fun downloadAndTag(
-        context: Context, 
-        url: VideoUrl, 
-        output: File, 
+        url: VideoUrl,
+        output: File,
         metadata: MediaMetadata,
-        options: DownloadOptions
+        options: DownloadOptions,
+        onProgress: ((Int) -> Unit)? = null
     ): ExitCode {
-        val result = ytDlp.downloadVideo(url, output, options)
+        val result = ytDlp.downloadVideo(url, output, options, onProgress)
         
         if (result.isSuccess()) {
-            metadataManager.rewriteMetadata(context, FilePath(output.absolutePath), metadata)
+            metadataManager.rewriteMetadata(FilePath(output.absolutePath), metadata)
         }
         return result
     }

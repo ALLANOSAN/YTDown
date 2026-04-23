@@ -4,7 +4,7 @@ import androidx.room.Database
 import androidx.room.RoomDatabase
 import com.example.ytdown.core.domain.DownloadItemEntity
 
-@Database(entities = [DownloadItemEntity::class], version = 1)
+@Database(entities = [DownloadItemEntity::class], version = 2)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun downloadDao(): DownloadDao
 }

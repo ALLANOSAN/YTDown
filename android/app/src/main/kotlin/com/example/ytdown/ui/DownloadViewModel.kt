@@ -1,18 +1,22 @@
 package com.example.ytdown.ui
 
+import android.content.Context
 import androidx.lifecycle.viewModelScope
 import com.example.ytdown.DownloadMetadataManager
 import com.example.ytdown.core.business.*
 import com.example.ytdown.core.domain.*
+import com.example.ytdown.utils.CommonUtils
+import com.example.ytdown.utils.TaskQueue
+import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import dagger.hilt.android.lifecycle.HiltViewModel
 import androidx.lifecycle.ViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
 import javax.inject.Inject
 
 data class DownloadInputState(
@@ -20,12 +24,14 @@ data class DownloadInputState(
     val fetchedItems: List<VideoPreviewItem> = emptyList(),
     val isFetching: Boolean = false,
     val fetchError: String? = null,
+    val showDialog: Boolean = false,
     val artistInput: String = "",
     val albumInput: String = "",
     val selectedDownloadType: DownloadType = DownloadType.AUDIO,
     val selectedFormat: String = "mp3",
     val selectedQuality: String = "192",
     val isPlaylist: Boolean = false,
+    val artworkUri: String? = null,
     val audioFormats: List<String> = listOf("mp3", "m4a", "flac", "opus", "ogg"),
     val videoFormats: List<String> = listOf("mp4", "mkv"),
     val audioBitrates: List<String> = listOf("128", "192", "256", "320"),
@@ -37,6 +43,7 @@ class DownloadViewModel @Inject constructor(
     private val metadataManager: DownloadMetadataManager,
     private val scheduler: DownloadScheduler
 ) : ViewModel() {
+    private val fetchQueue = TaskQueue(maxConcurrent = 1)
 
     // Regra 8: Máximo de 2 variáveis de instância.
     // _inputState encapsula todo o estado da UI de entrada
@@ -47,7 +54,11 @@ class DownloadViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     fun onUrlInputChanged(newUrl: String) {
-        _inputState.update { it.copy(urlInput = newUrl, fetchError = null) }
+        _inputState.update { it.copy(urlInput = CommonUtils.normalizeText(newUrl), fetchError = null) }
+    }
+
+    fun onArtworkSelected(uri: String) {
+        _inputState.update { it.copy(artworkUri = uri) }
     }
 
     fun onSelectAllItems() {
@@ -86,30 +97,37 @@ class DownloadViewModel @Inject constructor(
         }
     }
 
-    fun fetchVideoDetails(url: VideoUrl) {
+    fun fetchVideoDetails(context: Context, url: VideoUrl) {
         viewModelScope.launch {
-            performFetch(url)
+            fetchQueue.add {
+                performFetch(context, url)
+            }.await()
         }
     }
 
-    private suspend fun performFetch(url: VideoUrl) {
-        _inputState.update { it.copy(isFetching = true, fetchError = null) }
-        runCatching { metadataManager.fetchVideoInfo(url) }
+    fun onDismissDialog() {
+        _inputState.update { it.copy(showDialog = false) }
+    }
+
+    private suspend fun performFetch(context: Context, url: VideoUrl) {
+        _inputState.update { it.copy(isFetching = true, fetchError = null, showDialog = false) }
+        runCatching { metadataManager.fetchVideoInfo(context, url) }
             .onSuccess { updateStateWithInfo(it) }
-            .onFailure { error -> _inputState.update { it.copy(isFetching = false, fetchError = error.message) } }
+            .onFailure { error -> _inputState.update { it.copy(isFetching = false, fetchError = error.message, showDialog = false) } }
     }
 
     private fun updateStateWithInfo(infoJson: VideoInfoJson) {
-        val parsedEntries = metadataManager.parsePlaylist(infoJson)
+        val parsedEntries = metadataManager.parseEntries(infoJson)
         val first = parsedEntries.firstOrNull()
-        
+
         _inputState.update { state ->
             state.copy(
-                fetchedItems = parsedEntries.map { VideoPreviewItem(it.first, it.second, null, 0) },
-                artistInput = first?.let { metadataManager.guessArtist(it.first) } ?: "",
-                albumInput = first?.let { metadataManager.guessAlbum(it.first) } ?: "",
+                fetchedItems = parsedEntries,
+                artistInput = first?.let { metadataManager.guessArtistFromTitle(it.title) } ?: "",
+                albumInput = first?.let { metadataManager.guessAlbumFromTitle(it.title) } ?: "",
                 isPlaylist = parsedEntries.size > 1,
-                isFetching = false
+                isFetching = false,
+                showDialog = true
             )
         }
     }
@@ -127,7 +145,7 @@ class DownloadViewModel @Inject constructor(
 
         viewModelScope.launch {
             val baseMeta = MediaMetadata(
-                title = MediaTitle(""), // Will be overwritten by individual video title
+                title = MediaTitle(""), // Will be overwritten por cada item
                 artist = ArtistName(currentState.artistInput),
                 album = AlbumName(currentState.albumInput)
             )
@@ -136,8 +154,8 @@ class DownloadViewModel @Inject constructor(
                 format = currentState.selectedFormat,
                 quality = currentState.selectedQuality
             )
-            processEntries(selectedItems, folder, baseMeta, options)
-            _inputState.update { it.copy(fetchedItems = emptyList(), urlInput = "") } // Limpa após disparar
+            processEntries(selectedItems, folder, baseMeta, downloadOptions)
+            _inputState.update { it.copy(fetchedItems = emptyList(), urlInput = "", showDialog = false) }
         }
     }
 

@@ -50,7 +50,6 @@ app.*.map.json
 *.env
 
 # Erros
-
 build_error.txt
 
 # Ignorar APKs e binários grandes
@@ -59,7 +58,9 @@ build_error.txt
 *.so
 *.bin
 
-# Ignorar intermediários do Android (garante que builds não sejam versionados)
-android/build/
+# Ignorar intermediários do Android e Gradle (garante que builds não sejam versionados)
+.gradle/
+**/build/
 android/app/outputs/
 android/app/intermediates/
+android/app/schemas/

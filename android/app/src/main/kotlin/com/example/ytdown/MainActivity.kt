@@ -1,20 +1,28 @@
 package com.example.ytdown
 
-import android.Manifest
 import android.content.Intent
-import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.lifecycleScope
-import com.example.ytdown.core.domain.*
-import com.example.ytdown.core.infrastructure.*
-import com.example.ytdown.ui.theme.YTDownTheme
+import com.example.ytdown.core.domain.AssetPath
+import com.example.ytdown.core.infrastructure.BinaryOrchestrator
 import com.example.ytdown.ui.DownloadViewModel
-import com.example.ytdown.ui.screens.DownloadListScreen
+import com.example.ytdown.ui.RootApp
+import com.example.ytdown.ui.theme.YTDownTheme
+import com.example.ytdown.ui.theme.YTDownPurple
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -23,52 +31,72 @@ class MainActivity : ComponentActivity() {
 
     @Inject lateinit var orchestrator: BinaryOrchestrator
     private val viewModel: DownloadViewModel by viewModels()
+    
+    private var isRuntimeReady by mutableStateOf(false)
 
-    private val requestPermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
-    ) { _ -> 
-        // Permissões concedidas ou negadas - o WorkManager lidará com a falha se necessário
+    private val imagePickerLauncher = registerForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri ->
+        uri?.let { viewModel.onArtworkSelected(it.toString()) }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        checkAndRequestPermissions()
-        handleSharedIntent(intent)
+        lifecycleScope.launch(Dispatchers.IO) {
+            orchestrator.setupPythonRuntime(AssetPath("python/python_runtime.bin"))
+            isRuntimeReady = true
+        }
 
-        // Garantir que os binários estão prontos antes da UI pesada
-        lifecycleScope.launch {
-            orchestrator.setupPythonRuntime(AssetPath("python/python_runtime.tar.gz"))
-            
-            setContent {
-                YTDownTheme {
-                    DownloadListScreen(viewModel)
+        setContent {
+            YTDownTheme {
+                if (isRuntimeReady) {
+                    RootApp(
+                        viewModel = viewModel,
+                        onPickImage = { imagePickerLauncher.launch("image/*") }
+                    )
+                } else {
+                    LoadingScreen()
                 }
             }
         }
-    }
 
-    override fun onNewIntent(intent: Intent) {
-        super.onNewIntent(intent)
         handleSharedIntent(intent)
-    }
-
-    private fun handleSharedIntent(intent: Intent?) {
-        val action = intent?.action
-        if (action != Intent.ACTION_SEND) return
-        
-        val sharedText = intent.getStringExtra(Intent.EXTRA_TEXT) ?: return
-        viewModel.onUrlInputChanged(sharedText) // Define a URL no estado de input
+        checkAndRequestPermissions()
     }
 
     private fun checkAndRequestPermissions() {
-        val permissions = mutableListOf<String>()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            permissions.add(Manifest.permission.POST_NOTIFICATIONS)
+        val permissions = mutableListOf(
+            android.Manifest.permission.INTERNET,
+            android.Manifest.permission.WAKE_LOCK
+        )
+        if (android.os.Build.VERSION.SDK_INT <= android.os.Build.VERSION_CODES.P) {
+            permissions.add(android.Manifest.permission.WRITE_EXTERNAL_STORAGE)
         }
-        // Adicionar outras conforme necessário (ex: WRITE_EXTERNAL_STORAGE para APIs antigas)
-        if (permissions.isNotEmpty()) {
-            requestPermissionLauncher.launch(permissions.toTypedArray())
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            permissions.add(android.Manifest.permission.POST_NOTIFICATIONS)
         }
+        
+        requestPermissions(permissions.toTypedArray(), 1001)
+    }
+
+    private fun handleSharedIntent(intent: Intent?) {
+        if (intent?.action == Intent.ACTION_SEND && intent.type == "text/plain") {
+            intent.getStringExtra(Intent.EXTRA_TEXT)?.let { 
+                viewModel.onUrlInputChanged(it)
+            }
+        }
+    }
+}
+
+@Composable
+fun LoadingScreen(modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .background(Color.Black),
+        contentAlignment = Alignment.Center
+    ) {
+        CircularProgressIndicator(color = YTDownPurple)
     }
 }

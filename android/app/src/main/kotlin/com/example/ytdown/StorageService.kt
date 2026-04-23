@@ -9,10 +9,10 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
-import android.util.Log
-import io.flutter.plugin.common.MethodChannel
 import java.io.File
 import java.io.IOException
+import com.example.ytdown.core.domain.*
+import com.example.ytdown.utils.LocalLogger
 
 object StorageService {
     private const val TAG = "StorageService"
@@ -22,32 +22,12 @@ object StorageService {
         val sourcePath: FilePath,
         val mimeType: MimeType,
         val diagnostics: MutableMap<String, Any>,
-        val result: MethodChannel.Result,
     )
 
     fun cancelPendingSafExport(context: Context) {
         val pending = pendingSafExport ?: return
         pendingSafExport = null
-
-        val diagnostics = HashMap(pending.diagnostics)
-        diagnostics["strategy"] = "saf_create_document"
-        diagnostics["stage"] = "activity_destroyed"
-
-        runOnMainThread {
-            try {
-                pending.result.success(
-                    mapOf(
-                        "success" to false,
-                        "error" to "Exportação interrompida: atividade finalizada",
-                        "strategy" to "saf_create_document",
-                        "stage" to "activity_destroyed",
-                        "diagnostics" to diagnostics,
-                    )
-                )
-            } catch (e: Exception) {
-                Log.e(TAG, "Erro ao encerrar exportação SAF pendente: ${e.message}", e)
-            }
-        }
+        LocalLogger.info("SAF export cancelled for ${context.packageName}: ${pending.sourcePath.value}")
     }
 
     fun exportToPublicCollection(
@@ -57,7 +37,6 @@ object StorageService {
         mediaType: MediaType,
         mimeType: MimeType,
         allowUserInteractionFallback: Boolean,
-        result: MethodChannel.Result,
     ) {
         var stage = "init"
         var strategy = "none"
@@ -70,7 +49,7 @@ object StorageService {
         )
 
         try {
-            val sourceFile = validateSourceFile(sourcePath, result, diagnostics) ?: return
+            val sourceFile = validateSourceFile(sourcePath) ?: return
             diagnostics["sourceSizeBytes"] = sourceFile.length()
 
             var fileName = displayName
@@ -84,7 +63,6 @@ object StorageService {
                     fileName = fileName,
                     mediaType = mediaType,
                     diagnostics = diagnostics,
-                    result = result,
                 )
                 return
             }
@@ -97,7 +75,6 @@ object StorageService {
                 mimeType = mimeType.value,
                 targets = targets,
                 diagnostics = diagnostics,
-                result = result,
             )
 
             if (exported) {
@@ -112,7 +89,6 @@ object StorageService {
                     mimeType = mimeType,
                     diagnostics = diagnostics,
                     strategyErrors = listOf(diagnostics["strategyErrors"].toString()),
-                    result = result,
                 )
                 return
             }
@@ -123,117 +99,53 @@ object StorageService {
         } catch (e: Exception) {
             diagnostics["strategy"] = strategy
             diagnostics["stage"] = stage
-            Log.e(TAG, "❌ Erro ao exportar arquivo: ${e.message}", e)
-            respondWithMap(
-                result,
-                mapOf(
-                    "success" to false,
-                    "error" to (e.message ?: "Falha ao exportar arquivo"),
-                    "strategy" to strategy,
-                    "stage" to stage,
-                    "diagnostics" to diagnostics,
-                )
-            )
+            LocalLogger.error("Erro ao exportar arquivo: ${e.message}", e)
         }
     }
 
-    fun syncEditedExportedFile(
+    suspend fun syncEditedExportedFile(
         context: Context,
         sourcePath: String,
         exportedPath: String,
-        result: MethodChannel.Result,
-    ) {
-        var stage = "init"
-        var strategy = "none"
-        val diagnostics = buildStorageDiagnostics(
-            context,
-            mapOf(
-                "exportedPath" to exportedPath,
-            )
-        )
-
-        try {
-            stage = "validate_source"
+    ): Boolean {
+        return try {
             val sourceFile = File(sourcePath)
-            if (!sourceFile.exists()) {
-                respondWithMap(
-                    result,
-                    mapOf(
-                        "success" to false,
-                        "error" to "Arquivo editado não encontrado para sincronização",
-                        "strategy" to strategy,
-                        "stage" to stage,
-                        "diagnostics" to diagnostics,
-                    )
-                )
-                return
-            }
+            if (!sourceFile.exists()) return false
 
-            diagnostics["sourceSizeBytes"] = sourceFile.length()
             val isContentUri = exportedPath.startsWith("content://")
 
             if (isContentUri) {
-                strategy = "content_resolver_uri"
-                stage = "write_uri"
                 writeSourceFileToUri(context, sourceFile, Uri.parse(exportedPath))
             }
             if (!isContentUri) {
-                strategy = "filesystem_path"
-                stage = "copy_path"
                 copySourceFileToPath(sourceFile, exportedPath)
             }
 
-            diagnostics["strategy"] = strategy
-            diagnostics["stage"] = "done"
-            respondWithMap(
-                result,
-                mapOf(
-                    "success" to true,
-                    "exportedPath" to exportedPath,
-                    "strategy" to strategy,
-                    "stage" to "done",
-                    "diagnostics" to diagnostics,
-                )
-            )
+            true
         } catch (e: Exception) {
-            diagnostics["strategy"] = strategy
-            diagnostics["stage"] = stage
-            respondWithMap(
-                result,
-                mapOf(
-                    "success" to false,
-                    "error" to (e.message ?: "Falha ao sincronizar arquivo exportado"),
-                    "strategy" to strategy,
-                    "stage" to stage,
-                    "diagnostics" to diagnostics,
-                )
-            )
+            false
         }
     }
 
     fun deleteExportedFile(
         context: Context,
         exportedPath: String,
-        result: MethodChannel.Result,
-    ) {
+    ): Boolean {
         if (exportedPath.isBlank()) {
-            runOnMainThread { result.success(true) }
-            return
+            return true
         }
 
-        try {
+        return try {
             if (exportedPath.startsWith("content://")) {
                 val uri = Uri.parse(exportedPath)
                 val deletedCount = context.contentResolver.delete(uri, null, null)
-                runOnMainThread { result.success(deletedCount > 0) }
-                return
+                deletedCount > 0
+            } else {
+                val file = File(exportedPath)
+                !file.exists() || file.delete()
             }
-
-            val file = File(exportedPath)
-            val success = !file.exists() || file.delete()
-            runOnMainThread { result.success(success) }
         } catch (e: Exception) {
-            runOnMainThread { result.success(false) }
+            false
         }
     }
 
@@ -250,17 +162,6 @@ object StorageService {
 
         if (resultCode != Activity.RESULT_OK || data?.data == null) {
             diagnostics["stage"] = "saf_cancelled"
-            runOnMainThread {
-                pending.result.success(
-                    mapOf(
-                        "success" to false,
-                        "error" to "Exportação cancelada pelo usuário",
-                        "strategy" to "saf_create_document",
-                        "stage" to "saf_cancelled",
-                        "diagnostics" to diagnostics,
-                    )
-                )
-            }
             return
         }
 
@@ -280,31 +181,8 @@ object StorageService {
             } ?: throw IOException("Falha ao abrir stream SAF de saída")
 
             diagnostics["stage"] = "saf_done"
-            runOnMainThread {
-                pending.result.success(
-                    mapOf(
-                        "success" to true,
-                        "contentUri" to targetUri.toString(),
-                        "exportedPath" to targetUri.toString(),
-                        "strategy" to "saf_create_document",
-                        "stage" to "saf_done",
-                        "diagnostics" to diagnostics,
-                    )
-                )
-            }
         } catch (e: Exception) {
             diagnostics["stage"] = "saf_failed"
-            runOnMainThread {
-                pending.result.success(
-                    mapOf(
-                        "success" to false,
-                        "error" to (e.message ?: "Falha ao exportar via SAF"),
-                        "strategy" to "saf_create_document",
-                        "stage" to "saf_failed",
-                        "diagnostics" to diagnostics,
-                    )
-                )
-            }
         }
     }
 
@@ -328,6 +206,7 @@ object StorageService {
         }
     }
 
+    @androidx.annotation.RequiresApi(Build.VERSION_CODES.Q)
     private fun buildExportTargets(mediaType: MediaType): List<ExportTarget> {
         if (mediaType.isAudio()) {
             return listOf(
@@ -366,6 +245,7 @@ object StorageService {
         )
     }
 
+    @androidx.annotation.RequiresApi(Build.VERSION_CODES.Q)
     private fun exportToMediaStore(
         context: Context,
         sourceFile: File,
@@ -373,7 +253,6 @@ object StorageService {
         mimeType: String,
         targets: List<ExportTarget>,
         diagnostics: MutableMap<String, Any>,
-        result: MethodChannel.Result,
     ): Boolean {
         val resolver = context.contentResolver
         val strategyErrors = mutableListOf<String>()
@@ -411,17 +290,6 @@ object StorageService {
                     diagnostics["strategy"] = strategy
                     diagnostics["stage"] = diagnostics["stage"] ?: "publish"
 
-                    respondWithMap(
-                        result,
-                        mapOf(
-                            "success" to true,
-                            "contentUri" to uri.toString(),
-                            "exportedPath" to uri.toString(),
-                            "strategy" to strategy,
-                            "stage" to diagnostics["stage"],
-                            "diagnostics" to diagnostics,
-                        )
-                    )
                     return true
                 } catch (e: Exception) {
                     diagnostics["stage"] = "cleanup"
@@ -442,7 +310,6 @@ object StorageService {
         fileName: String,
         mediaType: MediaType,
         diagnostics: MutableMap<String, Any>,
-        result: MethodChannel.Result,
     ) {
         diagnostics["strategy"] = "legacy_public_dir"
         diagnostics["stage"] = "legacy_copy"
@@ -462,39 +329,15 @@ object StorageService {
 
         val targetFile = File(targetDir, fileName)
         sourceFile.copyTo(targetFile, overwrite = true)
-
-        respondWithMap(
-            result,
-            mapOf(
-                "success" to true,
-                "exportedPath" to targetFile.absolutePath,
-                "strategy" to diagnostics["strategy"],
-                "stage" to diagnostics["stage"],
-                "diagnostics" to diagnostics,
-            )
-        )
     }
 
     private fun validateSourceFile(
         sourcePath: FilePath,
-        result: MethodChannel.Result,
-        diagnostics: MutableMap<String, Any>,
     ): File? {
         val file = sourcePath.toFile()
         if (file.exists()) {
             return file
         }
-
-        respondWithMap(
-            result,
-            mapOf(
-                "success" to false,
-                "error" to "Arquivo origem não encontrado",
-                "stage" to "validate_source",
-                "strategy" to "none",
-                "diagnostics" to diagnostics,
-            )
-        )
         return null
     }
 
@@ -531,42 +374,11 @@ object StorageService {
         mimeType: MimeType,
         diagnostics: MutableMap<String, Any>,
         strategyErrors: List<String>,
-        result: MethodChannel.Result,
     ) {
         if (activity == null) {
             diagnostics["strategy"] = "saf_create_document"
             diagnostics["stage"] = "saf_no_activity"
             diagnostics["strategyErrors"] = strategyErrors.joinToString(" | ")
-            respondWithMap(
-                result,
-                mapOf(
-                    "success" to false,
-                    "error" to "Activity não disponível para fallback SAF",
-                    "strategy" to "saf_create_document",
-                    "stage" to "saf_no_activity",
-                    "diagnostics" to diagnostics,
-                )
-            )
-            return
-        }
-
-        if (pendingSafExport != null) {
-            val localDiagnostics = HashMap(diagnostics)
-            localDiagnostics["strategy"] = "saf_create_document"
-            localDiagnostics["stage"] = "saf_busy"
-            localDiagnostics["strategyErrors"] = strategyErrors.joinToString(" | ")
-
-            runOnMainThread {
-                result.success(
-                    mapOf(
-                        "success" to false,
-                        "error" to "Já existe uma exportação interativa em andamento",
-                        "strategy" to "saf_create_document",
-                        "stage" to "saf_busy",
-                        "diagnostics" to localDiagnostics,
-                    )
-                )
-            }
             return
         }
 
@@ -579,7 +391,6 @@ object StorageService {
                 sourcePath = sourcePath,
                 mimeType = mimeType,
                 diagnostics = diagnostics,
-                result = result,
             )
 
             val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
@@ -595,17 +406,7 @@ object StorageService {
             diagnostics["stage"] = "saf_launch_failed"
             diagnostics["strategyErrors"] = strategyErrors.joinToString(" | ")
 
-            runOnMainThread {
-                result.success(
-                    mapOf(
-                        "success" to false,
-                        "error" to (e.message ?: "Falha ao iniciar seletor SAF"),
-                        "strategy" to "saf_create_document",
-                        "stage" to "saf_launch_failed",
-                        "diagnostics" to diagnostics,
-                    )
-                )
-            }
+            LocalLogger.error("Erro ao iniciar seletor SAF", e)
         }
     }
 }

@@ -1,0 +1,176 @@
+package com.example.ytdown.ui.screens
+
+import android.os.Environment
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import coil.compose.AsyncImage
+import com.example.ytdown.core.domain.DownloadType
+import com.example.ytdown.core.domain.FilePath
+import com.example.ytdown.ui.DownloadViewModel
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun TagEditorDialog(
+    viewModel: DownloadViewModel,
+    onConfirm: (FilePath) -> Unit,
+    onPickImage: () -> Unit
+) {
+    val state by viewModel.inputState.collectAsState()
+    if (!state.showDialog) return
+
+    val context = LocalContext.current
+    val downloadDir = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
+        ?.absolutePath
+        ?: context.filesDir.absolutePath
+
+    Dialog(onDismissRequest = { viewModel.onDismissDialog() }) {
+        Card(modifier = Modifier.fillMaxWidth().fillMaxHeight(0.95f)) {
+            Column(
+                modifier = Modifier
+                    .padding(16.dp)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                HeaderSection(state, onPickImage)
+                MetadataSection(viewModel, state)
+                FormatSelection(viewModel, state)
+                PlaylistSection(viewModel, state)
+                Button(
+                    onClick = { onConfirm(FilePath(downloadDir)) },
+                    modifier = Modifier.fillMaxWidth().padding(top = 16.dp)
+                ) {
+                    Text("Iniciar Download")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MetadataSection(viewModel: DownloadViewModel, state: com.example.ytdown.ui.DownloadInputState) {
+    if (state.selectedDownloadType != DownloadType.AUDIO) return
+    MetadataFields(viewModel, state)
+}
+
+@Composable
+private fun HeaderSection(state: com.example.ytdown.ui.DownloadInputState, onPickImage: () -> Unit) {
+    val firstItem = state.fetchedItems.firstOrNull()
+    Row(modifier = Modifier.padding(bottom = 16.dp)) {
+        AsyncImage(
+            model = firstItem?.thumbnail,
+            contentDescription = null,
+            modifier = Modifier.size(100.dp, 60.dp)
+        )
+        Spacer(modifier = Modifier.width(12.dp))
+        Column {
+            Text(
+                text = firstItem?.title?.value ?: "Carregando...",
+                style = MaterialTheme.typography.titleSmall,
+                maxLines = 2
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            TextButton(onClick = onPickImage) { Text("Alterar capa") }
+        }
+    }
+}
+
+@Composable
+private fun MetadataFields(viewModel: DownloadViewModel, state: com.example.ytdown.ui.DownloadInputState) {
+    OutlinedTextField(
+        value = state.artistInput,
+        onValueChange = viewModel::onArtistInputChanged,
+        label = { Text("Artista") },
+        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+    )
+    OutlinedTextField(
+        value = state.albumInput,
+        onValueChange = viewModel::onAlbumInputChanged,
+        label = { Text("Álbum") },
+        modifier = Modifier.fillMaxWidth()
+    )
+}
+
+@Composable
+private fun FormatSelection(viewModel: DownloadViewModel, state: com.example.ytdown.ui.DownloadInputState) {
+    Text("Tipo e Formato", modifier = Modifier.padding(top = 16.dp, bottom = 8.dp))
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        FilterChip(
+            selected = state.selectedDownloadType == DownloadType.AUDIO,
+            onClick = { viewModel.onDownloadTypeSelected(DownloadType.AUDIO) },
+            label = { Text("Áudio") }
+        )
+        FilterChip(
+            selected = state.selectedDownloadType == DownloadType.VIDEO,
+            onClick = { viewModel.onDownloadTypeSelected(DownloadType.VIDEO) },
+            label = { Text("Vídeo") }
+        )
+    }
+
+    val formats = if (state.selectedDownloadType == DownloadType.AUDIO) state.audioFormats else state.videoFormats
+    Row(
+        modifier = Modifier
+            .horizontalScroll(rememberScrollState())
+            .padding(vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        formats.forEach { fmt ->
+            FilterChip(
+                selected = state.selectedFormat == fmt,
+                onClick = { viewModel.onFormatSelected(fmt) },
+                label = { Text(fmt.uppercase()) }
+            )
+        }
+    }
+
+    val qualities = if (state.selectedDownloadType == DownloadType.AUDIO) state.audioBitrates else state.videoResolutions
+    Row(
+        modifier = Modifier
+            .horizontalScroll(rememberScrollState())
+            .padding(vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        qualities.forEach { quality ->
+            FilterChip(
+                selected = state.selectedQuality == quality,
+                onClick = { viewModel.onQualitySelected(quality) },
+                label = { Text(quality.uppercase()) }
+            )
+        }
+    }
+}
+
+@Composable
+private fun PlaylistSection(viewModel: DownloadViewModel, state: com.example.ytdown.ui.DownloadInputState) {
+    if (!state.isPlaylist) return
+
+    TextButton(onClick = viewModel::onSelectAllItems) { Text("Selecionar Tudo") }
+    LazyColumn(modifier = Modifier.height(200.dp)) {
+        items(state.fetchedItems) { item ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp)
+                    .clickable { viewModel.onVideoSelected(item, !item.isSelected) },
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(item.title.value, modifier = Modifier.weight(1f), maxLines = 1)
+                Checkbox(
+                    checked = item.isSelected,
+                    onCheckedChange = { viewModel.onVideoSelected(item, it) }
+                )
+            }
+        }
+    }
+}

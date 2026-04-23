@@ -4,6 +4,7 @@ import com.example.ytdown.core.domain.VideoInfoJson
 import com.example.ytdown.core.domain.MediaTitle
 import com.example.ytdown.core.domain.VideoUrl
 import com.example.ytdown.core.domain.VideoPreviewItem
+import com.example.ytdown.utils.MetadataUtils
 import org.json.JSONObject
 
 class MediaInfoParser {
@@ -27,25 +28,16 @@ class MediaInfoParser {
         return VideoPreviewItem(
             title = MediaTitle(obj.optString("title", "Unknown")),
             url = VideoUrl(obj.optString("webpage_url", obj.optString("url", ""))),
-            thumbnail = obj.optString("thumbnail", null),
+            thumbnail = obj.optString("thumbnail").takeIf { it.isNotBlank() },
             duration = obj.optLong("duration", 0)
         )
     }
 
     fun guessArtistFromTitle(title: MediaTitle): String {
-        val parts = title.value.split(" - ", " – ", " — ", " | ", " by ", " / ")
-        if (parts.size > 1) {
-            val artistCandidate = parts[0].trim()
-            if (artistCandidate.isNotEmpty()) {
-                return artistCandidate
-            }
-        }
-        return ""
+        return MetadataUtils.guessArtistFromTitle(title.value) ?: ""
     }
 
     fun guessAlbumFromTitle(title: MediaTitle): String {
-        // Para playlists, o título da playlist pode ser um bom álbum.
-        // Para vídeos únicos, um valor padrão ou o artista pode ser usado.
-        return "YTDown" // Fallback padrão
+        return MetadataUtils.guessAppTitleFromPath(title.value) ?: "YTDown"
     }
 }

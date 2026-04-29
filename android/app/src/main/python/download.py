@@ -141,6 +141,62 @@ def _build_download_options(
     )
 
 
+def _resolve_downloaded_filename(ydl, info, format_type):
+    if not info:
+        return None
+
+    orig_filename = ydl.prepare_filename(info)
+    if os.path.exists(orig_filename):
+        return orig_filename
+
+    return _find_downloaded_file(orig_filename, format_type)
+
+
+def _resolve_downloaded_files(ydl, entries, format_type):
+    files = []
+    if not entries:
+        return files
+
+    for entry in entries:
+        if not entry:
+            continue
+        filepath = _resolve_downloaded_filename(ydl, entry, format_type)
+        if filepath and os.path.exists(filepath):
+            files.append(filepath)
+    return files
+
+
+def _apply_tags_to_files(files, info_sources, artist, album, artwork_url):
+    if not files:
+        return False
+
+    success = True
+    for index, filepath in enumerate(files):
+        info = info_sources[index] if index < len(info_sources) else {}
+        title = info.get("title", os.path.splitext(os.path.basename(filepath))[0])
+        resolved_title, resolved_artist, resolved_album = _resolve_metadata(
+            title,
+            artist,
+            album,
+            info,
+        )
+        resolved_artwork_url = artwork_url or info.get("thumbnail")
+
+        injected = _force_metadata_with_mutagen(
+            filepath,
+            resolved_title,
+            resolved_artist,
+            resolved_album,
+            resolved_artwork_url,
+        )
+        if not injected:
+            print(f"⚠️ Falha ao injetar tags em {filepath}")
+            success = False
+        else:
+            print(f"✅ Tags injetadas em {filepath}")
+    return success
+
+
 def download_video(
     url,
     output_path,
@@ -200,6 +256,50 @@ def download_video(
         yt_dlp_module = _get_yt_dlp_module(app_files_dir)
         with yt_dlp_module.YoutubeDL(ydl_opts) as ydl:
             downloaded_info = ydl.extract_info(url, download=True)
+            is_playlist = downloaded_info.get("_type") == "playlist"
+
+            if is_playlist:
+                entries = downloaded_info.get("entries", []) or []
+                downloaded_files = _resolve_downloaded_files(ydl, entries, format_type)
+                if not downloaded_files:
+                    return json.dumps(
+                        _failure_payload(
+                            "Nenhum arquivo de playlist encontrado após o download",
+                            stage="final_file_validation",
+                            retryable=False,
+                            progress=progress_data["percent"],
+                        )
+                    )
+                final_filename = downloaded_files[0]
+                print(f"📁 Playlist baixada com {len(downloaded_files)} arquivos")
+
+                tags_injected = _apply_tags_to_files(
+                    downloaded_files,
+                    entries,
+                    artist,
+                    album,
+                    artwork_url or downloaded_info.get("thumbnail"),
+                )
+                detected_title = downloaded_info.get("title", "Playlist")
+                detected_artist = artist or downloaded_info.get("uploader") or "YTDown"
+                detected_album = (
+                    album or downloaded_info.get("playlist_title") or "YTDown"
+                )
+
+                return json.dumps(
+                    {
+                        "success": True,
+                        "message": "Playlist download completed",
+                        "progress": progress_data["percent"],
+                        "filename": final_filename,
+                        "filenames": downloaded_files,
+                        "tags_injected": tags_injected,
+                        "detected_title": detected_title,
+                        "detected_artist": detected_artist,
+                        "detected_album": detected_album,
+                    }
+                )
+
             orig_filename = ydl.prepare_filename(downloaded_info)
             final_filename = _find_downloaded_file(orig_filename, format_type)
 

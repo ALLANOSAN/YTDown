@@ -1,98 +1,108 @@
 package com.example.ytdown.core.business
 
-import com.example.ytdown.core.domain.ExitCode
-import com.example.ytdown.core.domain.DownloadOptions
-import com.example.ytdown.core.domain.VideoUrl
-import com.example.ytdown.core.infrastructure.NativeProcessExecutor
+import com.chaquo.python.Python
+import com.example.ytdown.core.domain.*
 import com.example.ytdown.core.infrastructure.PythonEnvironment
 import java.io.File
-import java.util.regex.Pattern
+import org.json.JSONObject
 
 class YtDlpWrapper(
-    private val executor: NativeProcessExecutor,
     private val env: PythonEnvironment
 ) {
-    private val progressPattern = Pattern.compile("\\[download\\]\\s+([\\d.]+)%")
-
+    /**
+     * Executa o download de vídeo/áudio usando yt-dlp via Chaquopy.
+     */
     fun downloadVideo(
-        url: VideoUrl, 
-        outputDir: File, 
+        url: VideoUrl,
+        outputDir: File,
         options: DownloadOptions,
+        metadata: MediaMetadata? = null,
+        artworkUrl: String? = null,
         onProgress: ((Int) -> Unit)? = null
     ): ExitCode {
-        val pythonPath = env.getBinaryPath("python3.13").absolutePath
-        val scriptPath = env.getBinaryPath("ytdown.py").absolutePath
+        val py = Python.getInstance()
+        val module = py.getModule("ytdown")
         
-        val command = listOf(
-            pythonPath, 
-            scriptPath, 
-            "--url", url.value, 
-            "--output", outputDir.absolutePath,
-            "--format-type", options.type.value,
-            "--quality", options.quality,
-            "--selected-format", options.format,
-            "--native-lib-dir", env.getBinaryPath("").parentFile?.absolutePath ?: ""
-        )
-
-        val result = executor.run(command, outputDir) { line ->
-            parseProgress(line, onProgress)
+        val outputPath = File(outputDir, "%(title)s.%(ext)s").absolutePath
+        
+        // Criamos o callback que o Python vai chamar
+        val progressCallback = object : Runnable {
+            private var lastProgress = -1
+            fun update(p: Int) {
+                if (p != lastProgress) {
+                    lastProgress = p
+                    onProgress?.invoke(p)
+                }
+            }
+            override fun run() {}
         }
-        
-        return result.first
-    }
 
-    private fun parseProgress(line: String, callback: ((Int) -> Unit)?) {
-        val matcher = progressPattern.matcher(line)
-        if (matcher.find()) {
-            val percent = matcher.group(1)?.toFloatOrNull()?.toInt() ?: 0
-            callback?.invoke(percent)
+        val resultJson = module.callAttr(
+            "download_video",
+            url.value,
+            outputPath,
+            options.type.value,
+            options.quality,
+            env.getNativeLibDir(),
+            env.getAppFilesDir(),
+            metadata?.artist?.value,
+            metadata?.album?.value,
+            artworkUrl,
+            options.format,
+            progressCallback
+        ).toString()
+
+        val result = JSONObject(resultJson)
+        var exit = ExitCode(1)
+        if (result.getBoolean("success")) {
+            exit = ExitCode(0)
         }
+        return exit
     }
 
-    fun rewriteMetadata(filePath: String, title: String, artist: String?, album: String?, artworkUrl: String?): ExitCode {
-        val pythonPath = env.getBinaryPath("python3.13").absolutePath
-        val scriptPath = env.getBinaryPath("ytdown.py").absolutePath
-        
-        val command = mutableListOf(
-            pythonPath,
-            scriptPath,
-            "--rewrite-metadata",
-            "--file-path", filePath,
-            "--title", title
-        )
-        
-        artist?.let { command.addAll(listOf("--artist", it)) }
-        album?.let { command.addAll(listOf("--album", it)) }
-        artworkUrl?.let { command.addAll(listOf("--artwork-url", it)) }
-
-        return executor.run(command, File(filePath).parentFile ?: File(".")).first
+    fun fetchVideoInfo(url: String): JSONObject {
+        val py = Python.getInstance()
+        val module = py.getModule("ytdown")
+        val resultJson = module.callAttr("fetch_video_info", url, env.getAppFilesDir()).toString()
+        return JSONObject(resultJson)
     }
 
-    fun checkUpdate(appFilesDir: String): String {
-        val pythonPath = env.getBinaryPath("python3.13").absolutePath
-        val scriptPath = env.getBinaryPath("ytdown.py").absolutePath
+    fun rewriteMetadata(
+        filePath: String,
+        title: String,
+        artist: String?,
+        album: String?,
+        artworkUrl: String?
+    ): ExitCode {
+        val py = Python.getInstance()
+        val module = py.getModule("ytdown")
         
-        val command = listOf(
-            pythonPath,
-            scriptPath,
-            "--check-update",
-            "--app-files-dir", appFilesDir
-        )
-        
-        return executor.run(command, File(appFilesDir)).second.stdout
+        val resultJson = module.callAttr(
+            "rewrite_file_metadata",
+            filePath,
+            title,
+            artist,
+            album,
+            artworkUrl
+        ).toString()
+
+        val result = JSONObject(resultJson)
+        var exit = ExitCode(1)
+        if (result.getBoolean("success")) {
+            exit = ExitCode(0)
+        }
+        return exit
+    }
+
+    fun checkUpdate(appFilesDir: String, forceRemote: Boolean = false): String {
+        val py = Python.getInstance()
+        val module = py.getModule("ytdown")
+        return module.callAttr("check_yt_dlp_update", appFilesDir, forceRemote).toString()
     }
 
     fun performUpdate(appFilesDir: String): String {
-        val pythonPath = env.getBinaryPath("python3.13").absolutePath
-        val scriptPath = env.getBinaryPath("ytdown.py").absolutePath
-        
-        val command = listOf(
-            pythonPath,
-            scriptPath,
-            "--perform-update",
-            "--app-files-dir", appFilesDir
-        )
-        
-        return executor.run(command, File(appFilesDir)).second.stdout
+        val py = Python.getInstance()
+        val module = py.getModule("ytdown")
+        return module.callAttr("update_yt_dlp_if_needed", appFilesDir, true).toString()
     }
 }

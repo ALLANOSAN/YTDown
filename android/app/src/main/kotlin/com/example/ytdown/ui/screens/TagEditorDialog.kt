@@ -3,6 +3,7 @@ package com.example.ytdown.ui.screens
 import android.os.Environment
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import java.io.File
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -15,7 +16,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import com.example.ytdown.ui.theme.TextSecondary
 import coil.compose.AsyncImage
 import com.example.ytdown.core.domain.DownloadType
 import com.example.ytdown.core.domain.FilePath
@@ -25,14 +28,19 @@ import com.example.ytdown.ui.DownloadViewModel
 @Composable
 fun TagEditorDialog(
     viewModel: DownloadViewModel,
-    onConfirm: (FilePath) -> Unit,
-    onPickImage: () -> Unit
+    onConfirm: (FilePath) -> Unit
 ) {
     val state by viewModel.inputState.collectAsState()
     if (!state.showDialog) return
 
     val context = LocalContext.current
-    val downloadDir = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
+    var publicFolder = Environment.DIRECTORY_MOVIES
+    if (state.selectedDownloadType == DownloadType.AUDIO) {
+        publicFolder = Environment.DIRECTORY_MUSIC
+    }
+    val downloadDir = Environment.getExternalStoragePublicDirectory(publicFolder)
+        ?.let { File(it, "YTDown") }
+        ?.also { if (!it.exists()) it.mkdirs() }
         ?.absolutePath
         ?: context.filesDir.absolutePath
 
@@ -43,10 +51,16 @@ fun TagEditorDialog(
                     .padding(16.dp)
                     .verticalScroll(rememberScrollState())
             ) {
-                HeaderSection(state, onPickImage)
+                HeaderSection(state)
                 MetadataSection(viewModel, state)
                 FormatSelection(viewModel, state)
                 PlaylistSection(viewModel, state)
+                Text(
+                    text = "Salvar em: $downloadDir",
+                    color = TextSecondary,
+                    fontSize = 12.sp,
+                    modifier = Modifier.padding(top = 12.dp)
+                )
                 Button(
                     onClick = { onConfirm(FilePath(downloadDir)) },
                     modifier = Modifier.fillMaxWidth().padding(top = 16.dp)
@@ -65,8 +79,14 @@ private fun MetadataSection(viewModel: DownloadViewModel, state: com.example.ytd
 }
 
 @Composable
-private fun HeaderSection(state: com.example.ytdown.ui.DownloadInputState, onPickImage: () -> Unit) {
+private fun HeaderSection(state: com.example.ytdown.ui.DownloadInputState) {
     val firstItem = state.fetchedItems.firstOrNull()
+    val headerTitle = firstItem?.title?.value ?: "Detalhes do vídeo"
+    var playlistInfo: String? = null
+    if (state.isPlaylist) {
+        playlistInfo = "Playlist - ${state.fetchedItems.size} itens"
+    }
+
     Row(modifier = Modifier.padding(bottom = 16.dp)) {
         AsyncImage(
             model = firstItem?.thumbnail,
@@ -76,12 +96,24 @@ private fun HeaderSection(state: com.example.ytdown.ui.DownloadInputState, onPic
         Spacer(modifier = Modifier.width(12.dp))
         Column {
             Text(
-                text = firstItem?.title?.value ?: "Carregando...",
+                text = headerTitle,
                 style = MaterialTheme.typography.titleSmall,
                 maxLines = 2
             )
+            playlistInfo?.let {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextSecondary
+                )
+            }
             Spacer(modifier = Modifier.height(8.dp))
-            TextButton(onClick = onPickImage) { Text("Alterar capa") }
+            Text(
+                text = "Capa gerada automaticamente via LastFM",
+                style = MaterialTheme.typography.bodySmall,
+                color = TextSecondary
+            )
         }
     }
 }
@@ -118,7 +150,10 @@ private fun FormatSelection(viewModel: DownloadViewModel, state: com.example.ytd
         )
     }
 
-    val formats = if (state.selectedDownloadType == DownloadType.AUDIO) state.audioFormats else state.videoFormats
+    var formats = state.videoFormats
+    if (state.selectedDownloadType == DownloadType.AUDIO) {
+        formats = state.audioFormats
+    }
     Row(
         modifier = Modifier
             .horizontalScroll(rememberScrollState())
@@ -134,7 +169,10 @@ private fun FormatSelection(viewModel: DownloadViewModel, state: com.example.ytd
         }
     }
 
-    val qualities = if (state.selectedDownloadType == DownloadType.AUDIO) state.audioBitrates else state.videoResolutions
+    var qualities = state.videoResolutions
+    if (state.selectedDownloadType == DownloadType.AUDIO) {
+        qualities = state.audioBitrates
+    }
     Row(
         modifier = Modifier
             .horizontalScroll(rememberScrollState())

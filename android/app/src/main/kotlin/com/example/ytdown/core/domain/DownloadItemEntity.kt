@@ -2,20 +2,39 @@ package com.example.ytdown.core.domain
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
+import androidx.room.Index
 
-@Entity(tableName = "downloads")
+/**
+ * Entidade de Download com Índices de Performance.
+ * Migrado do Flutter (DatabaseService v9).
+ */
+@Entity(
+    tableName = "downloads",
+    indices = [
+        Index(value = ["artist"]),
+        Index(value = ["album"]),
+        Index(value = ["status"]),
+        Index(value = ["createdAt"])
+    ]
+)
 data class DownloadItemEntity(
     @PrimaryKey val id: String,
     val url: String,
     val title: String,
-    val filePath: String,
-    val status: String, // "pending", "downloading", "completed", "failed"
+    val outputPath: String,
+    val status: String, // "queued", "downloading", "completed", "failed"
     val progress: Double,
-    val artist: String = "",
-    val album: String = "",
-    val timestamp: Long = System.currentTimeMillis(),
+    val artist: String? = null,
+    val album: String? = null,
+    val createdAt: Long = System.currentTimeMillis(),
     val thumbnailPath: String? = null,
     val artistImageUrl: String? = null,
     val albumImageUrl: String? = null,
-    val format: String = "mp3"
-)
+    val format: String = "mp3",
+    val quality: String = "192",
+    val type: Int = 0, // 0: Audio, 1: Video
+    val exportedPath: String? = null
+) {
+    val folderName: String
+        get() = outputPath.substringBeforeLast("/", "Downloads").substringAfterLast("/")
+}

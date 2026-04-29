@@ -12,7 +12,7 @@ import androidx.compose.ui.unit.dp
 
 @Composable
 fun shimmerBrush(showShimmer: Boolean = true, targetValue: Float = 1000f): Brush {
-    return if (showShimmer) {
+    if (showShimmer) {
         val shimmerColors = listOf(
             Color.White.copy(alpha = 0.05f),
             Color.White.copy(alpha = 0.15f),
@@ -24,24 +24,24 @@ fun shimmerBrush(showShimmer: Boolean = true, targetValue: Float = 1000f): Brush
             initialValue = 0f,
             targetValue = targetValue,
             animationSpec = infiniteRepeatable(
-                animation = twin(800, easing = LinearEasing),
+                animation = tween(800, easing = LinearEasing),
                 repeatMode = RepeatMode.Restart
             ),
             label = "shimmer"
         )
 
-        Brush.linearGradient(
+        return Brush.linearGradient(
             colors = shimmerColors,
             start = Offset.Zero,
             end = Offset(x = translateAnimation.value, y = translateAnimation.value)
         )
-    } else {
-        Brush.linearGradient(
-            colors = listOf(Color.Transparent, Color.Transparent),
-            start = Offset.Zero,
-            end = Offset.Zero
-        )
     }
+
+    return Brush.linearGradient(
+        colors = listOf(Color.Transparent, Color.Transparent),
+        start = Offset.Zero,
+        end = Offset.Zero
+    )
 }
 
 @Composable

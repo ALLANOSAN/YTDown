@@ -1,37 +1,23 @@
 package com.example.ytdown.utils
 
-class LruCache<K, V>(capacity: Int) {
-    init {
-        require(capacity > 0) { "LruCache capacity must be greater than zero" }
-    }
+import android.util.LruCache
 
-    private val map = object : LinkedHashMap<K, V>(capacity, 0.75f, true) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<K, V>): Boolean {
-            return size > capacity
-        }
-    }
+/**
+ * Cache LRU (Least Recently Used) genérico.
+ * Migrado do Flutter (lib/utils/lru_cache.dart) usando a implementação nativa Android.
+ */
+class MemoryLruCache<K : Any, V : Any>(capacity: Int) {
+    private val cache = LruCache<K, V>(capacity)
 
-    @Synchronized
-    fun get(key: K): V? = map[key]
+    fun get(key: K): V? = cache.get(key)
 
-    @Synchronized
     fun put(key: K, value: V) {
-        map[key] = value
+        cache.put(key, value)
     }
 
-    @Synchronized
-    fun remove(key: K) {
-        map.remove(key)
-    }
+    fun containsKey(key: K): Boolean = cache.get(key) != null
 
-    @Synchronized
     fun clear() {
-        map.clear()
+        cache.evictAll()
     }
-
-    @Synchronized
-    fun containsKey(key: K): Boolean = map.containsKey(key)
-
-    val length: Int
-        @Synchronized get() = map.size
 }

@@ -11,6 +11,7 @@ import androidx.compose.material.icons.filled.AudioFile
 import androidx.compose.material.icons.filled.VideoFile
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import android.os.Environment
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -20,6 +21,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import java.io.File
 import com.example.ytdown.core.domain.DownloadType
 import com.example.ytdown.core.domain.FilePath
 import com.example.ytdown.ui.DownloadViewModel
@@ -122,11 +124,23 @@ fun DownloadOptionsBottomSheet(
             // Formatos e Qualidades
             Text("Formato", color = Color.White, fontWeight = FontWeight.Bold)
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
-                val formats = if (state.selectedDownloadType == DownloadType.AUDIO) state.audioFormats else state.videoFormats
+                var formats = state.videoFormats
+                if (state.selectedDownloadType == DownloadType.AUDIO) {
+                    formats = state.audioFormats
+                }
                 items(formats) { format ->
                     FilterChip(
                         selected = state.selectedFormat == format,
-                        onClick = { viewModel.onFormatSelected(format) },
+                        onClick = { 
+                            viewModel.onFormatSelected(format)
+                            // 🎨 Lote 2.3: Lógica Inteligente de Bitrate
+                            if (format == "wav" || format == "flac") {
+                                viewModel.onQualitySelected("lossless")
+                            }
+                            if (state.selectedQuality == "lossless" && format != "wav" && format != "flac") {
+                                viewModel.onQualitySelected("320")
+                            }
+                        },
                         label = { Text(format.uppercase()) },
                         colors = FilterChipDefaults.filterChipColors(
                             selectedContainerColor = YTDownPurple,
@@ -139,9 +153,28 @@ fun DownloadOptionsBottomSheet(
 
             Spacer(modifier = Modifier.height(24.dp))
 
+            var publicFolder = Environment.DIRECTORY_MOVIES
+            if (state.selectedDownloadType == DownloadType.AUDIO) {
+                publicFolder = Environment.DIRECTORY_MUSIC
+            }
+            val downloadFolder = Environment.getExternalStoragePublicDirectory(publicFolder)
+                ?.let { File(it, "YTDown") }
+                ?.also { if (!it.exists()) it.mkdirs() }
+                ?.absolutePath
+                ?: ""
+
+            Text(
+                text = "Salvar em: $downloadFolder",
+                color = TextSecondary,
+                fontSize = 12.sp,
+                modifier = Modifier.padding(bottom = 12.dp)
+            )
+
             Button(
-                onClick = { 
-                    viewModel.startDownloadFlow(FilePath("/storage/emulated/0/Music/YTDown"))
+                onClick = {
+                    if (downloadFolder.isNotBlank()) {
+                        viewModel.startDownloadFlow(FilePath(downloadFolder))
+                    }
                     onDismiss()
                 },
                 modifier = Modifier.fillMaxWidth().height(56.dp),
@@ -162,20 +195,37 @@ private fun DownloadTypeCard(
     modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
+    var surfaceColor = SurfaceDark
+    if (isSelected) {
+        surfaceColor = YTDownPurple
+    }
+    var borderStroke: androidx.compose.foundation.BorderStroke? = androidx.compose.foundation.BorderStroke(1.dp, Color.DarkGray)
+    if (isSelected) {
+        borderStroke = null
+    }
+
     Surface(
         modifier = modifier
             .clip(RoundedCornerShape(16.dp))
             .clickable { onClick() },
-        color = if (isSelected) YTDownPurple else SurfaceDark,
-        border = if (isSelected) null else androidx.compose.foundation.BorderStroke(1.dp, Color.DarkGray)
+        color = surfaceColor,
+        border = borderStroke
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Icon(icon, null, tint = if (isSelected) Color.White else TextSecondary)
+            var iconTint = TextSecondary
+            if (isSelected) {
+                iconTint = Color.White
+            }
+            Icon(icon, null, tint = iconTint)
             Spacer(modifier = Modifier.height(8.dp))
-            Text(title, color = if (isSelected) Color.White else TextSecondary, fontWeight = FontWeight.Bold)
+            var titleColor = TextSecondary
+            if (isSelected) {
+                titleColor = Color.White
+            }
+            Text(title, color = titleColor, fontWeight = FontWeight.Bold)
         }
     }
 }

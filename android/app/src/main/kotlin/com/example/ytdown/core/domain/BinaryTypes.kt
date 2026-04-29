@@ -33,6 +33,7 @@ data class MediaMetadata(
 )
 
 data class VideoPreviewItem(
+    val id: String, // Adicionado ID para facilitar seleção
     val title: MediaTitle,
     val url: VideoUrl,
     val thumbnail: String?,

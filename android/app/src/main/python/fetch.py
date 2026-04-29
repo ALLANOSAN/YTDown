@@ -38,9 +38,34 @@ def fetch_video_info(url, app_files_dir=None):
                 )
 
             is_playlist = info.get("_type", "video") == "playlist"
-            entries = None
+            entries = []
             if is_playlist:
-                entries = info.get("entries", [])
+                for entry in info.get("entries", []) or []:
+                    if not entry:
+                        continue
+                    entries.append(
+                        {
+                            "id": entry.get("id", ""),
+                            "title": entry.get("title", "Sem título"),
+                            "thumbnail": entry.get("thumbnail", ""),
+                            "duration": entry.get("duration", 0),
+                            "url": entry.get("webpage_url") or entry.get("url") or "",
+                            "artist": entry.get("artist") or entry.get("uploader", ""),
+                            "album": entry.get("album", "YTDown"),
+                        }
+                    )
+            else:
+                entries.append(
+                    {
+                        "id": info.get("id", ""),
+                        "title": info.get("title", "Sem título"),
+                        "thumbnail": info.get("thumbnail", ""),
+                        "duration": info.get("duration", 0),
+                        "url": url,
+                        "artist": info.get("artist") or info.get("uploader", ""),
+                        "album": info.get("album", "YTDown"),
+                    }
+                )
 
             return json.dumps(
                 {

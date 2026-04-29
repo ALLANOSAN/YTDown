@@ -10,6 +10,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.media3.common.Player
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
@@ -36,6 +37,8 @@ fun PlayerFullScreen(
     val position by viewModel.position.collectAsState()
     val duration by viewModel.duration.collectAsState()
     val showArtistImage by viewModel.showArtistImage.collectAsState()
+    val isShuffleEnabled by viewModel.isShuffleEnabled.collectAsState()
+    val repeatMode by viewModel.repeatMode.collectAsState()
 
     if (track == null) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -45,13 +48,14 @@ fun PlayerFullScreen(
     }
 
     val artworkSource = remember(track, showArtistImage) {
-        if (showArtistImage && !track?.artistImageUrl.isNullOrEmpty()) {
-            track?.artistImageUrl
-        } else if (!track?.albumImageUrl.isNullOrEmpty()) {
-            track?.albumImageUrl
-        } else {
-            track?.thumbnailPath
+        var source = track.thumbnailPath
+        if (showArtistImage && !track.artistImageUrl.isNullOrEmpty()) {
+            source = track.artistImageUrl
         }
+        if (source.isNullOrEmpty() && !track.albumImageUrl.isNullOrEmpty()) {
+            source = track.albumImageUrl
+        }
+        source
     }
 
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
@@ -189,13 +193,25 @@ fun PlayerFullScreen(
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                IconButton(onClick = { }) {
-                    Icon(Icons.Default.Shuffle, null, tint = Color.White.copy(alpha = 0.5f))
+                var shuffleTint = Color.White.copy(alpha = 0.5f)
+                if (isShuffleEnabled) {
+                    shuffleTint = Color.White
+                }
+                IconButton(onClick = { viewModel.toggleShuffle() }) {
+                    Icon(
+                        Icons.Default.Shuffle,
+                        null,
+                        tint = shuffleTint
+                    )
                 }
                 IconButton(onClick = { viewModel.previous() }) {
                     Icon(Icons.Default.SkipPrevious, null, tint = Color.White, modifier = Modifier.size(48.dp))
                 }
                 
+                var playIcon = Icons.Default.PlayArrow
+                if (isPlaying) {
+                    playIcon = Icons.Default.Pause
+                }
                 Surface(
                     onClick = { viewModel.togglePlayPause() },
                     shape = CircleShape,
@@ -204,7 +220,7 @@ fun PlayerFullScreen(
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
-                            if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                            playIcon,
                             null,
                             tint = Color.Black,
                             modifier = Modifier.size(40.dp)
@@ -215,8 +231,20 @@ fun PlayerFullScreen(
                 IconButton(onClick = { viewModel.next() }) {
                     Icon(Icons.Default.SkipNext, null, tint = Color.White, modifier = Modifier.size(48.dp))
                 }
-                IconButton(onClick = { }) {
-                    Icon(Icons.Default.Repeat, null, tint = Color.White.copy(alpha = 0.5f))
+                var repeatIcon = Icons.Default.Repeat
+                if (repeatMode == Player.REPEAT_MODE_ONE) {
+                    repeatIcon = Icons.Default.RepeatOne
+                }
+                var repeatTint = Color.White
+                if (repeatMode == Player.REPEAT_MODE_OFF) {
+                    repeatTint = Color.White.copy(alpha = 0.5f)
+                }
+                IconButton(onClick = { viewModel.toggleRepeatMode() }) {
+                    Icon(
+                        repeatIcon,
+                        null,
+                        tint = repeatTint
+                    )
                 }
             }
 

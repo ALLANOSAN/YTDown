@@ -7,6 +7,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -51,7 +53,7 @@ fun MiniPlayer(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 AsyncImage(
-                    model = track?.thumbnailPath,
+                    model = track?.albumImageUrl?.takeIf { it.isNotBlank() } ?: track?.thumbnailPath,
                     contentDescription = null,
                     modifier = Modifier
                         .size(48.dp)
@@ -77,13 +79,25 @@ fun MiniPlayer(
                     )
                 }
                 
-                IconButton(onClick = { viewModel.togglePlayPause() }) {
-                    Icon(
-                        if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                        contentDescription = null,
-                        tint = Color.White,
-                        modifier = Modifier.size(28.dp)
-                    )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = { viewModel.previous() }) {
+                        Icon(Icons.Default.SkipPrevious, contentDescription = null, tint = Color.White, modifier = Modifier.size(24.dp))
+                    }
+                    var playIcon = Icons.Default.PlayArrow
+                    if (isPlaying) {
+                        playIcon = Icons.Default.Pause
+                    }
+                    IconButton(onClick = { viewModel.togglePlayPause() }) {
+                        Icon(
+                            playIcon,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(28.dp)
+                        )
+                    }
+                    IconButton(onClick = { viewModel.next() }) {
+                        Icon(Icons.Default.SkipNext, contentDescription = null, tint = Color.White, modifier = Modifier.size(24.dp))
+                    }
                 }
             }
             

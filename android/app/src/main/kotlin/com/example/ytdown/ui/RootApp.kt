@@ -25,19 +25,20 @@ import androidx.compose.ui.unit.sp
 @Composable
 fun RootApp(
     viewModel: DownloadViewModel,
-    onPickImage: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val navController = rememberNavController()
     val playerViewModel: PlayerViewModel = hiltViewModel()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
+    val state by viewModel.inputState.collectAsState()
 
-    TagEditorDialog(
-        viewModel = viewModel,
-        onConfirm = { folder -> viewModel.startDownloadFlow(folder) },
-        onPickImage = onPickImage
-    )
+    if (state.showDialog && !state.isPlaylist) {
+        TagEditorDialog(
+            viewModel = viewModel,
+            onConfirm = { folder -> viewModel.startDownloadFlow(folder) }
+        )
+    }
 
     Scaffold(
         modifier = modifier,
@@ -63,7 +64,7 @@ fun RootApp(
         containerColor = Color.Black
     ) { padding ->
         Box(modifier = Modifier.padding(padding).background(Color.Black)) {
-            MainNavigation(navController, viewModel, onPickImage)
+            MainNavigation(navController, viewModel)
         }
     }
 }

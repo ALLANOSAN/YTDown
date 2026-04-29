@@ -1,5 +1,19 @@
 package com.example.ytdown.providers
 
-class SharingProvider {
-    // TODO: Migrar lógica de sharing_provider.dart
+import android.content.Intent
+import com.example.ytdown.services.SharingIntentService
+import javax.inject.Inject
+import javax.inject.Singleton
+
+@Singleton
+class SharingProvider @Inject constructor(
+    private val sharingIntentService: SharingIntentService
+) {
+    fun extractSharedUrl(intent: Intent): String? {
+        return sharingIntentService.handleIntent(intent)
+    }
+
+    fun cleanUrl(url: String): String {
+        return sharingIntentService.cleanUrl(url)
+    }
 }

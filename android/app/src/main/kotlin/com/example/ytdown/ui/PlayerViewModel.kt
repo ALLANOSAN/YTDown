@@ -2,15 +2,14 @@ package com.example.ytdown.ui
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.ytdown.core.domain.DownloadItemEntity
 import com.example.ytdown.core.infrastructure.MusicPlayerManager
+import com.example.ytdown.core.domain.DownloadItemEntity
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.*
 import javax.inject.Inject
+
+import androidx.media3.common.Player
 
 @HiltViewModel
 class PlayerViewModel @Inject constructor(
@@ -18,65 +17,88 @@ class PlayerViewModel @Inject constructor(
 ) : ViewModel() {
 
     val currentTrack = playerManager.currentTrack
-    val isPlaying = playerManager.isPlaying
-    
-    private val _position = MutableStateFlow(0L)
-    val position: StateFlow<Long> = _position
+    val isPlaying = MutableStateFlow(false)
+    val position = MutableStateFlow(0L)
+    val duration = MutableStateFlow(0L)
+    val isShuffleEnabled = playerManager.isShuffleEnabled
+    val repeatMode = playerManager.repeatMode
 
-    private val _duration = MutableStateFlow(0L)
-    val duration: StateFlow<Long> = _duration
-
-    // Art Toggle Logic (Portado do Flutter)
     private val _showArtistImage = MutableStateFlow(false)
-    val showArtistImage: StateFlow<Boolean> = _showArtistImage
-    private var artToggleJob: Job? = null
+    val showArtistImage = _showArtistImage.asStateFlow()
+
+    private var artworkTimer: Job? = null
+    private var progressTicker: Job? = null
+    private val playerListener = object : Player.Listener {
+        override fun onIsPlayingChanged(isPlaying: Boolean) {
+            this@PlayerViewModel.isPlaying.value = isPlaying
+        }
+
+        override fun onPlaybackStateChanged(playbackState: Int) {
+            if (playbackState == Player.STATE_READY || playbackState == Player.STATE_BUFFERING) {
+                duration.value = playerManager.getPlayer().duration.coerceAtLeast(0L)
+            }
+        }
+    }
 
     init {
-        updateProgress()
-        startArtToggleTimer()
+        startArtworkTimer()
+        playerManager.getPlayer().addListener(playerListener)
+        startProgressTicker()
+        isPlaying.value = playerManager.getPlayer().isPlaying
     }
 
-    private fun updateProgress() {
-        viewModelScope.launch {
-            while (true) {
-                _position.value = playerManager.player.currentPosition
-                _duration.value = playerManager.player.duration.coerceAtLeast(0L)
-                delay(1000)
+    /**
+     * Migrado do Flutter (MusicPlayerScreen -> _startArtworkToggleTimer):
+     * Alterna suavemente entre a capa do álbum e a foto do artista a cada 10 segundos.
+     */
+    private fun startArtworkTimer() {
+        artworkTimer?.cancel()
+        artworkTimer = viewModelScope.launch {
+            while (isActive) {
+                delay(10000)
+                _showArtistImage.value = !_showArtistImage.value
             }
         }
     }
 
-    private fun startArtToggleTimer() {
-        artToggleJob?.cancel()
-        artToggleJob = viewModelScope.launch {
-            while (true) {
-                delay(10000) // 10 segundos
-                if (currentTrack.value != null) {
-                    _showArtistImage.value = !_showArtistImage.value
-                }
+    private fun startProgressTicker() {
+        progressTicker?.cancel()
+        progressTicker = viewModelScope.launch {
+            while (isActive) {
+                val player = playerManager.getPlayer()
+                position.value = player.currentPosition
+                duration.value = player.duration.coerceAtLeast(0L)
+                delay(200)
             }
-        }
-    }
-
-    fun playTrack(item: DownloadItemEntity) {
-        viewModelScope.launch {
-            playerManager.play(item)
         }
     }
 
     fun togglePlayPause() {
-        playerManager.togglePlayPause()
+        if (playerManager.currentTrack.value == null) return
+        val player = playerManager.getPlayer()
+        val currentlyPlaying = player.isPlaying
+
+        if (currentlyPlaying) {
+            playerManager.pause()
+        }
+        if (!currentlyPlaying) {
+            playerManager.resume()
+        }
+
+        isPlaying.value = playerManager.getPlayer().isPlaying
     }
 
-    fun next() {
-        playerManager.next()
-    }
+    fun toggleShuffle() = playerManager.toggleShuffle()
+    fun toggleRepeatMode() = playerManager.toggleRepeatMode()
+    fun playTrack(item: DownloadItemEntity) = playerManager.playTrack(item)
+    fun next() = playerManager.next()
+    fun previous() = playerManager.previous()
+    fun seekTo(pos: Long) = playerManager.seekTo(pos)
 
-    fun previous() {
-        playerManager.previous()
-    }
-
-    fun seekTo(positionMs: Long) {
-        playerManager.seekTo(positionMs)
+    override fun onCleared() {
+        artworkTimer?.cancel()
+        progressTicker?.cancel()
+        playerManager.getPlayer().removeListener(playerListener)
+        super.onCleared()
     }
 }

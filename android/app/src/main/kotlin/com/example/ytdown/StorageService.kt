@@ -19,8 +19,8 @@ object StorageService {
     private var pendingSafExport: PendingSafExport? = null
 
     private data class PendingSafExport(
-        val sourcePath: FilePath,
-        val mimeType: MimeType,
+        val sourcePath: StoragePath,
+        val mimeType: StorageMimeType,
         val diagnostics: MutableMap<String, Any>,
     )
 
@@ -32,10 +32,10 @@ object StorageService {
 
     fun exportToPublicCollection(
         context: Context,
-        sourcePath: FilePath,
+        sourcePath: StoragePath,
         displayName: String,
-        mediaType: MediaType,
-        mimeType: MimeType,
+        mediaType: StorageMediaType,
+        mimeType: StorageMimeType,
         allowUserInteractionFallback: Boolean,
     ) {
         var stage = "init"
@@ -136,14 +136,16 @@ object StorageService {
         }
 
         return try {
+            var isSuccess = false
             if (exportedPath.startsWith("content://")) {
                 val uri = Uri.parse(exportedPath)
-                val deletedCount = context.contentResolver.delete(uri, null, null)
-                deletedCount > 0
-            } else {
-                val file = File(exportedPath)
-                !file.exists() || file.delete()
+                isSuccess = context.contentResolver.delete(uri, null, null) > 0
             }
+            if (!exportedPath.startsWith("content://")) {
+                val file = File(exportedPath)
+                isSuccess = !file.exists() || file.delete()
+            }
+            isSuccess
         } catch (e: Exception) {
             false
         }
@@ -207,7 +209,7 @@ object StorageService {
     }
 
     @androidx.annotation.RequiresApi(Build.VERSION_CODES.Q)
-    private fun buildExportTargets(mediaType: MediaType): List<ExportTarget> {
+    private fun buildExportTargets(mediaType: StorageMediaType): List<ExportTarget> {
         if (mediaType.isAudio()) {
             return listOf(
                 ExportTarget(
@@ -308,7 +310,7 @@ object StorageService {
     private fun exportToLegacyPublicDir(
         sourceFile: File,
         fileName: String,
-        mediaType: MediaType,
+        mediaType: StorageMediaType,
         diagnostics: MutableMap<String, Any>,
     ) {
         diagnostics["strategy"] = "legacy_public_dir"
@@ -332,7 +334,7 @@ object StorageService {
     }
 
     private fun validateSourceFile(
-        sourcePath: FilePath,
+        sourcePath: StoragePath,
     ): File? {
         val file = sourcePath.toFile()
         if (file.exists()) {
@@ -369,9 +371,9 @@ object StorageService {
 
     private fun launchSafFallback(
         activity: Activity?,
-        sourcePath: FilePath,
+        sourcePath: StoragePath,
         displayName: String,
-        mimeType: MimeType,
+        mimeType: StorageMimeType,
         diagnostics: MutableMap<String, Any>,
         strategyErrors: List<String>,
     ) {

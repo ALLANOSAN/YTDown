@@ -1,76 +1,90 @@
 package com.example.ytdown.utils
 
+import java.util.regex.Pattern
+
+/**
+ * Utilitários para processamento de metadados de mídia.
+ * Migrado do Flutter (lib/utils/metadata_utils.dart) para garantir paridade de lógica.
+ */
 object MetadataUtils {
-    private val artistSeparators = listOf(
-        " - ",
-        " \u2013 ",
-        " \u2014 ",
-        " | "
-    )
-
-    private val generatedSuffixPattern = Regex("[_-][0-9a-f]{6,}$", RegexOption.IGNORE_CASE)
-    private val uuidSuffixPattern = Regex("[_-][0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", RegexOption.IGNORE_CASE)
-
-    private val appUnknownValues = setOf("ytdown")
+    
+    private val artistSeparators = listOf(" - ", " – ", " — ", " | ")
+    
+    private val generatedSuffixPattern = Pattern.compile("[_-][0-9a-f]{6,}$", Pattern.CASE_INSENSITIVE)
+    private val uuidSuffixPattern = Pattern.compile("[_-][0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", Pattern.CASE_INSENSITIVE)
+    
     private val baseUnknownValues = setOf(
-        "unknown",
-        "unknown artist",
-        "desconhecido",
-        "artista desconhecido",
-        "videoplayback"
+        "unknown", "unknown artist", "desconhecido", "artista desconhecido",
+        "videoplayback", "ytdown", "n/a", "sem título"
     )
-
-    fun isUnknownMetadata(value: String?, additionalUnknownValues: Set<String> = emptySet()): Boolean {
-        val normalized = normalizeLowercase(value)
-        if (normalized.isEmpty()) return true
-        return normalized in baseUnknownValues || normalized in additionalUnknownValues
-    }
-
-    fun isUnknownAppMetadata(value: String?): Boolean = isUnknownMetadata(value, additionalUnknownValues = appUnknownValues)
 
     fun normalizeMetadataText(value: String, stripGeneratedSuffix: Boolean = true): String {
-        var normalized = value.trim().replace(Regex("[_]+"), " ")
+        var normalized = value.trim()
+        
+        // Substitui múltiplos underscores por espaços
+        normalized = normalized.replace(Regex("[_]+"), " ")
+
         if (stripGeneratedSuffix) {
-            normalized = normalized.replace(generatedSuffixPattern, "")
+            normalized = generatedSuffixPattern.matcher(normalized).replaceAll("")
+            normalized = uuidSuffixPattern.matcher(normalized).replaceAll("")
         }
-        normalized = normalized.replace(Regex("\\s+"), " ").trim()
-        return normalized
+
+        // Limpa espaços duplos
+        return normalized.replace(Regex("\\s+"), " ").trim()
     }
 
-    fun guessArtistFromTitle(title: String, additionalUnknownValues: Set<String> = emptySet()): String? {
+    /**
+     * Tenta adivinhar o artista a partir do título do vídeo.
+     * Ex: "Linkin Park - Numb" -> "Linkin Park"
+     */
+    fun guessArtistFromTitle(title: String): String? {
         val normalizedTitle = normalizeMetadataText(title)
+        
         for (separator in artistSeparators) {
-            if (!normalizedTitle.contains(separator)) continue
-
-            val candidate = normalizedTitle.split(separator)[0].trim()
-            if (!isUnknownMetadata(candidate, additionalUnknownValues) && candidate.length >= 2) {
-                return candidate
+            if (normalizedTitle.contains(separator)) {
+                val candidate = normalizedTitle.split(separator).first().trim()
+                if (!isUnknownMetadata(candidate) && candidate.length >= 2) {
+                    return toTitleCase(candidate)
+                }
             }
         }
         return null
     }
 
-    fun guessAppArtistFromTitle(title: String): String? = guessArtistFromTitle(title, additionalUnknownValues = appUnknownValues)
+    fun guessAlbumFromTitle(title: String): String? {
+        val normalizedTitle = normalizeMetadataText(title)
 
-    fun guessTitleFromPath(path: String, additionalUnknownValues: Set<String> = emptySet()): String? {
-        val sanitizedPath = path.trim()
-        if (sanitizedPath.isEmpty()) return null
-
-        val filename = sanitizedPath.replace('\\', '/').split('/').lastOrNull().orEmpty()
-        if (filename.isEmpty()) return null
-
-        val dotIndex = filename.lastIndexOf('.')
-        var baseName = if (dotIndex > 0) filename.substring(0, dotIndex) else filename
-        baseName = baseName.replace(uuidSuffixPattern, "")
-        baseName = baseName.replace(generatedSuffixPattern, "")
-
-        val normalizedTitle = normalizeMetadataText(baseName)
-        if (normalizedTitle.isEmpty()) return null
-        if (isUnknownMetadata(normalizedTitle, additionalUnknownValues)) return null
-        return normalizedTitle
+        for (separator in artistSeparators) {
+            if (normalizedTitle.contains(separator)) {
+                val parts = normalizedTitle.split(separator, limit = 2)
+                if (parts.size == 2) {
+                    val candidate = parts[1].trim()
+                    if (!isUnknownMetadata(candidate) && candidate.length >= 2) {
+                        return toTitleCase(candidate)
+                    }
+                }
+            }
+        }
+        return null
     }
 
-    fun guessAppTitleFromPath(path: String): String? = guessTitleFromPath(path, additionalUnknownValues = appUnknownValues)
+    fun isUnknownMetadata(value: String?): Boolean {
+        val normalized = (value ?: "").trim().lowercase()
+        return normalized.isEmpty() || baseUnknownValues.contains(normalized)
+    }
 
-    private fun normalizeLowercase(value: String?): String = value?.trim()?.lowercase() ?: ""
+    /**
+     * Converte texto para Title Case (Ex: "numb" -> "Numb")
+     */
+    fun toTitleCase(input: String): String {
+        if (input.isBlank()) return input
+        return input.split(" ").joinToString(" ") { word ->
+            var resultWord = word
+            val firstChar = word.lowercase().firstOrNull()
+            if (firstChar != null && firstChar.isLowerCase()) {
+                resultWord = word.lowercase().replaceFirstChar { it.titlecase() }
+            }
+            resultWord
+        }
+    }
 }

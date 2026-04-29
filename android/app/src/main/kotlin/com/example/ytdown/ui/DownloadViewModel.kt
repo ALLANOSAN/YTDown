@@ -1,22 +1,25 @@
 package com.example.ytdown.ui
 
 import android.content.Context
+import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.ytdown.DownloadMetadataManager
+import com.example.ytdown.StoragePath
+import com.example.ytdown.StorageService
+import com.example.ytdown.StorageMediaType
+import com.example.ytdown.StorageMimeType
 import com.example.ytdown.core.business.*
 import com.example.ytdown.core.domain.*
+import com.example.ytdown.core.infrastructure.persistence.entities.FavoriteEntity
+import com.example.ytdown.services.ArtworkManager
+import com.example.ytdown.services.DownloadFeedService
+import com.example.ytdown.services.ObservabilityService
 import com.example.ytdown.utils.CommonUtils
 import com.example.ytdown.utils.TaskQueue
-import kotlinx.coroutines.*
-import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.launch
+import java.io.File
 import dagger.hilt.android.lifecycle.HiltViewModel
-import androidx.lifecycle.ViewModel
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.*
 import javax.inject.Inject
 
 data class DownloadInputState(
@@ -31,41 +34,81 @@ data class DownloadInputState(
     val selectedFormat: String = "mp3",
     val selectedQuality: String = "192",
     val isPlaylist: Boolean = false,
-    val artworkUri: String? = null,
     val audioFormats: List<String> = listOf("mp3", "m4a", "flac", "opus", "ogg"),
     val videoFormats: List<String> = listOf("mp4", "mkv"),
     val audioBitrates: List<String> = listOf("128", "192", "256", "320"),
     val videoResolutions: List<String> = listOf("360p", "480p", "720p", "1080p", "best")
 )
 
+data class DownloadListState(
+    val searchQuery: String = "",
+    val selectedTab: Int = 0,
+    val isSelectionMode: Boolean = false,
+    val selectedIds: Set<String> = emptySet()
+)
+
 @HiltViewModel
 class DownloadViewModel @Inject constructor(
     private val metadataManager: DownloadMetadataManager,
-    private val scheduler: DownloadScheduler
+    private val artworkManager: ArtworkManager,
+    private val scheduler: DownloadScheduler,
+    private val downloadFeedService: DownloadFeedService,
+    private val libraryRepository: LibraryRepository,
+    private val downloadRepository: DownloadRepository,
+    private val observabilityService: ObservabilityService
 ) : ViewModel() {
     private val fetchQueue = TaskQueue(maxConcurrent = 1)
 
-    // Regra 8: Máximo de 2 variáveis de instância.
-    // _inputState encapsula todo o estado da UI de entrada
     private val _inputState = MutableStateFlow(DownloadInputState())
     val inputState = _inputState.asStateFlow()
 
-    val downloads: StateFlow<List<DownloadItemEntity>> = scheduler.stream()
+    private val _listState = MutableStateFlow(DownloadListState())
+    val listState = _listState.asStateFlow()
+
+    /**
+     * ⚡ Sincronização Semântica (Migrado do Flutter _isSemanticallyEqual).
+     * Evita recomposições se a lista filtrada for igual à anterior.
+     */
+    val downloads: StateFlow<List<DownloadItemEntity>> = combine(
+        downloadFeedService.stream(),
+        _listState
+    ) { allDownloads, listState ->
+        filterAndSort(allDownloads, listState)
+    }
+    .distinctUntilChanged { old, new -> 
+        if (old.size != new.size) return@distinctUntilChanged false
+        old.zip(new).all { (o, n) -> 
+            o.id == n.id && o.status == n.status && o.progress == n.progress && o.title == n.title
+        }
+    }
+    .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val recentSearches: StateFlow<List<String>> = libraryRepository.getRecentSearches()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val favorites: StateFlow<List<FavoriteEntity>> = libraryRepository.getFavorites()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    private fun filterAndSort(items: List<DownloadItemEntity>, state: DownloadListState): List<DownloadItemEntity> {
+        return items.filter { item ->
+            val typeMatch = state.selectedTab != 1 && state.selectedTab != 2 ||
+                state.selectedTab == 1 && item.type == 0 ||
+                state.selectedTab == 2 && item.type == 1
+
+            var searchMatch = true
+            if (state.searchQuery.isNotBlank()) {
+                searchMatch = item.title.contains(state.searchQuery, ignoreCase = true) ||
+                    (item.artist?.contains(state.searchQuery, ignoreCase = true) ?: false)
+            }
+
+            typeMatch && searchMatch
+        }.sortedByDescending { it.createdAt }
+    }
+
+    // --- Actions ---
 
     fun onUrlInputChanged(newUrl: String) {
         _inputState.update { it.copy(urlInput = CommonUtils.normalizeText(newUrl), fetchError = null) }
-    }
-
-    fun onArtworkSelected(uri: String) {
-        _inputState.update { it.copy(artworkUri = uri) }
-    }
-
-    fun onSelectAllItems() {
-        _inputState.update { state ->
-            val items = state.fetchedItems.map { it.copy(isSelected = true) }
-            state.copy(fetchedItems = items)
-        }
     }
 
     fun onArtistInputChanged(newArtist: String) {
@@ -74,6 +117,12 @@ class DownloadViewModel @Inject constructor(
 
     fun onAlbumInputChanged(newAlbum: String) {
         _inputState.update { it.copy(albumInput = newAlbum) }
+    }
+
+    fun deleteRecentSearch(query: String) {
+        viewModelScope.launch {
+            libraryRepository.deleteSearch(query)
+        }
     }
 
     fun onDownloadTypeSelected(type: DownloadType) {
@@ -88,20 +137,193 @@ class DownloadViewModel @Inject constructor(
         _inputState.update { it.copy(selectedQuality = quality) }
     }
 
-    fun onVideoSelected(item: VideoPreviewItem, isSelected: Boolean) {
-        _inputState.update { currentState ->
-            val updatedItems = currentState.fetchedItems.map {
-                if (it.url == item.url) it.copy(isSelected = isSelected) else it
+    fun onSearchQueryChanged(query: String) {
+        _listState.update { it.copy(searchQuery = query) }
+    }
+
+    fun onTabSelected(index: Int) {
+        _listState.update { it.copy(selectedTab = index) }
+    }
+
+    fun toggleItemSelection(id: String) {
+        _listState.update { state ->
+            val selectedIds = state.selectedIds.toMutableSet()
+            val alreadySelected = selectedIds.contains(id)
+            if (alreadySelected) {
+                selectedIds.remove(id)
             }
-            currentState.copy(fetchedItems = updatedItems)
+            if (!alreadySelected) {
+                selectedIds.add(id)
+            }
+            state.copy(
+                selectedIds = selectedIds,
+                isSelectionMode = selectedIds.isNotEmpty()
+            )
+        }
+    }
+
+    fun onSelectAllItems() {
+        _inputState.update { state ->
+            if (!state.isPlaylist) return@update state
+            state.copy(
+                fetchedItems = state.fetchedItems.map { it.copy(isSelected = true) }
+            )
+        }
+    }
+
+    fun onVideoSelected(item: VideoPreviewItem, selected: Boolean) {
+        _inputState.update { state ->
+            if (!state.isPlaylist) return@update state
+            state.copy(
+                fetchedItems = state.fetchedItems.map {
+                    var candidate = it
+                    if (it.id == item.id) {
+                        candidate = it.copy(isSelected = selected)
+                    }
+                    candidate
+                }
+            )
+        }
+    }
+
+    fun deleteSelectedDownloads() {
+        val ids = _listState.value.selectedIds
+        if (ids.isEmpty()) return
+
+        viewModelScope.launch {
+            ids.forEach { targetId ->
+                downloadRepository.delete(targetId)
+            }
+            _listState.update { it.copy(selectedIds = emptySet(), isSelectionMode = false) }
+        }
+    }
+
+    fun clearSelectionMode() {
+        _listState.update { it.copy(selectedIds = emptySet(), isSelectionMode = false) }
+    }
+
+    fun deleteDownload(id: String) {
+        viewModelScope.launch {
+            downloadRepository.delete(id)
+            // Lote 1.2: A exclusão é tratada automaticamente pelo Flow do Room
+        }
+    }
+
+    fun exportDownload(context: Context, id: String) {
+        viewModelScope.launch {
+            val item = downloadRepository.find(id) ?: return@launch
+            if (item.outputPath.isBlank()) return@launch
+
+            var mimeType = StorageMimeType("application/octet-stream")
+            when (item.outputPath.substringAfterLast('.', "").lowercase()) {
+                "mp3" -> mimeType = StorageMimeType("audio/mpeg")
+                "m4a" -> mimeType = StorageMimeType("audio/mp4")
+                "flac" -> mimeType = StorageMimeType("audio/flac")
+                "opus" -> mimeType = StorageMimeType("audio/opus")
+                "ogg" -> mimeType = StorageMimeType("audio/ogg")
+                "mp4" -> mimeType = StorageMimeType("video/mp4")
+                "mkv" -> mimeType = StorageMimeType("video/x-matroska")
+            }
+            var mediaType = StorageMediaType("video")
+            if (item.type == 0) mediaType = StorageMediaType("audio")
+            StorageService.exportToPublicCollection(
+                context = context,
+                sourcePath = StoragePath(item.outputPath),
+                displayName = item.title.ifBlank { File(item.outputPath).name },
+                mediaType = mediaType,
+                mimeType = mimeType,
+                allowUserInteractionFallback = true
+            )
+        }
+    }
+
+    fun updateDownloadMetadata(id: String, newTitle: String, newArtist: String?, newAlbum: String?) {
+        viewModelScope.launch {
+            val item = downloadRepository.find(id) ?: return@launch
+            downloadRepository.persist(
+                item.copy(
+                    title = newTitle,
+                    artist = newArtist,
+                    album = newAlbum
+                )
+            )
         }
     }
 
     fun fetchVideoDetails(context: Context, url: VideoUrl) {
         viewModelScope.launch {
-            fetchQueue.add {
-                performFetch(context, url)
-            }.await()
+            libraryRepository.saveSearch(url.value)
+            fetchQueue.add { performFetch(context, url) }.await()
+        }
+    }
+
+    private suspend fun performFetch(context: Context, url: VideoUrl) {
+        _inputState.update { it.copy(isFetching = true, fetchError = null, showDialog = false) }
+        runCatching { metadataManager.fetchVideoInfo(context, url) }
+            .onSuccess { updateStateWithInfo(it) }
+            .onFailure { error ->
+                observabilityService.trackError(
+                    "DownloadViewModel",
+                    "fetchVideoDetails failure: ${error.message}",
+                    error
+                )
+                _inputState.update { it.copy(isFetching = false, fetchError = error.message, showDialog = false) }
+            }
+    }
+
+    private fun updateStateWithInfo(infoJson: VideoInfoJson) {
+        val parsedEntries = metadataManager.parseEntries(infoJson)
+        val first = parsedEntries.firstOrNull()
+        val metadataPlaylist = metadataManager.isPlaylist(infoJson)
+        val isPlaylist = metadataPlaylist && parsedEntries.isNotEmpty() || parsedEntries.size > 1
+
+        val data = org.json.JSONObject(infoJson.value).optJSONObject("data")
+        val uploaderName = data?.optString("uploader").takeIf { !it.isNullOrBlank() }
+            ?: data?.optString("channel").takeIf { !it.isNullOrBlank() }
+
+        // Validamos se os campos explicitos de metadados chegaram.
+        val artistField = data?.optString("artist").takeIf { !it.isNullOrBlank() }
+        val albumField = data?.optString("album").takeIf { !it.isNullOrBlank() }
+
+        val playlistTitle = data?.optString("playlist_title").takeIf { !it.isNullOrBlank() }
+            ?: data?.optString("playlist").takeIf { !it.isNullOrBlank() }
+            ?: data?.optString("title").takeIf { !it.isNullOrBlank() }
+        val titleForGuess = first?.title?.value ?: ""
+
+        val artistForSingle = artistField
+            ?: uploaderName
+            ?: ""
+
+        val albumForSingle = albumField ?: ""
+
+        val artistForPlaylist = artistField
+            ?: metadataManager.guessArtistFromTitle(playlistTitle ?: titleForGuess)
+            ?: uploaderName
+            ?: ""
+
+        val albumForPlaylist = albumField
+            ?: playlistTitle
+            ?: ""
+
+        val artistInput = if (isPlaylist) artistForPlaylist else artistForSingle
+        val albumInput = if (isPlaylist) albumForPlaylist else albumForSingle
+
+        observabilityService.info(
+            "DownloadViewModel",
+            "updateStateWithInfo isPlaylist=$isPlaylist artistField=${artistField ?: "missing"} " +
+                "albumField=${albumField ?: "missing"} uploaderName=${uploaderName ?: "missing"} " +
+                "playlistTitle=${playlistTitle ?: "missing"}"
+        )
+
+        _inputState.update { state ->
+            state.copy(
+                fetchedItems = parsedEntries,
+                artistInput = artistInput,
+                albumInput = albumInput,
+                isPlaylist = isPlaylist,
+                isFetching = false,
+                showDialog = true
+            )
         }
     }
 
@@ -109,43 +331,18 @@ class DownloadViewModel @Inject constructor(
         _inputState.update { it.copy(showDialog = false) }
     }
 
-    private suspend fun performFetch(context: Context, url: VideoUrl) {
-        _inputState.update { it.copy(isFetching = true, fetchError = null, showDialog = false) }
-        runCatching { metadataManager.fetchVideoInfo(context, url) }
-            .onSuccess { updateStateWithInfo(it) }
-            .onFailure { error -> _inputState.update { it.copy(isFetching = false, fetchError = error.message, showDialog = false) } }
-    }
-
-    private fun updateStateWithInfo(infoJson: VideoInfoJson) {
-        val parsedEntries = metadataManager.parseEntries(infoJson)
-        val first = parsedEntries.firstOrNull()
-
-        _inputState.update { state ->
-            state.copy(
-                fetchedItems = parsedEntries,
-                artistInput = first?.let { metadataManager.guessArtistFromTitle(it.title) } ?: "",
-                albumInput = first?.let { metadataManager.guessAlbumFromTitle(it.title) } ?: "",
-                isPlaylist = parsedEntries.size > 1,
-                isFetching = false,
-                showDialog = true
-            )
-        }
-    }
-
-    private fun selectItemsToDownload(state: DownloadInputState): List<VideoPreviewItem> {
-        if (!state.isPlaylist) return state.fetchedItems
-        return state.fetchedItems.filter { it.isSelected }
-    }
-
     fun startDownloadFlow(folder: FilePath) {
         val currentState = _inputState.value
-        val selectedItems = selectItemsToDownload(currentState)
+        val selectedItems = currentState.fetchedItems.filter { item ->
+            if (!currentState.isPlaylist) return@filter true
+            item.isSelected
+        }
 
         if (selectedItems.isEmpty()) return
 
         viewModelScope.launch {
             val baseMeta = MediaMetadata(
-                title = MediaTitle(""), // Will be overwritten por cada item
+                title = MediaTitle(""),
                 artist = ArtistName(currentState.artistInput),
                 album = AlbumName(currentState.albumInput)
             )
@@ -154,20 +351,19 @@ class DownloadViewModel @Inject constructor(
                 format = currentState.selectedFormat,
                 quality = currentState.selectedQuality
             )
-            processEntries(selectedItems, folder, baseMeta, downloadOptions)
-            _inputState.update { it.copy(fetchedItems = emptyList(), urlInput = "", showDialog = false) }
-        }
-    }
 
-    private suspend fun processEntries(
-        entries: List<VideoPreviewItem>,
-        folder: FilePath,
-        baseMeta: MediaMetadata,
-        options: DownloadOptions
-    ) {
-        entries.forEach { (title, url) ->
-            val finalMeta = baseMeta.copy(title = title)
-            scheduler.schedule(url, folder, finalMeta, options)
+            var resolvedArtworkUrl: String? = null
+            if (currentState.artistInput.isNotBlank()) {
+                resolvedArtworkUrl = currentState.albumInput.takeIf { it.isNotBlank() }
+                    ?.let { artworkManager.getAlbumCover(currentState.artistInput, it) }
+                    ?: artworkManager.getArtistImage(currentState.artistInput)
+            }
+
+            selectedItems.forEach { item ->
+                val finalMeta = baseMeta.copy(title = item.title)
+                scheduler.schedule(item.url, folder, finalMeta, downloadOptions, resolvedArtworkUrl)
+            }
+            _inputState.update { it.copy(fetchedItems = emptyList(), urlInput = "", showDialog = false) }
         }
     }
 }

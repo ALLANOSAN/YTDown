@@ -1,3 +1,4 @@
+import importlib
 import json
 import os
 import re
@@ -7,10 +8,7 @@ import tarfile
 import tempfile
 import zipfile
 import hashlib
-import time
 from datetime import datetime, timezone
-from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
 
 from helpers import (
     _download_url_bytes,
@@ -80,9 +78,7 @@ def _get_yt_dlp_module(app_files_dir=None):
     if _YT_DLP_MODULE is not None:
         return _YT_DLP_MODULE
 
-    import yt_dlp
-
-    _YT_DLP_MODULE = yt_dlp
+    _YT_DLP_MODULE = importlib.import_module("yt_dlp")
     return _YT_DLP_MODULE
 
 

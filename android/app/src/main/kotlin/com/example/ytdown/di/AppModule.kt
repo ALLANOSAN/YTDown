@@ -5,6 +5,7 @@ import androidx.room.Room
 import androidx.work.WorkManager
 import com.example.ytdown.DownloadMetadataManager
 import com.example.ytdown.MetadataTools
+import com.example.ytdown.services.StorageService
 import com.example.ytdown.core.business.DownloadEngine
 import com.example.ytdown.core.business.DownloadRepository
 import com.example.ytdown.core.business.MediaInfoParser
@@ -12,6 +13,7 @@ import com.example.ytdown.core.business.YtDlpWrapper
 import com.example.ytdown.core.infrastructure.*
 import com.example.ytdown.core.infrastructure.persistence.AppDatabase
 import com.example.ytdown.core.infrastructure.persistence.DownloadDao
+import com.example.ytdown.core.infrastructure.persistence.LibraryDao
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.exoplayer.ExoPlayer
@@ -35,6 +37,9 @@ object AppModule {
 
     @Provides
     fun provideDownloadDao(db: AppDatabase): DownloadDao = db.downloadDao()
+
+    @Provides
+    fun provideLibraryDao(db: AppDatabase): LibraryDao = db.libraryDao()
 
     @Provides
     @Singleton
@@ -70,25 +75,25 @@ object AppModule {
     @Singleton
     fun provideDownloadMetadataManager(
         tools: MetadataTools,
-        parser: MediaInfoParser
-    ): DownloadMetadataManager = DownloadMetadataManager(tools, parser)
+        parser: MediaInfoParser,
+        ytDlp: YtDlpWrapper,
+        storageService: StorageService,
+        @ApplicationContext context: Context
+    ): DownloadMetadataManager = DownloadMetadataManager(tools, parser, ytDlp, storageService, context)
 
     @Provides
     @Singleton
-    fun providePythonEnvironment(@ApplicationContext context: Context): PythonEnvironment =
-        PythonEnvironment(context.filesDir)
-
-    @Provides
-    @Singleton
-    fun provideNativeProcessExecutor(env: PythonEnvironment): NativeProcessExecutor =
-        NativeProcessExecutor(env.buildVariables())
+    fun providePythonEnvironment(@ApplicationContext context: Context): PythonEnvironment {
+        val filesDir = context.filesDir
+        val nativeLibDir = context.applicationInfo.nativeLibraryDir
+        return PythonEnvironment(filesDir, nativeLibDir)
+    }
 
     @Provides
     @Singleton
     fun provideYtDlpWrapper(
-        executor: NativeProcessExecutor,
         env: PythonEnvironment
-    ): YtDlpWrapper = YtDlpWrapper(executor, env)
+    ): YtDlpWrapper = YtDlpWrapper(env)
 
     @Provides
     @Singleton
@@ -99,8 +104,8 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun provideDownloadRepository(dao: DownloadDao): DownloadRepository =
-        DownloadRepository(dao)
+    fun provideDownloadRepository(dao: DownloadDao, storage: StorageResolver): DownloadRepository =
+        DownloadRepository(dao, storage)
 
     @Provides
     @Singleton
@@ -128,10 +133,6 @@ object AppModule {
     @Singleton
     fun provideBinaryOrchestrator(
         assets: AssetExtractor,
-        archives: ArchiveExtractor,
         storage: StorageResolver
-    ): BinaryOrchestrator {
-        val tools = ExtractionTools(assets, archives)
-        return BinaryOrchestrator(tools, storage)
-    }
+    ): BinaryOrchestrator = BinaryOrchestrator(assets, storage)
 }

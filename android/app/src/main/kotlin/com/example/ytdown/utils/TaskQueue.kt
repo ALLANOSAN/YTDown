@@ -1,63 +1,31 @@
 package com.example.ytdown.utils
 
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.async
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.*
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
+import java.util.concurrent.atomic.AtomicInteger
 
-private data class QueuedTask(
-    val task: suspend () -> Any?,
-    val deferred: CompletableDeferred<Any?>
-)
+/**
+ * Fila de tarefas com controle de concorrência.
+ * Migrado do Flutter (lib/utils/task_queue.dart).
+ */
+class TaskQueue(val maxConcurrent: Int = 3) {
+    private val semaphore = Semaphore(maxConcurrent)
+    private val _activeCount = AtomicInteger(0)
 
-class TaskQueue(private val maxConcurrent: Int = 3) {
-    init {
-        require(maxConcurrent > 0) { "maxConcurrent must be greater than zero" }
-    }
+    val activeCount: Int get() = _activeCount.get()
 
-    private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
-    private val queue = ArrayDeque<QueuedTask>()
-    private val mutex = Mutex()
-    private var activeCount = 0
-
-    val queueLength: Int
-        get() = queue.size
-
-    val totalActive: Int
-        get() = activeCount + queue.size
-
-    fun <T> add(task: suspend () -> T): Deferred<T> {
-        val deferred = CompletableDeferred<T>()
-        scope.launch {
-            mutex.withLock {
-                @Suppress("UNCHECKED_CAST")
-                queue.addLast(QueuedTask(task as suspend () -> Any?, deferred as CompletableDeferred<Any?>))
-                processQueueLocked()
-            }
-        }
-        return deferred
-    }
-
-    private fun processQueueLocked() {
-        while (activeCount < maxConcurrent && queue.isNotEmpty()) {
-            val queuedTask = queue.removeFirst()
-            activeCount++
-            scope.launch {
+    /**
+     * Adiciona uma tarefa à fila e aguarda sua execução.
+     */
+    suspend fun <T> add(task: suspend () -> T): Deferred<T> = coroutineScope {
+        async {
+            semaphore.withPermit {
+                _activeCount.incrementAndGet()
                 try {
-                    val result = queuedTask.task()
-                    queuedTask.deferred.complete(result)
-                } catch (error: Throwable) {
-                    queuedTask.deferred.completeExceptionally(error)
+                    task()
                 } finally {
-                    mutex.withLock {
-                        activeCount--
-                        processQueueLocked()
-                    }
+                    _activeCount.decrementAndGet()
                 }
             }
         }

@@ -4,7 +4,6 @@ import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -14,55 +13,59 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.lifecycle.lifecycleScope
-import com.example.ytdown.core.domain.AssetPath
-import com.example.ytdown.core.infrastructure.BinaryOrchestrator
+import com.chaquo.python.Python
+import com.chaquo.python.android.AndroidPlatform
+import com.example.ytdown.services.SharingIntentService
 import com.example.ytdown.ui.DownloadViewModel
 import com.example.ytdown.ui.RootApp
 import com.example.ytdown.ui.theme.YTDownTheme
 import com.example.ytdown.ui.theme.YTDownPurple
 import dagger.hilt.android.AndroidEntryPoint
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
-    @Inject lateinit var orchestrator: BinaryOrchestrator
     private val viewModel: DownloadViewModel by viewModels()
     
+    @Inject
+    lateinit var sharingIntentService: SharingIntentService
+    
     private var isRuntimeReady by mutableStateOf(false)
-
-    private val imagePickerLauncher = registerForActivityResult(
-        ActivityResultContracts.GetContent()
-    ) { uri ->
-        uri?.let { viewModel.onArtworkSelected(it.toString()) }
-    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        lifecycleScope.launch(Dispatchers.IO) {
-            orchestrator.setupPythonRuntime(AssetPath("python/python_runtime.bin"))
-            isRuntimeReady = true
+        // Inicializa o Chaquopy (Python no Android)
+        if (!Python.isStarted()) {
+            Python.start(AndroidPlatform(this))
         }
+        isRuntimeReady = true
 
         setContent {
             YTDownTheme {
                 if (isRuntimeReady) {
-                    RootApp(
-                        viewModel = viewModel,
-                        onPickImage = { imagePickerLauncher.launch("image/*") }
-                    )
-                } else {
+                    RootApp(viewModel = viewModel)
+                }
+                if (!isRuntimeReady) {
                     LoadingScreen()
                 }
             }
         }
 
-        handleSharedIntent(intent)
+        handleIntent(intent)
         checkAndRequestPermissions()
+    }
+
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        intent?.let { handleIntent(it) }
+    }
+
+    private fun handleIntent(intent: Intent) {
+        sharingIntentService.handleIntent(intent)?.let { cleanedUrl ->
+            viewModel.onUrlInputChanged(cleanedUrl)
+        }
     }
 
     private fun checkAndRequestPermissions() {
@@ -78,14 +81,6 @@ class MainActivity : ComponentActivity() {
         }
         
         requestPermissions(permissions.toTypedArray(), 1001)
-    }
-
-    private fun handleSharedIntent(intent: Intent?) {
-        if (intent?.action == Intent.ACTION_SEND && intent.type == "text/plain") {
-            intent.getStringExtra(Intent.EXTRA_TEXT)?.let { 
-                viewModel.onUrlInputChanged(it)
-            }
-        }
     }
 }
 

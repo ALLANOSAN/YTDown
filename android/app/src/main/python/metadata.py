@@ -1,11 +1,10 @@
+import importlib
 import json
 import os
 
 from helpers import (
     _failure_payload,
     _is_retryable_network_error,
-    _normalize_text,
-    _normalize_tag_value,
     _resolve_metadata,
     _resolve_explicit_title_for_rewrite,
     _resolve_explicit_metadata_for_rewrite,
@@ -16,8 +15,20 @@ from helpers import (
 )
 
 
+def _import_mutagen_submodule(name):
+    return importlib.import_module(name)
+
+
 def _write_mp3_id3_tags(filepath, title, artist, album, thumbnail_url=None):
-    from mutagen.id3 import APIC, COMM, ID3, ID3NoHeaderError, TALB, TIT2, TPE1, TPE2
+    mutagen_id3 = _import_mutagen_submodule("mutagen.id3")
+    APIC = mutagen_id3.APIC
+    COMM = mutagen_id3.COMM
+    ID3 = mutagen_id3.ID3
+    ID3NoHeaderError = mutagen_id3.ID3NoHeaderError
+    TALB = mutagen_id3.TALB
+    TIT2 = mutagen_id3.TIT2
+    TPE1 = mutagen_id3.TPE1
+    TPE2 = mutagen_id3.TPE2
 
     try:
         has_existing_tags = False
@@ -76,7 +87,10 @@ def _write_mp3_id3_tags(filepath, title, artist, album, thumbnail_url=None):
 
 
 def _write_mp4_m4a_tags(filepath, title, artist, album, thumbnail_url=None):
-    from mutagen.mp4 import MP4, MP4Cover, MP4FreeForm
+    mutagen_mp4 = _import_mutagen_submodule("mutagen.mp4")
+    MP4 = mutagen_mp4.MP4
+    MP4Cover = mutagen_mp4.MP4Cover
+    MP4FreeForm = mutagen_mp4.MP4FreeForm
 
     try:
         audio = MP4(filepath)
@@ -150,7 +164,8 @@ def _force_metadata_with_mutagen(
             return ok
 
         if ext == "flac":
-            from mutagen.flac import FLAC
+            mutagen_flac = _import_mutagen_submodule("mutagen.flac")
+            FLAC = mutagen_flac.FLAC
 
             return _write_vorbis_like_tags_for_file(
                 filepath,
@@ -162,7 +177,8 @@ def _force_metadata_with_mutagen(
             )
 
         if ext == "webm":
-            from mutagen.oggvorbis import OggVorbis
+            mutagen_oggvorbis = _import_mutagen_submodule("mutagen.oggvorbis")
+            OggVorbis = mutagen_oggvorbis.OggVorbis
 
             try:
                 return _write_vorbis_like_tags_for_file(
@@ -178,7 +194,8 @@ def _force_metadata_with_mutagen(
                 return False
 
         if ext == "ogg":
-            from mutagen.oggvorbis import OggVorbis
+            mutagen_oggvorbis = _import_mutagen_submodule("mutagen.oggvorbis")
+            OggVorbis = mutagen_oggvorbis.OggVorbis
 
             return _write_vorbis_like_tags_for_file(
                 filepath,
@@ -190,7 +207,8 @@ def _force_metadata_with_mutagen(
             )
 
         if ext == "opus":
-            from mutagen.oggopus import OggOpus
+            mutagen_oggopus = _import_mutagen_submodule("mutagen.oggopus")
+            OggOpus = mutagen_oggopus.OggOpus
 
             return _write_vorbis_like_tags_for_file(
                 filepath,
@@ -202,8 +220,14 @@ def _force_metadata_with_mutagen(
             )
 
         if ext == "wav":
-            from mutagen.wave import WAVE
-            from mutagen.id3 import ID3, TIT2, TPE1, TALB, TPE2
+            mutagen_wave = _import_mutagen_submodule("mutagen.wave")
+            mutagen_id3 = _import_mutagen_submodule("mutagen.id3")
+            WAVE = mutagen_wave.WAVE
+            ID3 = mutagen_id3.ID3
+            TIT2 = mutagen_id3.TIT2
+            TPE1 = mutagen_id3.TPE1
+            TALB = mutagen_id3.TALB
+            TPE2 = mutagen_id3.TPE2
 
             audio = WAVE(filepath)
             if audio.tags is None:

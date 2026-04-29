@@ -17,7 +17,7 @@ class MediaPlaybackService : MediaSessionService() {
 
     override fun onCreate() {
         super.onCreate()
-        val player = playerManager.player
+        val player = playerManager.getPlayer()
         mediaSession = MediaSession.Builder(this, player).build()
     }
 

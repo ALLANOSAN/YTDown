@@ -1,8 +1,7 @@
-import json
 import os
 import re
 import time
-from datetime import datetime, timezone
+from datetime import datetime
 from urllib.error import HTTPError, URLError
 from urllib.parse import unquote, urlparse
 from urllib.request import Request, urlopen

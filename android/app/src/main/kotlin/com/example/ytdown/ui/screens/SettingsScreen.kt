@@ -5,6 +5,9 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Label
+import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -20,10 +23,12 @@ import com.example.ytdown.ui.theme.YTDownPurple
 import com.example.ytdown.ui.theme.SurfaceDark
 import com.example.ytdown.ui.theme.TextSecondary
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
     viewModel: SystemViewModel,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onNavigateToDiagnostics: () -> Unit
 ) {
     val state by viewModel.state.collectAsState()
 
@@ -33,7 +38,7 @@ fun SettingsScreen(
                 title = { Text("Configurações", color = Color.White) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.Default.ArrowBack, null, tint = Color.White)
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = Color.White)
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Black)
@@ -64,8 +69,12 @@ fun SettingsScreen(
                     modifier = Modifier.fillMaxWidth(),
                     colors = ButtonDefaults.buttonColors(containerColor = YTDownPurple)
                 ) {
-                    if (state.isUpdating) CircularProgressIndicator(size = 20.dp, color = Color.White)
-                    else Text("Atualizar Motor")
+                    if (state.isUpdating) {
+                        CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color.White)
+                    }
+                    if (!state.isUpdating) {
+                        Text("Atualizar Motor")
+                    }
                 }
             }
 
@@ -76,7 +85,7 @@ fun SettingsScreen(
             ) {
                 if (state.isRepairing) {
                     LinearProgressIndicator(
-                        progress = state.repairProgress,
+                        progress = { state.repairProgress },
                         modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(4.dp)),
                         color = YTDownPurple
                     )
@@ -87,7 +96,7 @@ fun SettingsScreen(
 
                 MaintenanceButton(
                     text = "Regravar Tags ID3 Físicas",
-                    icon = Icons.Default.Label,
+                    icon = Icons.AutoMirrored.Filled.Label,
                     onClick = { viewModel.repairAllMetadata() },
                     enabled = !state.isRepairing
                 )
@@ -100,6 +109,25 @@ fun SettingsScreen(
                     onClick = { viewModel.enrichAllArtwork() },
                     enabled = !state.isRepairing
                 )
+            }
+
+            SettingsCard(
+                title = "Diagnóstico de Downloads",
+                icon = Icons.Default.BugReport
+            ) {
+                Text(
+                    "Veja falhas recentes de download e tente recuperá-las.",
+                    color = TextSecondary,
+                    fontSize = 14.sp
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                Button(
+                    onClick = onNavigateToDiagnostics,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(containerColor = YTDownPurple)
+                ) {
+                    Text("Abrir Diagnóstico")
+                }
             }
 
             // Mensagens

@@ -11,7 +11,6 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.ytdown.ui.navigation.MainNavigation
 import com.example.ytdown.ui.navigation.Screen
-import com.example.ytdown.ui.screens.TagEditorDialog
 import com.example.ytdown.ui.components.MiniPlayer
 import com.example.ytdown.ui.theme.YTDownPurple
 import com.example.ytdown.ui.theme.TextSecondary
@@ -31,14 +30,6 @@ fun RootApp(
     val playerViewModel: PlayerViewModel = hiltViewModel()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
-    val state by viewModel.inputState.collectAsState()
-
-    if (state.showDialog && !state.isPlaylist) {
-        TagEditorDialog(
-            viewModel = viewModel,
-            onConfirm = { folder -> viewModel.startDownloadFlow(folder) }
-        )
-    }
 
     Scaffold(
         modifier = modifier,

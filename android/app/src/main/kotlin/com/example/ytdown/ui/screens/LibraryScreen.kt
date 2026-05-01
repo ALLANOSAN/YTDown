@@ -36,6 +36,11 @@ import com.example.ytdown.ui.theme.YTDownPurple
 import com.example.ytdown.ui.theme.SurfaceDark
 import com.example.ytdown.ui.theme.TextSecondary
 
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+
 @Composable
 fun LibraryScreen(
     viewModel: DownloadViewModel,
@@ -45,9 +50,10 @@ fun LibraryScreen(
     onNavigateToDetail: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val haptic = LocalHapticFeedback.current
     var selectedCategory by remember { mutableStateOf(0) }
     val categories = listOf("Músicas", "Álbuns", "Artistas", "Pastas")
-    val allItems by viewModel.downloads.collectAsState()
+    val allItems by viewModel.downloads.collectAsStateWithLifecycle()
     val completedSongs = allItems.filter { it.status == "completed" }
 
     // Estado para o Diálogo de Edição
@@ -85,7 +91,10 @@ fun LibraryScreen(
 
                     Tab(
                         selected = selectedCategory == index,
-                        onClick = { selectedCategory = index },
+                        onClick = { 
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            selectedCategory = index 
+                        },
                         text = {
                             Text(
                                 text = title,
@@ -128,8 +137,7 @@ fun LibraryScreen(
             onSave = { newName, newPhoto, isArtist ->
                 if (isArtist) {
                     systemViewModel.updateArtistBatch(item.name, newName, newPhoto)
-                }
-                if (!isArtist) {
+                } else {
                     systemViewModel.updateAlbumBatch(oldAlbum = item.name, newAlbum = newName, photo = newPhoto)
                 }
                 editingItem = null
@@ -149,63 +157,71 @@ private fun GroupedList(
     isArtistGroup: Boolean = false,
     onLongClick: ((String, String?) -> Unit)? = null
 ) {
+    val haptic = LocalHapticFeedback.current
     if (groups.isEmpty()) {
         EmptyLibraryMessage()
         return
     }
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            items(groups.keys.toList().filterNotNull()) { key ->
-                val groupItems = groups[key] ?: emptyList()
-                var artwork = groupItems.firstOrNull { !it.albumImageUrl.isNullOrEmpty() }?.albumImageUrl
-                if (isArtistGroup) {
-                    artwork = groupItems.firstOrNull { !it.artistImageUrl.isNullOrEmpty() }?.artistImageUrl
-                }
-                if (artwork.isNullOrEmpty()) {
-                    artwork = groupItems.firstOrNull { !it.thumbnailPath.isNullOrEmpty() }?.thumbnailPath
-                }
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        items(
+            items = groups.keys.toList().filterNotNull(),
+            key = { it }
+        ) { key ->
+            val groupItems = groups[key] ?: emptyList()
+            var artwork = groupItems.firstOrNull { !it.albumImageUrl.isNullOrEmpty() }?.albumImageUrl
+            if (isArtistGroup) {
+                artwork = groupItems.firstOrNull { !it.artistImageUrl.isNullOrEmpty() }?.artistImageUrl
+            }
+            if (artwork.isNullOrEmpty()) {
+                artwork = groupItems.firstOrNull { !it.thumbnailPath.isNullOrEmpty() }?.thumbnailPath
+            }
 
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .combinedClickable(
-                            onClick = { onNavigate(key) },
-                            onLongClick = { onLongClick?.invoke(key, artwork) }
-                        ),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    if (artwork != null) {
-                        AsyncImage(
-                            model = artwork,
-                            contentDescription = null,
-                            modifier = Modifier
-                                .size(60.dp)
-                                .clip(RoundedCornerShape(8.dp)),
-                            contentScale = ContentScale.Crop
-                        )
-                    }
-                    if (artwork.isNullOrEmpty()) {
-                        Surface(
-                            modifier = Modifier.size(60.dp),
-                            shape = RoundedCornerShape(8.dp),
-                            color = Color(0xFF1A1A1A)
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(icon, null, tint = TextSecondary)
-                            }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .combinedClickable(
+                        onClick = { 
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            onNavigate(key) 
+                        },
+                        onLongClick = { 
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            onLongClick?.invoke(key, artwork) 
+                        }
+                    ),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (artwork != null) {
+                    AsyncImage(
+                        model = artwork,
+                        contentDescription = null,
+                        modifier = Modifier
+                            .size(60.dp)
+                            .clip(RoundedCornerShape(8.dp)),
+                        contentScale = ContentScale.Crop
+                    )
+                } else {
+                    Surface(
+                        modifier = Modifier.size(60.dp),
+                        shape = RoundedCornerShape(8.dp),
+                        color = Color(0xFF1A1A1A)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(icon, null, tint = TextSecondary)
                         }
                     }
-                    
-                    Spacer(modifier = Modifier.width(16.dp))
-                    
-                    Column {
-                        Text(key, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                        Text("${groupItems.size} músicas", color = TextSecondary, fontSize = 12.sp)
-                    }
+                }
+                
+                Spacer(modifier = Modifier.width(16.dp))
+                
+                Column {
+                    Text(key, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    Text("${groupItems.size} músicas", color = TextSecondary, fontSize = 12.sp)
                 }
             }
         }
@@ -220,16 +236,12 @@ fun EditLibraryDialog(
 ) {
     var name by remember { mutableStateOf(item.name) }
     var selectedImageUri by remember { mutableStateOf<Uri?>(null) }
-    val context = LocalContext.current
     
     val galleryLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? -> selectedImageUri = uri }
 
-    var itemTypeLabel = "Álbum"
-    if (item.isArtist) {
-        itemTypeLabel = "Artista"
-    }
+    val itemTypeLabel = if (item.isArtist) "Artista" else "Álbum"
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -249,8 +261,7 @@ fun EditLibraryDialog(
                     val previewImage = selectedImageUri ?: item.currentPhoto
                     if (previewImage != null) {
                         AsyncImage(model = previewImage, contentDescription = null, contentScale = ContentScale.Crop)
-                    }
-                    if (previewImage == null) {
+                    } else {
                         Icon(Icons.Default.AddAPhoto, null, tint = YTDownPurple)
                     }
                 }
@@ -281,25 +292,33 @@ fun EditLibraryDialog(
 }
 
 @Composable
-private fun SongsList(songs: List<com.example.ytdown.core.domain.DownloadItemEntity>, playerViewModel: PlayerViewModel, onNavigateToPlayer: () -> Unit) {
+private fun SongsList(
+    songs: List<com.example.ytdown.core.domain.DownloadItemEntity>,
+    playerViewModel: PlayerViewModel,
+    onNavigateToPlayer: () -> Unit
+) {
+    val haptic = LocalHapticFeedback.current
     if (songs.isEmpty()) {
         EmptyLibraryMessage()
         return
     }
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            items(songs) { song ->
-                DownloadItemRow(
-                    item = song,
-                    onClick = {
-                        playerViewModel.playTrack(song)
-                        onNavigateToPlayer()
-                    }
-                )
-            }
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        items(
+            items = songs,
+            key = { it.id }
+        ) { song ->
+            DownloadItemRow(
+                item = song,
+                onClick = {
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    playerViewModel.playTrack(song)
+                    onNavigateToPlayer()
+                }
+            )
         }
     }
 }

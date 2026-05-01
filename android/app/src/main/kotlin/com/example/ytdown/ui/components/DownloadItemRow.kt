@@ -59,7 +59,7 @@ fun DownloadItemRow(
     }
     var surfaceBorder: androidx.compose.foundation.BorderStroke? = null
     if (isSelected) {
-        surfaceBorder = ButtonDefaults.outlinedButtonBorder.copy(width = 2.dp)
+        surfaceBorder = ButtonDefaults.outlinedButtonBorder(enabled = true).copy(width = 2.dp)
     }
 
     Surface(

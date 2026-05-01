@@ -164,7 +164,7 @@ private fun MaintenanceButton(text: String, icon: ImageVector, onClick: () -> Un
         enabled = enabled,
         modifier = Modifier.fillMaxWidth(),
         colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
-        border = ButtonDefaults.outlinedButtonBorder.copy(width = 1.dp)
+        border = ButtonDefaults.outlinedButtonBorder(enabled = true).copy(width = 1.dp)
     ) {
         Icon(icon, null, modifier = Modifier.size(18.dp))
         Spacer(modifier = Modifier.width(8.dp))

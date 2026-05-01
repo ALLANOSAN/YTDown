@@ -16,6 +16,7 @@ import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 
 /**
@@ -45,9 +46,12 @@ class DownloadWorker(
         wifiManager.createWifiLock(wifiMode, "YTDown:WiFiLock")
     }
 
+    private val progressScope = CoroutineScope(Dispatchers.IO + Job())
+
     // 🕵️ Lote 3.1: Zombie Watchdog State
     private var lastProgressTime = AtomicLong(System.currentTimeMillis())
     private var lastProgressValue = -1
+    private var lastDbUpdateTime = 0L // Variável para throttling
 
     override suspend fun doWork(): Result {
         val id = inputData.getString("VIDEO_ID") ?: return Result.failure()
@@ -93,8 +97,12 @@ class DownloadWorker(
                     lastProgressValue = progress
                     lastProgressTime.set(System.currentTimeMillis())
                 }
-                kotlinx.coroutines.runBlocking {
-                    updateProgress(id, title, progress)
+                progressScope.launch {
+                    try {
+                        updateProgress(id, title, progress)
+                    } catch (ignored: Exception) {
+                        android.util.Log.w("DownloadWorker", "Falha ao atualizar progresso", ignored)
+                    }
                 }
             }
             
@@ -106,14 +114,21 @@ class DownloadWorker(
             result
         } finally {
             watchdogJob.cancel()
+            progressScope.cancel()
             if (wakeLock.isHeld) wakeLock.release()
             if (wifiLock.isHeld) wifiLock.release()
         }
     }
 
     private suspend fun updateProgress(id: String, title: String, progress: Int) {
-        val item = repository.find(id) ?: return
-        repository.persist(item.copy(progress = progress.toDouble() / 100.0))
+        val currentTime = System.currentTimeMillis()
+        // Throttling: apenas atualiza o banco se passou 1s ou é final
+        if (currentTime - lastDbUpdateTime > 1000 || progress >= 100) {
+            val item = repository.find(id) ?: return
+            repository.persist(item.copy(progress = progress.toDouble() / 100.0))
+            lastDbUpdateTime = currentTime
+        }
+        // UI sempre recebe a atualização para manter a notificação fluida
         setForeground(createForegroundInfo(title, progress))
     }
 

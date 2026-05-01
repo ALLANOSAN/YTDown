@@ -24,15 +24,21 @@ import com.example.ytdown.ui.PlayerViewModel
 import com.example.ytdown.ui.theme.YTDownPurple
 import com.example.ytdown.ui.theme.TextSecondary
 
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+
 @Composable
 fun MiniPlayer(
     viewModel: PlayerViewModel,
     onClick: () -> Unit
 ) {
-    val track by viewModel.currentTrack.collectAsState()
-    val isPlaying by viewModel.isPlaying.collectAsState()
-    val position by viewModel.position.collectAsState()
-    val duration by viewModel.duration.collectAsState()
+    val haptic = LocalHapticFeedback.current
+    val track by viewModel.currentTrack.collectAsStateWithLifecycle()
+    val isPlaying by viewModel.isPlaying.collectAsStateWithLifecycle()
+    val position by viewModel.position.collectAsStateWithLifecycle()
+    val duration by viewModel.duration.collectAsStateWithLifecycle()
 
     if (track == null) return
 
@@ -40,7 +46,10 @@ fun MiniPlayer(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 8.dp, vertical = 4.dp)
-            .clickable { onClick() },
+            .clickable { 
+                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                onClick() 
+            },
         color = Color(0xFF121212), // Fundo quase preto
         shape = RoundedCornerShape(12.dp),
         tonalElevation = 8.dp
@@ -80,30 +89,41 @@ fun MiniPlayer(
                 }
                 
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = { viewModel.previous() }) {
-                        Icon(Icons.Default.SkipPrevious, contentDescription = null, tint = Color.White, modifier = Modifier.size(24.dp))
+                    IconButton(onClick = { 
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        viewModel.previous() 
+                    }) {
+                        Icon(Icons.Default.SkipPrevious, contentDescription = "Anterior", tint = Color.White, modifier = Modifier.size(24.dp))
                     }
                     var playIcon = Icons.Default.PlayArrow
                     if (isPlaying) {
                         playIcon = Icons.Default.Pause
                     }
-                    IconButton(onClick = { viewModel.togglePlayPause() }) {
+                    IconButton(onClick = { 
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        viewModel.togglePlayPause() 
+                    }) {
                         Icon(
                             playIcon,
-                            contentDescription = null,
+                            contentDescription = if (isPlaying) "Pausar" else "Reproduzir",
                             tint = Color.White,
                             modifier = Modifier.size(28.dp)
                         )
                     }
-                    IconButton(onClick = { viewModel.next() }) {
-                        Icon(Icons.Default.SkipNext, contentDescription = null, tint = Color.White, modifier = Modifier.size(24.dp))
+                    IconButton(onClick = { 
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        viewModel.next() 
+                    }) {
+                        Icon(Icons.Default.SkipNext, contentDescription = "Próxima", tint = Color.White, modifier = Modifier.size(24.dp))
                     }
                 }
             }
             
             // Barra de progresso discreta no rodapé do mini player
             if (duration > 0) {
-                val progress = position.toFloat() / duration.toFloat()
+                val progress = remember(position, duration) { 
+                    (position.toFloat() / duration.toFloat()).coerceIn(0f, 1f)
+                }
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -112,7 +132,7 @@ fun MiniPlayer(
                 ) {
                     Box(
                         modifier = Modifier
-                            .fillMaxWidth(progress.coerceIn(0f, 1f))
+                            .fillMaxWidth(progress)
                             .fillMaxHeight()
                             .background(YTDownPurple)
                     )

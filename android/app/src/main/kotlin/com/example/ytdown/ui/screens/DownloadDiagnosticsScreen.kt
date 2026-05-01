@@ -76,22 +76,20 @@ fun DownloadDiagnosticsScreen(
 
             if (failedDownloads.isEmpty()) {
                 NoFailuresMessage()
-                return
-            }
+            } else {
+                Button(
+                    onClick = { viewModel.clearFailedLogs() },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(containerColor = YTDownPurple)
+                ) {
+                    Text("Limpar logs de falha")
+                }
 
-            Button(
-                onClick = { viewModel.clearFailedLogs() },
-                modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(containerColor = YTDownPurple)
-            ) {
-                Text("Limpar logs de falha")
-            }
+                Spacer(modifier = Modifier.height(16.dp))
 
-            Spacer(modifier = Modifier.height(16.dp))
-
-            LazyColumn(
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier.fillMaxSize()
+                LazyColumn(
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.fillMaxSize()
                 ) {
                     items(failedDownloads, key = { it.id }) { item ->
                         FailedDownloadCard(item = item, onRetry = { viewModel.retryDownload(item) })
@@ -101,7 +99,6 @@ fun DownloadDiagnosticsScreen(
         }
     }
 }
-
 @Composable
 private fun SummaryRow(total: Int, completed: Int, failed: Int) {
     Surface(

@@ -61,7 +61,6 @@ class DownloadDiagnosticsProvider @Inject constructor(
                 format = item.format,
                 quality = item.quality
             )
-            )
             
             // Pega a pasta pai do caminho atual ou usa a pasta de downloads privados como fallback.
             var parentPath = storageResolver.privateDownloadsDir(isAudio = item.type == 0).absolutePath

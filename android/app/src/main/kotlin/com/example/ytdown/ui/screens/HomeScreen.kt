@@ -29,6 +29,14 @@ import com.example.ytdown.ui.theme.SurfaceDark
 import com.example.ytdown.ui.theme.TextSecondary
 import com.example.ytdown.utils.YouTubeUtils
 
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+
 @Composable
 fun HomeScreen(
     viewModel: DownloadViewModel,
@@ -38,8 +46,18 @@ fun HomeScreen(
 ) {
     val context = LocalContext.current
     val keyboardController = LocalSoftwareKeyboardController.current
-    val state by viewModel.inputState.collectAsState()
-    val recentSearches by viewModel.recentSearches.collectAsState()
+    val haptic = LocalHapticFeedback.current
+    val clipboardManager = LocalClipboardManager.current
+    val state by viewModel.inputState.collectAsStateWithLifecycle()
+    val recentSearches by viewModel.recentSearches.collectAsStateWithLifecycle()
+
+    val onSearchAction = {
+        val extracted = YouTubeUtils.extractUrl(state.urlInput) ?: state.urlInput
+        if (extracted.isNotBlank()) {
+            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+            viewModel.fetchVideoDetails(context, VideoUrl(extracted))
+        }
+    }
 
     // Navegar automaticamente para seleção de playlist se detectado
     LaunchedEffect(state.isPlaylist, state.showDialog, state.fetchedItems) {
@@ -146,16 +164,33 @@ fun HomeScreen(
                     ),
                     leadingIcon = {
                         Icon(Icons.Filled.Link, contentDescription = null, tint = TextSecondary)
-                    }
+                    },
+                    trailingIcon = {
+                        if (state.urlInput.isEmpty()) {
+                            IconButton(onClick = {
+                                clipboardManager.getText()?.let {
+                                    viewModel.onUrlInputChanged(it.text)
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                }
+                            }) {
+                                Icon(Icons.Filled.ContentPaste, contentDescription = "Colar", tint = TextSecondary)
+                            }
+                        } else {
+                            IconButton(onClick = { viewModel.onUrlInputChanged("") }) {
+                                Icon(Icons.Filled.Close, contentDescription = "Limpar", tint = TextSecondary)
+                            }
+                        }
+                    },
+                    keyboardOptions = KeyboardOptions(
+                        imeAction = ImeAction.Search
+                    ),
+                    keyboardActions = KeyboardActions(
+                        onSearch = { onSearchAction() }
+                    )
                 )
                 Spacer(modifier = Modifier.width(12.dp))
                 IconButton(
-                    onClick = {
-                        val extracted = YouTubeUtils.extractUrl(state.urlInput) ?: state.urlInput
-                        if (extracted.isNotBlank()) {
-                            viewModel.fetchVideoDetails(context, VideoUrl(extracted))
-                        }
-                    },
+                    onClick = onSearchAction,
                     modifier = Modifier
                         .size(56.dp)
                         .clip(RoundedCornerShape(16.dp))
@@ -196,8 +231,15 @@ fun HomeScreen(
                     items(recentSearches) { query ->
                         RecentSearchItem(
                             text = query,
-                            onClick = { viewModel.onUrlInputChanged(query) },
-                            onDelete = { viewModel.deleteRecentSearch(query) }
+                            onClick = { 
+                                viewModel.onUrlInputChanged(query)
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                onSearchAction()
+                            },
+                            onDelete = { 
+                                viewModel.deleteRecentSearch(query)
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            }
                         )
                     }
                 }

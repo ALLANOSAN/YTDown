@@ -40,59 +40,58 @@ fun PlayerFullScreen(
     val isShuffleEnabled by viewModel.isShuffleEnabled.collectAsState()
     val repeatMode by viewModel.repeatMode.collectAsState()
 
-    if (track == null) {
+    val currentTrack = track
+    if (currentTrack == null) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Text("Nenhuma música carregada", color = Color.White)
         }
-        return
-    }
-
-    val artworkSource = remember(track, showArtistImage) {
-        var source = track.thumbnailPath
-        if (showArtistImage && !track.artistImageUrl.isNullOrEmpty()) {
-            source = track.artistImageUrl
-        }
-        if (source.isNullOrEmpty() && !track.albumImageUrl.isNullOrEmpty()) {
-            source = track.albumImageUrl
-        }
-        source
-    }
-
-    Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
-        // Background Blur (Sigma 40 conforme original)
-        AnimatedContent(
-            targetState = artworkSource,
-            transitionSpec = {
-                fadeIn(animationSpec = tween(1000)) togetherWith fadeOut(animationSpec = tween(1000))
-            },
-            label = "BackgroundBlur"
-        ) { targetSource ->
-            AsyncImage(
-                model = targetSource,
-                contentDescription = null,
-                modifier = Modifier.fillMaxSize().blur(40.dp),
-                contentScale = ContentScale.Crop,
-                alpha = 0.5f
-            )
+    } else {
+        val artworkSource = remember(currentTrack, showArtistImage) {
+            var source = currentTrack.thumbnailPath
+            if (showArtistImage && !currentTrack.artistImageUrl.isNullOrEmpty()) {
+                source = currentTrack.artistImageUrl
+            }
+            if (source.isNullOrEmpty() && !currentTrack.albumImageUrl.isNullOrEmpty()) {
+                source = currentTrack.albumImageUrl
+            }
+            source
         }
 
-        // Gradient Overlay
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(
-                    Brush.verticalGradient(
-                        colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.8f))
-                    )
+        Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
+            // Background Blur (Sigma 40 conforme original)
+            AnimatedContent(
+                targetState = artworkSource,
+                transitionSpec = {
+                    fadeIn(animationSpec = tween(1000)) togetherWith fadeOut(animationSpec = tween(1000))
+                },
+                label = "BackgroundBlur"
+            ) { targetSource ->
+                AsyncImage(
+                    model = targetSource,
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize().blur(40.dp),
+                    contentScale = ContentScale.Crop,
+                    alpha = 0.5f
                 )
-        )
+            }
 
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(32.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
+            // Gradient Overlay
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.8f))
+                        )
+                    )
+            )
+
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(32.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
             // Header
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -251,6 +250,7 @@ fun PlayerFullScreen(
             Spacer(modifier = Modifier.weight(1f))
         }
     }
+}
 }
 
 private fun formatTime(ms: Long): String {

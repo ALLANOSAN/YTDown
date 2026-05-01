@@ -204,11 +204,9 @@ fun PlaylistSelectionDialog(
         text = {
             if (playlists.isEmpty()) {
                 Text("Crie uma playlist primeiro na aba Playlists.", color = TextSecondary)
-                return@AlertDialog
-            }
-
-            LazyColumn(modifier = Modifier.heightIn(max = 300.dp)) {
-                items(playlists) { playlist ->
+            } else {
+                LazyColumn(modifier = Modifier.heightIn(max = 300.dp)) {
+                    items(playlists) { playlist ->
                         ListItem(
                             headlineContent = { Text(playlist.playlist.name) },
                             supportingContent = { Text("${playlist.trackCount} músicas") },

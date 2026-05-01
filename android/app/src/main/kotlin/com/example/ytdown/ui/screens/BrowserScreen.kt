@@ -34,6 +34,8 @@ import com.example.ytdown.ui.theme.SurfaceDark
 import com.example.ytdown.ui.theme.TextSecondary
 import com.example.ytdown.ui.theme.YTDownPurple
 
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+
 /**
  * Navegador interno com blindagem de erros (Google Auth).
  * Migrado do Flutter (lib/screens/browser_screen.dart).
@@ -41,7 +43,7 @@ import com.example.ytdown.ui.theme.YTDownPurple
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BrowserScreen(onUrlRequest: (VideoUrl) -> Unit) {
-    val browserState by browserProvider.state.collectAsState()
+    val browserState by browserProvider.state.collectAsStateWithLifecycle()
     var urlText by rememberSaveable { mutableStateOf(browserState.currentUrl) }
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
 

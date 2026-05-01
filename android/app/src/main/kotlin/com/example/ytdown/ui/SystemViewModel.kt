@@ -162,10 +162,6 @@ class SystemViewModel @Inject constructor(
                 }
             }
         }
-                    it.copy(isUpdating = false, lastMessage = "Erro ao atualizar yt-dlp")
-                }
-            }
-        }
     }
 
     fun repairAllMetadata() {

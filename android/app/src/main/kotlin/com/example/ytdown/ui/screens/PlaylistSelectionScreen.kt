@@ -101,7 +101,7 @@ fun PlaylistSelectionScreen(
                     fontWeight = FontWeight.Medium
                 )
             }
-            return
+            return@Scaffold
         }
 
         LazyColumn(
@@ -111,63 +111,62 @@ fun PlaylistSelectionScreen(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-                items(state.fetchedItems) { item ->
-                    var rowBackgroundColor = SurfaceDark
-                    if (item.isSelected) {
-                        rowBackgroundColor = YTDownPurple.copy(alpha = 0.1f)
-                    }
+            items(state.fetchedItems) { item ->
+                var rowBackgroundColor = SurfaceDark
+                if (item.isSelected) {
+                    rowBackgroundColor = YTDownPurple.copy(alpha = 0.1f)
+                }
 
-                    var itemFontWeight = FontWeight.Normal
-                    if (item.isSelected) {
-                        itemFontWeight = FontWeight.Bold
-                    }
+                var itemFontWeight = FontWeight.Normal
+                if (item.isSelected) {
+                    itemFontWeight = FontWeight.Bold
+                }
 
-                    var itemIcon = Icons.Default.RadioButtonUnchecked
-                    if (item.isSelected) {
-                        itemIcon = Icons.Default.CheckCircle
-                    }
+                var itemIcon = Icons.Default.RadioButtonUnchecked
+                if (item.isSelected) {
+                    itemIcon = Icons.Default.CheckCircle
+                }
 
-                    var itemTint = TextSecondary
-                    if (item.isSelected) {
-                        itemTint = YTDownPurple
-                    }
+                var itemTint = TextSecondary
+                if (item.isSelected) {
+                    itemTint = YTDownPurple
+                }
 
-                    Row(
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(rowBackgroundColor)
+                        .clickable { viewModel.onVideoSelected(item, !item.isSelected) }
+                        .padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    AsyncImage(
+                        model = item.thumbnail,
+                        contentDescription = null,
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(rowBackgroundColor)
-                            .clickable { viewModel.onVideoSelected(item, !item.isSelected) }
-                            .padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        AsyncImage(
-                            model = item.thumbnail,
-                            contentDescription = null,
-                            modifier = Modifier
-                                .size(60.dp)
-                                .clip(RoundedCornerShape(8.dp)),
-                            contentScale = ContentScale.Crop
-                        )
-                        
-                        Spacer(modifier = Modifier.width(12.dp))
-                        
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                item.title.value,
-                                color = Color.White,
-                                fontSize = 14.sp,
-                                maxLines = 2,
-                                fontWeight = itemFontWeight
-                            )
-                        }
-                        
-                        Icon(
-                            itemIcon,
-                            contentDescription = null,
-                            tint = itemTint
+                            .size(60.dp)
+                            .clip(RoundedCornerShape(8.dp)),
+                        contentScale = ContentScale.Crop
+                    )
+                    
+                    Spacer(modifier = Modifier.width(12.dp))
+                    
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            item.title.value,
+                            color = Color.White,
+                            fontSize = 14.sp,
+                            maxLines = 2,
+                            fontWeight = itemFontWeight
                         )
                     }
+                    
+                    Icon(
+                        itemIcon,
+                        contentDescription = null,
+                        tint = itemTint
+                    )
                 }
             }
         }

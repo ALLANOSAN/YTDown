@@ -31,14 +31,21 @@ import com.example.ytdown.ui.theme.YTDownPurple
 import com.example.ytdown.ui.theme.SurfaceDark
 import com.example.ytdown.ui.theme.TextSecondary
 
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DownloadListScreen(
     viewModel: DownloadViewModel,
+    onNavigateToHome: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val downloads by viewModel.downloads.collectAsState()
-    val listState by viewModel.listState.collectAsState()
+    val haptic = LocalHapticFeedback.current
+    val downloads by viewModel.downloads.collectAsStateWithLifecycle()
+    val listState by viewModel.listState.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val systemViewModel: SystemViewModel = hiltViewModel()
     var editingDownload by remember { mutableStateOf<DownloadItemEntity?>(null) }
@@ -70,7 +77,10 @@ fun DownloadListScreen(
                     colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Black),
                     actions = {
                         if (listState.isSelectionMode) {
-                            IconButton(onClick = { viewModel.deleteSelectedDownloads() }) {
+                            IconButton(onClick = { 
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                viewModel.deleteSelectedDownloads() 
+                            }) {
                                 Icon(Icons.Default.Delete, "Excluir Selecionados", tint = Color.Red)
                             }
                         }
@@ -103,7 +113,10 @@ fun DownloadListScreen(
 
                         Tab(
                             selected = listState.selectedTab == index,
-                            onClick = { viewModel.onTabSelected(index) },
+                            onClick = { 
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                viewModel.onTabSelected(index) 
+                            },
                             text = { 
                                 Text(
                                     text = title,
@@ -124,12 +137,10 @@ fun DownloadListScreen(
             color = Color.Black
         ) {
             if (downloads.isEmpty()) {
-                EmptyState()
-                return@Surface
-            }
-
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
+                EmptyState(onNavigateToHome)
+            } else {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(16.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
@@ -143,31 +154,45 @@ fun DownloadListScreen(
                             progressBus = systemViewModel.progressBus,
                             isSelected = isSelected,
                             isSelectionMode = listState.isSelectionMode,
-                            onLongClick = { viewModel.toggleItemSelection(item.id) },
+                            onLongClick = { 
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                viewModel.toggleItemSelection(item.id) 
+                            },
                             onClick = {
                                 if (listState.isSelectionMode) {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                     viewModel.toggleItemSelection(item.id)
                                 }
                             },
-                            onExport = { viewModel.exportDownload(context, item.id) },
-                            onEditMetadata = { editingDownload = item },
-                            onDelete = { viewModel.deleteDownload(item.id) }
+                            onExport = { 
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                viewModel.exportDownload(context, item.id) 
+                            },
+                            onEditMetadata = { 
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                editingDownload = item 
+                            },
+                            onDelete = { 
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                viewModel.deleteDownload(item.id) 
+                            }
                         )
                     }
                 }
             }
         }
-    }
 
-    editingDownload?.let { item ->
-        EditDownloadMetadataDialog(
-            item = item,
-            onDismiss = { editingDownload = null },
-            onSave = { newTitle, newArtist, newAlbum ->
-                viewModel.updateDownloadMetadata(item.id, newTitle, newArtist, newAlbum)
-                editingDownload = null
-            }
-        )
+        editingDownload?.let { item ->
+            EditDownloadMetadataDialog(
+                item = item,
+                onDismiss = { editingDownload = null },
+                onSave = { newTitle, newArtist, newAlbum ->
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    viewModel.updateDownloadMetadata(item.id, newTitle, newArtist, newAlbum)
+                    editingDownload = null
+                }
+            )
+        }
     }
 }
 
@@ -246,7 +271,7 @@ fun EditDownloadMetadataDialog(
 }
 
 @Composable
-private fun EmptyState() {
+private fun EmptyState(onNavigateToHome: () -> Unit) {
     Column(
         modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.Center,
@@ -255,7 +280,7 @@ private fun EmptyState() {
         Icon(
             Icons.Default.DownloadForOffline,
             null,
-            modifier = Modifier.size(64.dp),
+            modifier = Modifier.size(80.dp),
             tint = SurfaceDark
         )
         Spacer(modifier = Modifier.height(16.dp))
@@ -264,5 +289,13 @@ private fun EmptyState() {
             color = TextSecondary,
             fontSize = 16.sp
         )
+        Spacer(modifier = Modifier.height(24.dp))
+        Button(
+            onClick = onNavigateToHome,
+            colors = ButtonDefaults.buttonColors(containerColor = YTDownPurple),
+            shape = RoundedCornerShape(12.dp)
+        ) {
+            Text("Começar a baixar", fontWeight = FontWeight.Bold)
+        }
     }
 }

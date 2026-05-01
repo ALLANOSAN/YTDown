@@ -30,7 +30,10 @@ fun MainNavigation(
             )
         }
         composable(Screen.Downloads.route) {
-            DownloadListScreen(viewModel)
+            DownloadListScreen(
+                viewModel = viewModel,
+                onNavigateToHome = { navController.navigate(Screen.Home.route) }
+            )
         }
         composable(Screen.Library.route) {
             LibraryScreen(

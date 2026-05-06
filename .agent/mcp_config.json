@@ -15,10 +15,24 @@
                 "shadcn@latest",
                 "mcp"
             ]
+        },
+        "firebase": {
+            "command": "npx",
+            "args": [
+                "-y",
+                "firebase-tools@latest",
+                "mcp"
+            ]
+        },
+        "firebase-crashlytics": {
+            "command": "npx",
+            "args": [
+                "-y",
+                "@firebase/crashlytics-mcp"
+            ],
+            "env": {
+                "GOOGLE_APPLICATION_CREDENTIALS": "/mnt/Dados1/Estudos/APPDOWNLOADYOUTUBE/android/app/firebase-key.json"
+            }
         }
-        //other mcp servers
     }
 }
-
-// setup mcp server in  ~/.gemini\antigravity\mcp_config.json
-

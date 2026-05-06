@@ -43,7 +43,7 @@ fun DownloadItemRow(
     var liveProgress by remember(item.id) { mutableStateOf(item.progress.toFloat()) }
 
     // Escuta o barramento de progresso em tempo real
-    if (item.status == "downloading" && progressBus != null) {
+    if ((item.status == "downloading" || item.status == "pending") && progressBus != null) {
         LaunchedEffect(item.id) {
             progressBus.updates
                 .filter { it.id == item.id }
@@ -125,13 +125,32 @@ fun DownloadItemRow(
             }
 
             when (item.status) {
+                "pending" -> {
+                    // Na fila aguardando — spinner indeterminado
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(24.dp),
+                            color = TextSecondary,
+                            strokeWidth = 2.dp
+                        )
+                        Text("Na fila", color = TextSecondary, fontSize = 10.sp)
+                    }
+                }
                 "downloading" -> {
-                    CircularProgressIndicator(
-                        progress = { liveProgress },
-                        modifier = Modifier.size(24.dp),
-                        color = YTDownPurple,
-                        strokeWidth = 2.dp
-                    )
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        CircularProgressIndicator(
+                            progress = { liveProgress },
+                            modifier = Modifier.size(28.dp),
+                            color = YTDownPurple,
+                            strokeWidth = 3.dp
+                        )
+                        Text(
+                            "${(liveProgress * 100).toInt()}%",
+                            color = YTDownPurple,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
                 "completed" -> {
                     if (!isSelectionMode) {

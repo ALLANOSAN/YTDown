@@ -1,5 +1,6 @@
 package com.example.ytdown.services
 
+import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -7,9 +8,11 @@ import javax.inject.Singleton
 class ArtworkManager @Inject constructor(
     private val cacheService: ArtworkCacheService
 ) {
-    private val artistCache = mutableMapOf<String, String?>()
-    private val albumCache = mutableMapOf<String, String?>()
-    private val trackCache = mutableMapOf<String, String?>()
+    // ConcurrentHashMap — thread-safe sem precisar de synchronized/mutex
+    // mutableMapOf() não é thread-safe com coroutines concorrentes
+    private val artistCache = ConcurrentHashMap<String, String?>()
+    private val albumCache  = ConcurrentHashMap<String, String?>()
+    private val trackCache  = ConcurrentHashMap<String, String?>()
 
 
     suspend fun getArtistImage(artist: String): String? {
@@ -46,7 +49,7 @@ class ArtworkManager @Inject constructor(
         loader: suspend () -> String?
     ): String? {
         val value = loader()
-        cache[key] = value
+        if (value != null) cache[key] = value
         return value
     }
 

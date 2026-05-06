@@ -91,9 +91,11 @@ class PlayerViewModel @Inject constructor(
     fun toggleShuffle() = playerManager.toggleShuffle()
     fun toggleRepeatMode() = playerManager.toggleRepeatMode()
     fun playTrack(item: DownloadItemEntity) = playerManager.playTrack(item)
+    fun playPlaylist(items: List<DownloadItemEntity>, startIndex: Int = 0) = playerManager.playPlaylist(items, startIndex)
     fun next() = playerManager.next()
     fun previous() = playerManager.previous()
     fun seekTo(pos: Long) = playerManager.seekTo(pos)
+    fun restoreLastPosition() = playerManager.restoreLastPosition()
 
     override fun onCleared() {
         artworkTimer?.cancel()

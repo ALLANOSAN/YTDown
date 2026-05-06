@@ -6,12 +6,9 @@ import java.io.File
 import java.io.FileOutputStream
 
 class AssetExtractor(private val context: Context) {
-    
-    // Regra 1: Um nível de indentação
-    // Regra 2: Sem ELSE (Early return)
+
     fun extract(asset: AssetPath, destination: File) {
         if (destination.exists()) return
-        
         destination.parentFile?.mkdirs()
         performCopy(asset, destination)
     }
@@ -22,7 +19,6 @@ class AssetExtractor(private val context: Context) {
                 input.copyTo(output)
             }
         }
-        
         destination.setExecutable(true)
     }
 }

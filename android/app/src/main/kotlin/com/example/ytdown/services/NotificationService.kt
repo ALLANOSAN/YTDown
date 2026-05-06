@@ -29,7 +29,7 @@ class NotificationService @Inject constructor(
     }
 
     fun showDownloadFailed(id: String, title: String, error: String) {
-        val notification = notificationHelper.buildProgressNotification("$title - falha", 100)
+        val notification = notificationHelper.buildFailureNotification(title, error)
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
         manager.notify(id.hashCode(), notification)
     }

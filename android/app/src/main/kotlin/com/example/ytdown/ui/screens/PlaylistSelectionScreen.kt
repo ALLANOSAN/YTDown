@@ -20,8 +20,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
-import com.example.ytdown.core.domain.FilePath
 import com.example.ytdown.ui.DownloadViewModel
+import com.example.ytdown.ui.components.DownloadOptionsBottomSheet
 import com.example.ytdown.ui.theme.YTDownPurple
 import com.example.ytdown.ui.theme.SurfaceDark
 import com.example.ytdown.ui.theme.TextSecondary
@@ -35,6 +35,19 @@ fun PlaylistSelectionScreen(
 ) {
     val state by viewModel.inputState.collectAsState()
     val selectedCount = state.fetchedItems.count { it.isSelected }
+    var showOptionsSheet by remember { mutableStateOf(false) }
+
+    // Mostra o BottomSheet de opções (tags + formato) antes de iniciar o download
+    if (showOptionsSheet) {
+        DownloadOptionsBottomSheet(
+            viewModel = viewModel,
+            onDismiss = { showOptionsSheet = false },
+            onConfirm = {
+                showOptionsSheet = false
+                onFinish()
+            }
+        )
+    }
 
     Scaffold(
         topBar = {
@@ -66,11 +79,7 @@ fun PlaylistSelectionScreen(
                     tonalElevation = 8.dp
                 ) {
                     Button(
-                        onClick = { 
-                            // Em um app real, aqui abriria o seletor de pasta ou usaria a padrão
-                            viewModel.startDownloadFlow(FilePath("/storage/emulated/0/Music/YTDown"))
-                            onFinish()
-                        },
+                        onClick = { showOptionsSheet = true },
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(16.dp)

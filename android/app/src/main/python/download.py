@@ -10,15 +10,51 @@ from helpers import (
 from metadata import _force_metadata_with_mutagen
 
 
-def _resolve_ffmpeg_binary(native_lib_dir):
-    if not native_lib_dir:
-        return None
+def _prepare_ffmpeg_runtime(native_lib_dir, app_files_dir):
+    # Evita concatenação infinita limpando caminhos duplicados
+    def _clean_path_append(env_name, new_path):
+        current = os.environ.get(env_name, "")
+        parts = [p for p in current.split(":") if p]
+        if new_path not in parts:
+            parts.insert(0, new_path)
+            os.environ[env_name] = ":".join(parts)
+            return True
+        return False
 
-    potential_ffmpeg = os.path.join(native_lib_dir, "libffmpeg.so")
-    if os.path.exists(potential_ffmpeg):
-        return potential_ffmpeg
+    if native_lib_dir and os.path.isdir(native_lib_dir):
+        _clean_path_append("LD_LIBRARY_PATH", native_lib_dir)
+        if _clean_path_append("PATH", native_lib_dir):
+            print(f"🚀 PATH atualizado (libs): {native_lib_dir}")
 
-    return os.path.join(native_lib_dir, "ffmpeg")
+    if app_files_dir and os.path.isdir(app_files_dir):
+        _clean_path_append("LD_LIBRARY_PATH", app_files_dir)
+        if _clean_path_append("PATH", app_files_dir):
+            print(f"🚀 PATH atualizado (files): {app_files_dir}")
+
+
+def _resolve_ffmpeg_binary(native_lib_dir, app_files_dir, binary_name="ffmpeg"):
+    """
+    No Android 10+, binários só podem ser executados se estiverem no diretório de libs nativas
+    e possuírem o prefixo 'lib' e extensão '.so'.
+    """
+    # 1. Tenta buscar no diretório de bibliotecas nativas (Obrigatório para Android 10+)
+    if native_lib_dir:
+        # Se buscamos ffmpeg, tentamos libffmpeg_exe.so
+        # Se buscamos ffprobe, tentamos libffprobe_exe.so
+        names = [f"lib{binary_name}_exe.so", f"lib{binary_name}.so"]
+        for name in names:
+            path = os.path.join(native_lib_dir, name)
+            if os.path.exists(path):
+                print(f"🎯 Binário nativo encontrado: {path}")
+                return path
+
+    # 2. Fallback para pasta de arquivos (apenas para dispositivos antigos ou testes)
+    if app_files_dir:
+        path = os.path.join(app_files_dir, binary_name)
+        if os.path.exists(path) and os.access(path, os.X_OK):
+            return path
+
+    return None
 
 
 def _resolve_audio_codec(selected_format, quality):
@@ -208,6 +244,7 @@ def download_video(
     album=None,
     artwork_url=None,
     selected_format=None,
+    progress_callback=None,
 ):
     progress_data = {"percent": 0}
     downloaded_info = None
@@ -223,8 +260,17 @@ def download_video(
         if d["status"] == "finished":
             progress_data["percent"] = 100
 
-    ffmpeg_bin = _resolve_ffmpeg_binary(native_lib_dir)
+        if progress_callback is not None:
+            try:
+                progress_callback.onProgress(progress_data["percent"])
+            except Exception:
+                pass
+
+    ffmpeg_bin = _resolve_ffmpeg_binary(native_lib_dir, app_files_dir, "ffmpeg")
     has_ffmpeg = bool(ffmpeg_bin and os.path.exists(ffmpeg_bin))
+
+    if has_ffmpeg:
+        _prepare_ffmpeg_runtime(native_lib_dir, app_files_dir)
 
     ydl_opts = {
         "outtmpl": output_path,
@@ -233,14 +279,30 @@ def download_video(
         "no_warnings": True,
         "socket_timeout": 300,
         "retries": 3,
-        "nocheckcertificate": True,
+        # nocheckcertificate REMOVIDO — desabilitar SSL é risco de segurança em produção
+        # Se necessário por ambiente corporativo/proxy, o usuário pode configurar via settings
     }
 
     if has_ffmpeg:
+        # Fornecemos o caminho completo para o executável (que pode ser libffmpeg_exe.so)
+        # O yt-dlp executará este arquivo diretamente.
         ydl_opts["ffmpeg_location"] = ffmpeg_bin
-        print(f"🚀 Usando FFmpeg: {ffmpeg_bin}")
-    if not has_ffmpeg:
-        print("⚠️ FFmpeg não encontrado, usando modo nativo limitado")
+
+        # Tenta resolver o ffprobe separadamente
+        # Se não houver ffprobe real, definimos como None para que yt-dlp lide com isso.
+        ffprobe_bin = _resolve_ffmpeg_binary(native_lib_dir, app_files_dir, "ffprobe")
+
+        # Verificação de sanidade: ffprobe não pode ter o mesmo tamanho que ffmpeg (sinal de placeholder)
+        if ffprobe_bin and os.path.exists(ffprobe_bin) and os.path.exists(ffmpeg_bin):
+            if os.path.getsize(ffprobe_bin) == os.path.getsize(ffmpeg_bin):
+                print(
+                    "⚠️ Detectado FFprobe placeholder (cópia do FFmpeg). Ignorando para evitar erros."
+                )
+                ffprobe_bin = None
+
+        ydl_opts["ffprobe_location"] = ffprobe_bin
+
+        print(f"🚀 FFmpeg: {ffmpeg_bin} | FFprobe: {ydl_opts['ffprobe_location']}")
 
     selected_format = (selected_format or "").strip().lower()
     ydl_opts, output_path = _build_download_options(

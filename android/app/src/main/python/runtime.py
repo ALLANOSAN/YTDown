@@ -1,4 +1,5 @@
 import importlib
+import importlib.util
 import json
 import os
 import re
@@ -69,11 +70,41 @@ def _activate_runtime_path(app_files_dir):
         sys.path.insert(0, runtime_root)
 
 
+def _import_yt_dlp_from_runtime(runtime_pkg):
+    init_path = os.path.join(runtime_pkg, "__init__.py")
+    if not os.path.exists(init_path):
+        raise Exception(
+            "Pacote de runtime do yt_dlp inválido: __init__.py não encontrado"
+        )
+
+    spec = importlib.util.spec_from_file_location("yt_dlp", init_path)
+    if spec is None or spec.loader is None:
+        raise Exception("Falha ao criar spec para yt_dlp")
+
+    module = importlib.util.module_from_spec(spec)
+    module.__path__ = [runtime_pkg]
+    sys.modules["yt_dlp"] = module
+    spec.loader.exec_module(module)
+    loaded_file = getattr(module, "__file__", None)
+    loaded_version = getattr(
+        getattr(module, "version", None), "__version__", None
+    ) or getattr(module, "__version__", None)
+    print(
+        f"🔎 yt_dlp runtime import: runtime_pkg={runtime_pkg}, __file__={loaded_file}, version={loaded_version}"
+    )
+    return module
+
+
 def _get_yt_dlp_module(app_files_dir=None):
     global _YT_DLP_MODULE
 
     if app_files_dir:
-        _activate_runtime_path(app_files_dir)
+        runtime_pkg = _runtime_yt_dlp_dir(app_files_dir)
+        if os.path.isdir(runtime_pkg):
+            _activate_runtime_path(app_files_dir)
+            if _YT_DLP_MODULE is None:
+                _YT_DLP_MODULE = _import_yt_dlp_from_runtime(runtime_pkg)
+            return _YT_DLP_MODULE
 
     if _YT_DLP_MODULE is not None:
         return _YT_DLP_MODULE
@@ -87,7 +118,14 @@ def _get_current_yt_dlp_version(app_files_dir=None):
     version = getattr(getattr(yt_dlp_module, "version", None), "__version__", None)
     if version:
         return str(version)
-    return str(getattr(yt_dlp_module, "__version__", "unknown"))
+    alternative = getattr(yt_dlp_module, "__version__", None)
+    if alternative:
+        return str(alternative)
+    module_file = getattr(yt_dlp_module, "__file__", None)
+    print(
+        f"⚠️ yt_dlp current version unknown, module file={module_file}, fallback __version__={alternative}"
+    )
+    return str(alternative or "unknown")
 
 
 def _version_tuple(version):
@@ -340,7 +378,9 @@ def update_yt_dlp_if_needed(app_files_dir, force=False):
 
         meta.update(
             {
+                "current_version": installed_version,
                 "installed_runtime_version": installed_version,
+                "latest_version": latest_version,
                 "updated_at": datetime.now(timezone.utc).isoformat(),
                 "package_sha256": package_sha256,
                 "update_available": _is_newer(latest_version, installed_version),

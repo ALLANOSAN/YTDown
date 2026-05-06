@@ -5,8 +5,15 @@ import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.work.Configuration
+import coil.Coil
+import coil.ImageLoader
+import coil.disk.DiskCache
+import coil.memory.MemoryCache
 import com.example.ytdown.core.infrastructure.MusicPlayerManager
 import com.example.ytdown.services.ObservabilityService
+import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkManager
+import com.example.ytdown.services.CacheGuardianWorker
 import dagger.hilt.android.HiltAndroidApp
 import androidx.hilt.work.HiltWorkerFactory
 import kotlinx.coroutines.CoroutineExceptionHandler
@@ -14,6 +21,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import javax.inject.Inject
+import java.util.concurrent.TimeUnit
 
 /**
  * Classe de aplicação principal.
@@ -39,6 +47,34 @@ class YTDownApplication : Application(), Configuration.Provider {
     override fun onCreate() {
         super.onCreate()
 
+        // Agendar CacheGuardian (roda uma vez por semana)
+        val cacheWorkRequest = PeriodicWorkRequestBuilder<CacheGuardianWorker>(7, TimeUnit.DAYS)
+            .build()
+        WorkManager.getInstance(this).enqueueUniquePeriodicWork(
+            "CacheGuardian",
+            androidx.work.ExistingPeriodicWorkPolicy.KEEP,
+            cacheWorkRequest
+        )
+
+        // Coil — cache de disco (100MB) + memória (20% da RAM disponível)
+        // Evita recarregar thumbnails e capas da rede a cada reinício do app
+        Coil.setImageLoader(
+            ImageLoader.Builder(this)
+                .memoryCache {
+                    MemoryCache.Builder(this)
+                        .maxSizePercent(0.20)
+                        .build()
+                }
+                .diskCache {
+                    DiskCache.Builder()
+                        .directory(cacheDir.resolve("coil_image_cache"))
+                        .maxSizeBytes(100L * 1024 * 1024) // 100 MB
+                        .build()
+                }
+                .crossfade(true)
+                .build()
+        )
+
         coroutineExceptionHandler = CoroutineExceptionHandler { _, throwable ->
             observabilityService.trackError(
                 "CoroutineException",
@@ -47,8 +83,6 @@ class YTDownApplication : Application(), Configuration.Provider {
             )
         }
 
-        // Observabilidade global para falhas em threads normais.
-        // Nota: crashes antes de Application.onCreate() não são capturados por esse handler.
         val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
             observabilityService.trackError(
@@ -59,14 +93,14 @@ class YTDownApplication : Application(), Configuration.Provider {
             defaultHandler?.uncaughtException(thread, throwable)
         }
 
-        // Observa o ciclo de vida do processo do aplicativo
         ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
             override fun onStop(owner: LifecycleOwner) {
-                // App foi para o background total
+                // FIX 3 — Salva posição imediatamente quando app vai para background
+                // Garante que mesmo se o processo for morto pelo SO, a posição é preservada
+                playerManager.saveCurrentPositionNow()
             }
 
             override fun onDestroy(owner: LifecycleOwner) {
-                // Limpeza final de recursos críticos
                 playerManager.pause()
             }
         })

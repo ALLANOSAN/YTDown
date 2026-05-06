@@ -1,9 +1,15 @@
 package com.example.ytdown.core.business
 
+import androidx.paging.Pager
+import androidx.paging.PagingConfig
+import androidx.paging.PagingData
+import androidx.paging.filter
+import androidx.paging.map
 import com.example.ytdown.core.domain.DownloadItemEntity
 import com.example.ytdown.core.infrastructure.persistence.DownloadDao
 import com.example.ytdown.core.infrastructure.StorageResolver
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 import java.io.File
 import javax.inject.Inject
 
@@ -14,29 +20,43 @@ class DownloadRepository @Inject constructor(
 
     fun stream(): Flow<List<DownloadItemEntity>> = dao.getAllDownloads()
 
+    /**
+     * Paging3 — retorna PagingData paginado com 30 itens por página.
+     * Aceita filtros opcionais de busca e tipo (0=áudio, 1=vídeo, null=todos).
+     */
+    fun streamPaged(
+        query: String = "",
+        typeFilter: Int? = null
+    ): Flow<PagingData<DownloadItemEntity>> = Pager(
+        config = PagingConfig(
+            pageSize = 30,
+            prefetchDistance = 10,
+            enablePlaceholders = false
+        ),
+        pagingSourceFactory = { dao.getDownloadsPaged() }
+    ).flow.map { pagingData ->
+        pagingData.filter { item ->
+            val typeMatch = typeFilter == null || item.type == typeFilter
+            val searchMatch = query.isBlank() ||
+                item.title.contains(query, ignoreCase = true) ||
+                item.artist?.contains(query, ignoreCase = true) == true
+            typeMatch && searchMatch
+        }
+    }
+
     suspend fun find(id: String): DownloadItemEntity? = dao.getById(id)
 
     suspend fun persist(item: DownloadItemEntity) = dao.upsert(item)
 
-    /**
-     * Deleção Completa (Migrado do Flutter DownloadService -> deleteDownload).
-     * Apaga do Banco + Arquivo Privado + Arquivo no MediaStore (Público).
-     */
     suspend fun delete(id: String) {
         val item = dao.getById(id) ?: return
-        
-        // 1. Apaga do Banco de Dados
         dao.delete(item)
-
-        // 2. Apaga o arquivo privado apenas se existir um caminho local.
         if (item.outputPath.isNotBlank()) {
             try {
                 val privateFile = File(item.outputPath)
                 if (privateFile.exists()) privateFile.delete()
             } catch (e: Exception) {}
         }
-
-        // 3. Apaga o arquivo no MediaStore (se exportado)
         item.exportedPath?.let { uriString ->
             storage.deleteFromPublicCollection(uriString)
         }

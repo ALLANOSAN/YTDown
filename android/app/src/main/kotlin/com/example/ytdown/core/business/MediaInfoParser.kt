@@ -50,11 +50,11 @@ class MediaInfoParser {
         )
     }
 
-    fun guessArtistFromTitle(title: String): String {
-        return MetadataUtils.guessArtistFromTitle(title) ?: ""
+    fun guessArtistFromTitle(title: String): String? {
+        return MetadataUtils.guessArtistFromTitle(title)
     }
 
-    fun guessAlbumFromTitle(title: String): String {
-        return MetadataUtils.guessAlbumFromTitle(title) ?: ""
+    fun guessAlbumFromTitle(title: String): String? {
+        return MetadataUtils.guessAlbumFromTitle(title)
     }
 }

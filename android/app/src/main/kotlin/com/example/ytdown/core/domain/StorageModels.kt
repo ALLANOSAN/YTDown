@@ -1,4 +1,4 @@
-package com.example.ytdown
+package com.example.ytdown.core.domain
 
 import android.net.Uri
 import java.io.File

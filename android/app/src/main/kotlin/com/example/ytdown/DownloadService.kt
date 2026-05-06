@@ -2,47 +2,58 @@ package com.example.ytdown
 
 import android.content.Context
 import android.net.Uri
-import com.example.ytdown.core.domain.*
-import com.example.ytdown.core.infrastructure.MediaScanner
-import org.json.JSONObject
-import com.example.ytdown.core.infrastructure.MimeTypeResolver
 import com.example.ytdown.core.business.MediaInfoParser
 import com.example.ytdown.core.business.YtDlpWrapper
+import com.example.ytdown.core.domain.*
+import com.example.ytdown.core.infrastructure.BinaryOrchestrator
+import com.example.ytdown.core.infrastructure.MediaScanner
+import com.example.ytdown.core.infrastructure.MimeTypeResolver
 import com.example.ytdown.services.StorageService
 import com.example.ytdown.utils.MemoryLruCache
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
+import org.json.JSONObject
 
 class MetadataTools(val scanner: MediaScanner, val resolver: MimeTypeResolver)
 
 @Singleton
-class DownloadMetadataManager @Inject constructor(
-    private val tools: MetadataTools,
-    private val parser: MediaInfoParser,
-    private val ytDlp: YtDlpWrapper,
-    private val storageService: StorageService,
-    @ApplicationContext private val context: Context
+class DownloadMetadataManager
+@Inject
+constructor(
+        private val tools: MetadataTools,
+        private val parser: MediaInfoParser,
+        private val ytDlp: YtDlpWrapper,
+        private val storageService: StorageService,
+        private val orchestrator: BinaryOrchestrator,
+        @param:ApplicationContext private val context: Context
 ) {
     private val infoCache = MemoryLruCache<String, VideoInfoJson>(50)
 
-    fun fetchVideoInfo(context: Context, url: VideoUrl): VideoInfoJson {
+    fun fetchVideoInfo(url: VideoUrl): VideoInfoJson {
         val cached = infoCache.get(url.value)
         if (cached != null) return cached
 
-        val result = try {
-            val jsonResult = ytDlp.fetchVideoInfo(url.value)
-            VideoInfoJson(jsonResult.toString())
-        } catch (e: Exception) {
-            VideoInfoJson("""{"success": false, "error": "${e.message}"}""")
+        val json =
+                try {
+                    ytDlp.fetchVideoInfo(url.value, orchestrator.getAppFilesDir())
+                } catch (e: Exception) {
+                    throw e
+                }
+
+        if (!json.optBoolean("success", false)) {
+            val errorMessage = json.optString("error", "Falha ao buscar informações do vídeo")
+            throw java.lang.IllegalStateException(errorMessage)
         }
 
-        infoCache.put(url.value, result)
-        return result
+        val videoInfo = VideoInfoJson(json.toString())
+        infoCache.put(url.value, videoInfo)
+        return videoInfo
     }
 
-    fun parseEntries(infoJson: VideoInfoJson): List<VideoPreviewItem> = parser.parseEntries(infoJson)
+    fun parseEntries(infoJson: VideoInfoJson): List<VideoPreviewItem> =
+            parser.parseEntries(infoJson)
 
     fun isPlaylist(infoJson: VideoInfoJson): Boolean {
         val json = JSONObject(infoJson.value)
@@ -63,15 +74,15 @@ class DownloadMetadataManager @Inject constructor(
         return false
     }
 
-    fun guessArtistFromTitle(title: String): String = parser.guessArtistFromTitle(title)
+    fun guessArtistFromTitle(title: String): String? = parser.guessArtistFromTitle(title)
 
-    fun guessAlbumFromTitle(title: String): String = parser.guessAlbumFromTitle(title)
+    fun guessAlbumFromTitle(title: String): String? = parser.guessAlbumFromTitle(title)
 
     suspend fun rewriteMetadata(
-        path: FilePath,
-        metadata: MediaMetadata,
-        exportedPath: String? = null,
-        artworkUrl: String? = null
+            path: FilePath,
+            metadata: MediaMetadata,
+            exportedPath: String? = null,
+            artworkUrl: String? = null
     ): ExitCode {
         val target = exportedPath?.takeIf { it.isNotBlank() } ?: path.value
         val resolvedArtworkUrl = resolveArtworkUrl(artworkUrl)
@@ -81,13 +92,14 @@ class DownloadMetadataManager @Inject constructor(
                 return rewriteMetadataOnContentUri(target, metadata, path, resolvedArtworkUrl)
             }
 
-            val result = ytDlp.rewriteMetadata(
-                filePath = target,
-                title = metadata.title.value,
-                artist = metadata.artist.value,
-                album = metadata.album.value,
-                artworkUrl = resolvedArtworkUrl
-            )
+            val result =
+                    ytDlp.rewriteMetadata(
+                            filePath = target,
+                            title = metadata.title.value,
+                            artist = metadata.artist.value,
+                            album = metadata.album.value,
+                            artworkUrl = resolvedArtworkUrl
+                    )
 
             if (result.isSuccess()) {
                 val mime = tools.resolver.fromPath(FilePath(target))
@@ -111,14 +123,14 @@ class DownloadMetadataManager @Inject constructor(
             "image/png" -> extension = ".png"
             "image/webp" -> extension = ".webp"
         }
-        val tempArtworkFile = File(context.cacheDir, "ytdown-artwork-${System.currentTimeMillis()}$extension")
+        val tempArtworkFile =
+                File(context.cacheDir, "ytdown-artwork-${System.currentTimeMillis()}$extension")
 
         return try {
             context.contentResolver.openInputStream(uri)?.use { input ->
-                tempArtworkFile.outputStream().use { output ->
-                    input.copyTo(output)
-                }
-            } ?: return null
+                tempArtworkFile.outputStream().use { output -> input.copyTo(output) }
+            }
+                    ?: return null
             tempArtworkFile.absolutePath
         } catch (e: Exception) {
             tempArtworkFile.delete()
@@ -127,32 +139,38 @@ class DownloadMetadataManager @Inject constructor(
     }
 
     private suspend fun rewriteMetadataOnContentUri(
-        exportedUri: String,
-        metadata: MediaMetadata,
-        originalPath: FilePath,
-        artworkUrl: String?
+            exportedUri: String,
+            metadata: MediaMetadata,
+            originalPath: FilePath,
+            artworkUrl: String?
     ): ExitCode {
         val extension = originalPath.value.substringAfterLast('.', "mp3")
-        val tempFile = File(context.cacheDir, "ytdown-metadata-${System.currentTimeMillis()}.$extension")
+        val tempFile =
+                File(context.cacheDir, "ytdown-metadata-${System.currentTimeMillis()}.$extension")
 
         try {
             context.contentResolver.openInputStream(Uri.parse(exportedUri))?.use { input ->
-                tempFile.outputStream().use { output ->
-                    input.copyTo(output)
-                }
-            } ?: return ExitCode(1)
+                tempFile.outputStream().use { output -> input.copyTo(output) }
+            }
+                    ?: return ExitCode(1)
 
-            val result = ytDlp.rewriteMetadata(
-                filePath = tempFile.absolutePath,
-                title = metadata.title.value,
-                artist = metadata.artist.value,
-                album = metadata.album.value,
-                artworkUrl = artworkUrl
-            )
+            val result =
+                    ytDlp.rewriteMetadata(
+                            filePath = tempFile.absolutePath,
+                            title = metadata.title.value,
+                            artist = metadata.artist.value,
+                            album = metadata.album.value,
+                            artworkUrl = artworkUrl
+                    )
 
             if (!result.isSuccess()) return result
 
-            val synced = storageService.syncEditedFileToExported(context, tempFile.absolutePath, exportedUri)
+            val synced =
+                    storageService.syncEditedExportedFile(
+                            context,
+                            tempFile.absolutePath,
+                            exportedUri
+                    )
             if (!synced) return ExitCode(1)
 
             return result

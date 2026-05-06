@@ -17,10 +17,14 @@ if [ ! -f "$SECRETS_FILE" ]; then
 fi
 
 echo "🔐 Lendo secrets de $SECRETS_FILE..."
-echo "🚀 Iniciando build nativo ($BUILD_TYPE)..."
+echo "🧹 Limpando build anterior..."
 
 # Entra na pasta android para rodar o gradle
 cd android
+
+./gradlew clean
+
+echo "🚀 Iniciando build nativo ($BUILD_TYPE)..."
 
 if [ "$BUILD_TYPE" = "release" ]; then
   ./gradlew assembleRelease

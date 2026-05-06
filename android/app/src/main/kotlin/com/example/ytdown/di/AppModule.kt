@@ -10,7 +10,15 @@ import com.example.ytdown.core.business.DownloadEngine
 import com.example.ytdown.core.business.DownloadRepository
 import com.example.ytdown.core.business.MediaInfoParser
 import com.example.ytdown.core.business.YtDlpWrapper
+import com.example.ytdown.services.ObservabilityService
 import com.example.ytdown.core.infrastructure.*
+import com.example.ytdown.core.infrastructure.AssetExtractor
+import com.example.ytdown.core.infrastructure.ArchiveExtractor
+import com.example.ytdown.core.infrastructure.BinaryOrchestrator
+import com.example.ytdown.core.infrastructure.MediaScanner
+import com.example.ytdown.core.infrastructure.MimeTypeResolver
+import com.example.ytdown.core.infrastructure.PythonEnvironment
+import com.example.ytdown.core.infrastructure.StorageResolver
 import com.example.ytdown.core.infrastructure.persistence.AppDatabase
 import com.example.ytdown.core.infrastructure.persistence.DownloadDao
 import com.example.ytdown.core.infrastructure.persistence.LibraryDao
@@ -32,13 +40,16 @@ object AppModule {
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): AppDatabase =
         Room.databaseBuilder(context, AppDatabase::class.java, "ytdown.db")
-            .fallbackToDestructiveMigration()
+            .addMigrations(*AppDatabase.ALL_MIGRATIONS)
+            // fallbackToDestructiveMigration() REMOVIDO — migrations reais preservam os dados
             .build()
 
     @Provides
+    @Singleton  // ← FIX 3: DAOs agora são Singleton — evita instâncias duplicadas
     fun provideDownloadDao(db: AppDatabase): DownloadDao = db.downloadDao()
 
     @Provides
+    @Singleton  // ← FIX 3
     fun provideLibraryDao(db: AppDatabase): LibraryDao = db.libraryDao()
 
     @Provides
@@ -73,13 +84,18 @@ object AppModule {
 
     @Provides
     @Singleton
+    fun provideStorageService(): StorageService = StorageService
+
+    @Provides
+    @Singleton
     fun provideDownloadMetadataManager(
         tools: MetadataTools,
         parser: MediaInfoParser,
         ytDlp: YtDlpWrapper,
         storageService: StorageService,
+        orchestrator: BinaryOrchestrator,
         @ApplicationContext context: Context
-    ): DownloadMetadataManager = DownloadMetadataManager(tools, parser, ytDlp, storageService, context)
+    ): DownloadMetadataManager = DownloadMetadataManager(tools, parser, ytDlp, storageService, orchestrator, context)
 
     @Provides
     @Singleton
@@ -92,15 +108,17 @@ object AppModule {
     @Provides
     @Singleton
     fun provideYtDlpWrapper(
-        env: PythonEnvironment
-    ): YtDlpWrapper = YtDlpWrapper(env)
+        env: PythonEnvironment,
+        binaryOrchestrator: BinaryOrchestrator
+    ): YtDlpWrapper = YtDlpWrapper(env, binaryOrchestrator)
 
     @Provides
     @Singleton
     fun provideDownloadEngine(
         ytDlp: YtDlpWrapper,
-        metadataManager: DownloadMetadataManager
-    ): DownloadEngine = DownloadEngine(ytDlp, metadataManager)
+        metadataManager: DownloadMetadataManager,
+        observabilityService: ObservabilityService
+    ): DownloadEngine = DownloadEngine(ytDlp, metadataManager, observabilityService)
 
     @Provides
     @Singleton
@@ -133,6 +151,7 @@ object AppModule {
     @Singleton
     fun provideBinaryOrchestrator(
         assets: AssetExtractor,
-        storage: StorageResolver
-    ): BinaryOrchestrator = BinaryOrchestrator(assets, storage)
+        storage: StorageResolver,
+        @ApplicationContext context: Context
+    ): BinaryOrchestrator = BinaryOrchestrator(assets, storage, context)
 }

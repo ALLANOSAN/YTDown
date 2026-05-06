@@ -16,6 +16,10 @@ def fetch_video_info(url, app_files_dir=None):
         "no_warnings": True,
         "extract_flat": False,
         "socket_timeout": 30,
+        # FIX 4 — retry automático do yt-dlp em erros de rede
+        # Antes só havia socket_timeout sem nenhum retry
+        "retries": 3,
+        "fragment_retries": 3,
     }
 
     try:
@@ -25,8 +29,8 @@ def fetch_video_info(url, app_files_dir=None):
                 ydl,
                 url,
                 download=False,
-                attempts=2,
-                backoff_seconds=0.8,
+                attempts=3,       # era 2 — agora alinhado com o download.py
+                backoff_seconds=1.0,  # era 0.8
             )
 
             if info is None:

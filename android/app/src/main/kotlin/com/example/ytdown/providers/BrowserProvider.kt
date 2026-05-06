@@ -41,12 +41,11 @@ class BrowserProvider {
     val state: StateFlow<BrowserState> = _state.asStateFlow()
 
     fun setUrl(url: String) {
+        // Apenas atualiza a URL e o estado Youtube, sem resetar isInitialLoad ou hasShownError
         _state.value = _state.value.copyWith(
             currentUrl = url,
             isYoutube = isYouTubeUrl(url),
-            progress = 0.0,
-            isInitialLoad = true,
-            hasShownError = false
+            progress = 0.0
         )
     }
 

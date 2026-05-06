@@ -8,6 +8,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -16,26 +18,26 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.launch
+
 import com.example.ytdown.core.domain.VideoUrl
 import com.example.ytdown.ui.DownloadViewModel
 import com.example.ytdown.ui.components.DownloadOptionsBottomSheet
-import com.example.ytdown.ui.theme.YTDownPurple
+import com.example.ytdown.ui.components.ShimmerItem
 import com.example.ytdown.ui.theme.SurfaceDark
 import com.example.ytdown.ui.theme.TextSecondary
+import com.example.ytdown.ui.theme.YTDownPurple
 import com.example.ytdown.utils.YouTubeUtils
-
-import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 @Composable
 fun HomeScreen(
@@ -47,7 +49,8 @@ fun HomeScreen(
     val context = LocalContext.current
     val keyboardController = LocalSoftwareKeyboardController.current
     val haptic = LocalHapticFeedback.current
-    val clipboardManager = LocalClipboardManager.current
+    val clipboard = LocalClipboard.current
+    val scope = rememberCoroutineScope()
     val state by viewModel.inputState.collectAsStateWithLifecycle()
     val recentSearches by viewModel.recentSearches.collectAsStateWithLifecycle()
 
@@ -72,12 +75,6 @@ fun HomeScreen(
         SideEffect {
             keyboardController?.hide()
         }
-        
-        // Delay de estabilização igual ao Flutter VideoInfoHandler._releaseInputConnection
-        LaunchedEffect(Unit) {
-            kotlinx.coroutines.delay(150)
-        }
-
         DownloadOptionsBottomSheet(
             viewModel = viewModel,
             onDismiss = { viewModel.onDismissDialog() }
@@ -128,7 +125,11 @@ fun HomeScreen(
                 }
                 Spacer(modifier = Modifier.weight(1f))
                 IconButton(onClick = onNavigateToSettings) {
-                    Icon(Icons.Default.Settings, contentDescription = "Configurações", tint = Color.White)
+                    Icon(
+                        Icons.Default.Settings,
+                        contentDescription = "Configurações",
+                        tint = Color.White
+                    )
                 }
             }
 
@@ -168,16 +169,29 @@ fun HomeScreen(
                     trailingIcon = {
                         if (state.urlInput.isEmpty()) {
                             IconButton(onClick = {
-                                clipboardManager.getText()?.let {
-                                    viewModel.onUrlInputChanged(it.text)
-                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                scope.launch {
+                                    val clipEntry = clipboard.getClipEntry()
+                                    val clipText = clipEntry?.clipData?.getItemAt(0)?.text?.toString()
+
+                                    if (!clipText.isNullOrBlank()) {
+                                        viewModel.onUrlInputChanged(clipText)
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    }
                                 }
                             }) {
-                                Icon(Icons.Filled.ContentPaste, contentDescription = "Colar", tint = TextSecondary)
+                                Icon(
+                                    Icons.Filled.ContentPaste,
+                                    contentDescription = "Colar",
+                                    tint = TextSecondary
+                                )
                             }
                         } else {
                             IconButton(onClick = { viewModel.onUrlInputChanged("") }) {
-                                Icon(Icons.Filled.Close, contentDescription = "Limpar", tint = TextSecondary)
+                                Icon(
+                                    Icons.Filled.Close,
+                                    contentDescription = "Limpar",
+                                    tint = TextSecondary
+                                )
                             }
                         }
                     },
@@ -204,15 +218,63 @@ fun HomeScreen(
 
             if (state.isFetching) {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    com.example.ytdown.ui.components.ShimmerItem()
-                    com.example.ytdown.ui.components.ShimmerItem()
+                    ShimmerItem()
+                    ShimmerItem()
                 }
+            }
+
+            // Exibe erro de fetch (URL inválida, sem internet, etc.)
+            if (!state.fetchError.isNullOrBlank()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp)),
+                    color = Color(0xFF3D1A1A)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Default.ErrorOutline,
+                            contentDescription = null,
+                            tint = Color(0xFFFF6B6B),
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        val errorText = state.fetchError ?: ""
+                        Text(
+                            text = errorText,
+                            color = Color(0xFFFF6B6B),
+                            fontSize = 14.sp,
+                            modifier = Modifier.weight(1f)
+                        )
+                        IconButton(
+                            onClick = { viewModel.clearFetchError() },
+                            modifier = Modifier.size(24.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Close,
+                                contentDescription = null,
+                                tint = TextSecondary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(8.dp))
             }
 
             if (recentSearches.isNotEmpty()) {
                 // Recent Searches Header
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Refresh, contentDescription = null, tint = YTDownPurple, modifier = Modifier.size(20.dp))
+                    Icon(
+                        Icons.Default.Refresh,
+                        contentDescription = null,
+                        tint = YTDownPurple,
+                        modifier = Modifier.size(20.dp)
+                    )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "Buscas Recentes",
@@ -231,12 +293,12 @@ fun HomeScreen(
                     items(recentSearches) { query ->
                         RecentSearchItem(
                             text = query,
-                            onClick = { 
+                            onClick = {
                                 viewModel.onUrlInputChanged(query)
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                 onSearchAction()
                             },
-                            onDelete = { 
+                            onDelete = {
                                 viewModel.deleteRecentSearch(query)
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                             }
@@ -265,7 +327,12 @@ private fun RecentSearchItem(
             modifier = Modifier.padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(Icons.Default.Search, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(18.dp))
+            Icon(
+                Icons.Default.Search,
+                contentDescription = null,
+                tint = TextSecondary,
+                modifier = Modifier.size(18.dp)
+            )
             Spacer(modifier = Modifier.width(12.dp))
             Text(
                 text = text,
@@ -278,7 +345,12 @@ private fun RecentSearchItem(
                 onClick = onDelete,
                 modifier = Modifier.size(24.dp)
             ) {
-                Icon(Icons.Default.Close, contentDescription = "Remover", tint = TextSecondary, modifier = Modifier.size(16.dp))
+                Icon(
+                    Icons.Default.Close,
+                    contentDescription = "Remover",
+                    tint = TextSecondary,
+                    modifier = Modifier.size(16.dp)
+                )
             }
         }
     }

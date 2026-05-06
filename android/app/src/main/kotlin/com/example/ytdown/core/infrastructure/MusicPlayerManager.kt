@@ -1,5 +1,6 @@
 package com.example.ytdown.core.infrastructure
 
+import android.content.Context
 import android.net.Uri
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
@@ -7,6 +8,7 @@ import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import com.example.ytdown.core.domain.DownloadItemEntity
 import com.example.ytdown.core.infrastructure.persistence.DownloadDao
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -14,15 +16,20 @@ import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
 
+private const val PREFS_NAME = "player_state"
+private const val KEY_TRACK_ID = "last_track_id"
+private const val KEY_POSITION_MS = "last_position_ms"
+
 /**
- * Gerencia a reprodução de áudio com suporte a Shuffle, Repeat, Auto-Correção de Caminho e Hidratação de Artes.
- * Migrado do Flutter (player_service.dart).
+ * Gerencia a reprodução de áudio com suporte a Shuffle, Repeat, Auto-Correção de Caminho,
+ * Hidratação de Artes e Persistência de Posição de Reprodução.
  */
 @Singleton
 class MusicPlayerManager @Inject constructor(
     private val player: ExoPlayer,
     private val downloadDao: DownloadDao,
-    private val metadataService: MetadataService
+    private val metadataService: MetadataService,
+    @param:ApplicationContext private val context: Context
 ) {
     private val _currentTrack = MutableStateFlow<DownloadItemEntity?>(null)
     val currentTrack = _currentTrack.asStateFlow()
@@ -34,19 +41,85 @@ class MusicPlayerManager @Inject constructor(
     val isShuffleEnabled = _isShuffleEnabled.asStateFlow()
 
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+    private val prefs by lazy { context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE) }
+
+    // Job de auto-save periódico enquanto tocando
+    private var positionSaveJob: Job? = null
 
     init {
         player.addListener(object : Player.Listener {
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                 mediaItem?.mediaId?.let { id ->
-                    scope.launch { 
+                    scope.launch {
                         val item = downloadDao.getById(id)
                         _currentTrack.value = item
                         item?.let { hydrateArtworkIfMissing(it) }
                     }
                 }
             }
+
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                if (isPlaying) startPositionSaveLoop() else stopPositionSaveLoop()
+            }
         })
+    }
+
+    // ── Persistência de posição ─────────────────────────────────────────────
+
+    private fun startPositionSaveLoop() {
+        positionSaveJob?.cancel()
+        positionSaveJob = scope.launch {
+            while (isActive) {
+                saveCurrentPosition()
+                delay(5_000) // salva a cada 5s enquanto tocando
+            }
+        }
+    }
+
+    private fun stopPositionSaveLoop() {
+        positionSaveJob?.cancel()
+        saveCurrentPosition() // salva imediatamente ao pausar/parar
+    }
+
+    private fun saveCurrentPosition() {
+        val trackId = _currentTrack.value?.id ?: return
+        val position = player.currentPosition
+        prefs.edit()
+            .putString(KEY_TRACK_ID, trackId)
+            .putLong(KEY_POSITION_MS, position)
+            .apply()
+    }
+
+    /** Chamado pelo Application.onStop — salva posição de forma síncrona (commit, não apply) */
+    fun saveCurrentPositionNow() {
+        val trackId = _currentTrack.value?.id ?: return
+        val position = player.currentPosition
+        prefs.edit()
+            .putString(KEY_TRACK_ID, trackId)
+            .putLong(KEY_POSITION_MS, position)
+            .commit() // commit() é síncrono — garante escrita antes do processo morrer
+    }
+
+    /** Chamado ao abrir o player para restaurar a posição da última sessão. */
+    fun restoreLastPosition() {
+        val savedTrackId = prefs.getString(KEY_TRACK_ID, null) ?: return
+        val savedPosition = prefs.getLong(KEY_POSITION_MS, 0L)
+        val currentId = _currentTrack.value?.id
+
+        if (currentId == savedTrackId && savedPosition > 0L) {
+            player.seekTo(savedPosition)
+        } else if (currentId == null && savedPosition > 0L) {
+            // App foi fechado enquanto tocava — carrega a faixa e restaura
+            scope.launch {
+                val item = downloadDao.getById(savedTrackId) ?: return@launch
+                val resolved = resolvePlayableItem(item) ?: return@launch
+                _currentTrack.value = resolved
+                player.setMediaItem(buildMediaItem(resolved))
+                player.prepare()
+                player.seekTo(savedPosition)
+                // Não inicia play automaticamente — só posiciona
+            }
+        }
     }
 
     fun toggleRepeatMode() {

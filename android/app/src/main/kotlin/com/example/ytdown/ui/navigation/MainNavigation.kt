@@ -9,6 +9,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.NavType
 import androidx.navigation.navArgument
 import com.example.ytdown.ui.DownloadViewModel
+import com.example.ytdown.ui.LibraryViewModel
 import com.example.ytdown.ui.PlayerViewModel
 import com.example.ytdown.ui.SystemViewModel
 import com.example.ytdown.ui.screens.*
@@ -32,16 +33,19 @@ fun MainNavigation(
         composable(Screen.Downloads.route) {
             DownloadListScreen(
                 viewModel = viewModel,
-                onNavigateToHome = { navController.navigate(Screen.Home.route) }
+                onNavigateToBrowser = { navController.navigate(Screen.Browser.route) }
             )
         }
         composable(Screen.Library.route) {
+            val libraryViewModel: LibraryViewModel = hiltViewModel()
             LibraryScreen(
                 viewModel = viewModel,
                 systemViewModel = systemViewModel,
                 playerViewModel = playerViewModel,
+                libraryViewModel = libraryViewModel,
                 onNavigateToPlayer = { navController.navigate(Screen.Player.route) },
-                onNavigateToDetail = { id -> navController.navigate(Screen.PlaylistDetail.createRoute(id)) }
+                onNavigateToDetail = { id -> navController.navigate(Screen.PlaylistDetail.createRoute(id)) },
+                onNavigateToPlaylist = { id -> navController.navigate(Screen.PlaylistById.createRoute(id)) }
             )
         }
         composable(Screen.Browser.route) {
@@ -86,7 +90,23 @@ fun MainNavigation(
                 systemViewModel = systemViewModel,
                 playerViewModel = playerViewModel,
                 onNavigateToPlayer = { navController.navigate(Screen.Player.route) },
-                onBack = { navController.popBackStack() }
+                onBack = { navController.popBackStack() },
+                isPlaylistId = false
+            )
+        }
+        composable(
+            route = Screen.PlaylistById.route,
+            arguments = listOf(navArgument("playlistId") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val playlistId = backStackEntry.arguments?.getString("playlistId") ?: ""
+            PlaylistDetailScreen(
+                title = playlistId,
+                viewModel = viewModel,
+                systemViewModel = systemViewModel,
+                playerViewModel = playerViewModel,
+                onNavigateToPlayer = { navController.navigate(Screen.Player.route) },
+                onBack = { navController.popBackStack() },
+                isPlaylistId = true
             )
         }
     }

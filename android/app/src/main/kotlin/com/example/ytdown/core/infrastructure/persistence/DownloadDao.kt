@@ -1,5 +1,6 @@
 package com.example.ytdown.core.infrastructure.persistence
 
+import androidx.paging.PagingSource
 import androidx.room.*
 import com.example.ytdown.core.domain.DownloadItemEntity
 import kotlinx.coroutines.flow.Flow
@@ -8,6 +9,10 @@ import kotlinx.coroutines.flow.Flow
 interface DownloadDao {
     @Query("SELECT * FROM downloads ORDER BY createdAt DESC")
     fun getAllDownloads(): Flow<List<DownloadItemEntity>>
+
+    // Paging3 — carrega por página, já ordenado por data desc
+    @Query("SELECT * FROM downloads ORDER BY createdAt DESC")
+    fun getDownloadsPaged(): PagingSource<Int, DownloadItemEntity>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(item: DownloadItemEntity)
@@ -23,8 +28,6 @@ interface DownloadDao {
 
     @Query("SELECT * FROM downloads")
     suspend fun getAllDownloadsSync(): List<DownloadItemEntity>
-
-    // --- Queries de Performance (Migradas do LibraryService.dart) ---
 
     @Query("SELECT DISTINCT artist FROM downloads WHERE artist IS NOT NULL AND artist != '' ORDER BY artist ASC")
     fun getDistinctArtists(): Flow<List<String>>

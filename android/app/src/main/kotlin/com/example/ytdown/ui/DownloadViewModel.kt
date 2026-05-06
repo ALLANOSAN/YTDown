@@ -3,59 +3,63 @@ package com.example.ytdown.ui
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.paging.PagingData
+import androidx.paging.cachedIn
 import com.example.ytdown.DownloadMetadataManager
-import com.example.ytdown.StoragePath
-import com.example.ytdown.StorageService
-import com.example.ytdown.StorageMediaType
-import com.example.ytdown.StorageMimeType
 import com.example.ytdown.core.business.*
 import com.example.ytdown.core.domain.*
+import com.example.ytdown.core.domain.StorageMediaType
+import com.example.ytdown.core.domain.StorageMimeType
+import com.example.ytdown.core.domain.StoragePath
 import com.example.ytdown.core.infrastructure.persistence.entities.FavoriteEntity
 import com.example.ytdown.services.ArtworkManager
 import com.example.ytdown.services.DownloadFeedService
 import com.example.ytdown.services.ObservabilityService
+import com.example.ytdown.services.StorageService
 import com.example.ytdown.utils.CommonUtils
 import com.example.ytdown.utils.TaskQueue
-import java.io.File
 import dagger.hilt.android.lifecycle.HiltViewModel
+import java.io.File
+import javax.inject.Inject
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
-import javax.inject.Inject
 
 data class DownloadInputState(
-    val urlInput: String = "",
-    val fetchedItems: List<VideoPreviewItem> = emptyList(),
-    val isFetching: Boolean = false,
-    val fetchError: String? = null,
-    val showDialog: Boolean = false,
-    val artistInput: String = "",
-    val albumInput: String = "",
-    val selectedDownloadType: DownloadType = DownloadType.AUDIO,
-    val selectedFormat: String = "mp3",
-    val selectedQuality: String = "192",
-    val isPlaylist: Boolean = false,
-    val audioFormats: List<String> = listOf("mp3", "m4a", "flac", "opus", "ogg"),
-    val videoFormats: List<String> = listOf("mp4", "mkv"),
-    val audioBitrates: List<String> = listOf("128", "192", "256", "320"),
-    val videoResolutions: List<String> = listOf("360p", "480p", "720p", "1080p", "best")
+        val urlInput: String = "",
+        val fetchedItems: List<VideoPreviewItem> = emptyList(),
+        val isFetching: Boolean = false,
+        val fetchError: String? = null,
+        val showDialog: Boolean = false,
+        val artistInput: String = "",
+        val albumInput: String = "",
+        val selectedDownloadType: DownloadType = DownloadType.AUDIO,
+        val selectedFormat: String = "mp3",
+        val selectedQuality: String = "192",
+        val isPlaylist: Boolean = false,
+        val audioFormats: List<String> = listOf("mp3", "m4a", "flac", "opus", "ogg"),
+        val videoFormats: List<String> = listOf("mp4", "mkv"),
+        val audioBitrates: List<String> = listOf("128", "192", "256", "320", "lossless"),
+        val videoResolutions: List<String> = listOf("360p", "480p", "720p", "1080p", "best")
 )
 
 data class DownloadListState(
-    val searchQuery: String = "",
-    val selectedTab: Int = 0,
-    val isSelectionMode: Boolean = false,
-    val selectedIds: Set<String> = emptySet()
+        val searchQuery: String = "",
+        val selectedTab: Int = 0,
+        val isSelectionMode: Boolean = false,
+        val selectedIds: Set<String> = emptySet()
 )
 
 @HiltViewModel
-class DownloadViewModel @Inject constructor(
-    private val metadataManager: DownloadMetadataManager,
-    private val artworkManager: ArtworkManager,
-    private val scheduler: DownloadScheduler,
-    private val downloadFeedService: DownloadFeedService,
-    private val libraryRepository: LibraryRepository,
-    private val downloadRepository: DownloadRepository,
-    private val observabilityService: ObservabilityService
+class DownloadViewModel
+@Inject
+constructor(
+        private val metadataManager: DownloadMetadataManager,
+        private val artworkManager: ArtworkManager,
+        private val scheduler: DownloadScheduler,
+        private val downloadFeedService: DownloadFeedService,
+        private val libraryRepository: LibraryRepository,
+        private val downloadRepository: DownloadRepository,
+        private val observabilityService: ObservabilityService
 ) : ViewModel() {
     private val fetchQueue = TaskQueue(maxConcurrent = 1)
 
@@ -66,49 +70,57 @@ class DownloadViewModel @Inject constructor(
     val listState = _listState.asStateFlow()
 
     /**
-     * ⚡ Sincronização Semântica (Migrado do Flutter _isSemanticallyEqual).
-     * Evita recomposições se a lista filtrada for igual à anterior.
+     * Flow de lista completa — usado pela LibraryScreen e PlaylistDetailScreen que precisam de
+     * todos os downloads para agrupar por artista/álbum. Separado do `downloads` (PagingData) que é
+     * só para a DownloadListScreen.
      */
-    val downloads: StateFlow<List<DownloadItemEntity>> = combine(
-        downloadFeedService.stream(),
-        _listState
-    ) { allDownloads, listState ->
-        filterAndSort(allDownloads, listState)
-    }
-    .distinctUntilChanged { old, new -> 
-        if (old.size != new.size) return@distinctUntilChanged false
-        old.zip(new).all { (o, n) -> 
-            o.id == n.id && o.status == n.status && o.progress == n.progress && o.title == n.title
-        }
-    }
-    .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val allDownloads: StateFlow<List<DownloadItemEntity>> =
+            downloadFeedService
+                    .stream()
+                    .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val recentSearches: StateFlow<List<String>> = libraryRepository.getRecentSearches()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    /**
+     * ⚡ Pipeline Paging3 — 30 itens por página, filtro reativo por busca e aba. O sort já vem do
+     * banco (ORDER BY createdAt DESC), evitando sort em memória. cachedIn(viewModelScope) garante
+     * que a lista sobrevive a recomposições.
+     */
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val downloads: Flow<PagingData<DownloadItemEntity>> =
+            combine(
+                            _listState
+                                    .map { Pair(it.searchQuery, it.selectedTab) }
+                                    .distinctUntilChanged(),
+                            kotlinx.coroutines.flow.flowOf(Unit)
+                    ) { (query, tab), _ ->
+                        val typeFilter =
+                                when (tab) {
+                                    1 -> 0 // só áudio
+                                    2 -> 1 // só vídeo
+                                    else -> null // todos
+                                }
+                        Pair(query, typeFilter)
+                    }
+                    .flatMapLatest { (query, typeFilter) ->
+                        downloadFeedService.streamPaged(query, typeFilter)
+                    }
+                    .cachedIn(viewModelScope)
 
-    val favorites: StateFlow<List<FavoriteEntity>> = libraryRepository.getFavorites()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val recentSearches: StateFlow<List<String>> =
+            libraryRepository
+                    .getRecentSearches()
+                    .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    private fun filterAndSort(items: List<DownloadItemEntity>, state: DownloadListState): List<DownloadItemEntity> {
-        return items.filter { item ->
-            val typeMatch = state.selectedTab != 1 && state.selectedTab != 2 ||
-                state.selectedTab == 1 && item.type == 0 ||
-                state.selectedTab == 2 && item.type == 1
-
-            var searchMatch = true
-            if (state.searchQuery.isNotBlank()) {
-                searchMatch = item.title.contains(state.searchQuery, ignoreCase = true) ||
-                    (item.artist?.contains(state.searchQuery, ignoreCase = true) ?: false)
-            }
-
-            typeMatch && searchMatch
-        }.sortedByDescending { it.createdAt }
-    }
+    val favorites: StateFlow<List<FavoriteEntity>> =
+            libraryRepository
+                    .getFavorites()
+                    .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     // --- Actions ---
 
     fun onUrlInputChanged(newUrl: String) {
-        _inputState.update { it.copy(urlInput = CommonUtils.normalizeText(newUrl), fetchError = null) }
+        _inputState.update {
+            it.copy(urlInput = CommonUtils.normalizeText(newUrl), fetchError = null)
+        }
     }
 
     fun onArtistInputChanged(newArtist: String) {
@@ -120,9 +132,7 @@ class DownloadViewModel @Inject constructor(
     }
 
     fun deleteRecentSearch(query: String) {
-        viewModelScope.launch {
-            libraryRepository.deleteSearch(query)
-        }
+        viewModelScope.launch { libraryRepository.deleteSearch(query) }
     }
 
     fun onDownloadTypeSelected(type: DownloadType) {
@@ -145,6 +155,32 @@ class DownloadViewModel @Inject constructor(
         _listState.update { it.copy(selectedTab = index) }
     }
 
+    fun selectAllDownloads() {
+        val currentState = _listState.value
+        val typeFilter = when (currentState.selectedTab) {
+            1 -> 0 // áudio
+            2 -> 1 // vídeo
+            else -> null
+        }
+        val query = currentState.searchQuery.lowercase()
+
+        val filteredIds = allDownloads.value.filter { item ->
+            val matchesType = typeFilter == null || item.type == typeFilter
+            val matchesQuery = query.isEmpty() || item.title.lowercase().contains(query) || 
+                             (item.artist?.lowercase()?.contains(query) == true)
+            matchesType && matchesQuery
+        }.map { it.id }.toSet()
+
+        _listState.update { state ->
+            val newSelectedIds = if (state.selectedIds.containsAll(filteredIds) && filteredIds.isNotEmpty()) {
+                emptySet()
+            } else {
+                filteredIds
+            }
+            state.copy(selectedIds = newSelectedIds, isSelectionMode = newSelectedIds.isNotEmpty())
+        }
+    }
+
     fun toggleItemSelection(id: String) {
         _listState.update { state ->
             val selectedIds = state.selectedIds.toMutableSet()
@@ -155,19 +191,14 @@ class DownloadViewModel @Inject constructor(
             if (!alreadySelected) {
                 selectedIds.add(id)
             }
-            state.copy(
-                selectedIds = selectedIds,
-                isSelectionMode = selectedIds.isNotEmpty()
-            )
+            state.copy(selectedIds = selectedIds, isSelectionMode = selectedIds.isNotEmpty())
         }
     }
 
     fun onSelectAllItems() {
         _inputState.update { state ->
             if (!state.isPlaylist) return@update state
-            state.copy(
-                fetchedItems = state.fetchedItems.map { it.copy(isSelected = true) }
-            )
+            state.copy(fetchedItems = state.fetchedItems.map { it.copy(isSelected = true) })
         }
     }
 
@@ -175,13 +206,14 @@ class DownloadViewModel @Inject constructor(
         _inputState.update { state ->
             if (!state.isPlaylist) return@update state
             state.copy(
-                fetchedItems = state.fetchedItems.map {
-                    var candidate = it
-                    if (it.id == item.id) {
-                        candidate = it.copy(isSelected = selected)
-                    }
-                    candidate
-                }
+                    fetchedItems =
+                            state.fetchedItems.map {
+                                var candidate = it
+                                if (it.id == item.id) {
+                                    candidate = it.copy(isSelected = selected)
+                                }
+                                candidate
+                            }
             )
         }
     }
@@ -191,9 +223,7 @@ class DownloadViewModel @Inject constructor(
         if (ids.isEmpty()) return
 
         viewModelScope.launch {
-            ids.forEach { targetId ->
-                downloadRepository.delete(targetId)
-            }
+            ids.forEach { targetId -> downloadRepository.delete(targetId) }
             _listState.update { it.copy(selectedIds = emptySet(), isSelectionMode = false) }
         }
     }
@@ -227,31 +257,32 @@ class DownloadViewModel @Inject constructor(
             var mediaType = StorageMediaType("video")
             if (item.type == 0) mediaType = StorageMediaType("audio")
             StorageService.exportToPublicCollection(
-                context = context,
-                sourcePath = StoragePath(item.outputPath),
-                displayName = item.title.ifBlank { File(item.outputPath).name },
-                mediaType = mediaType,
-                mimeType = mimeType,
-                allowUserInteractionFallback = true
+                    context = context,
+                    sourcePath = StoragePath(item.outputPath),
+                    displayName = item.title.ifBlank { File(item.outputPath).name },
+                    mediaType = mediaType,
+                    mimeType = mimeType,
+                    allowUserInteractionFallback = true
             )
         }
     }
 
-    fun updateDownloadMetadata(id: String, newTitle: String, newArtist: String?, newAlbum: String?) {
+    fun updateDownloadMetadata(
+            id: String,
+            newTitle: String,
+            newArtist: String?,
+            newAlbum: String?
+    ) {
         viewModelScope.launch {
             val item = downloadRepository.find(id) ?: return@launch
             downloadRepository.persist(
-                item.copy(
-                    title = newTitle,
-                    artist = newArtist,
-                    album = newAlbum
-                )
+                    item.copy(title = newTitle, artist = newArtist, album = newAlbum)
             )
         }
     }
 
     fun fetchVideoDetails(context: Context, url: VideoUrl) {
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             libraryRepository.saveSearch(url.value)
             fetchQueue.add { performFetch(context, url) }.await()
         }
@@ -259,72 +290,87 @@ class DownloadViewModel @Inject constructor(
 
     private suspend fun performFetch(context: Context, url: VideoUrl) {
         _inputState.update { it.copy(isFetching = true, fetchError = null, showDialog = false) }
-        runCatching { metadataManager.fetchVideoInfo(context, url) }
-            .onSuccess { updateStateWithInfo(it) }
-            .onFailure { error ->
-                observabilityService.trackError(
-                    "DownloadViewModel",
-                    "fetchVideoDetails failure: ${error.message}",
-                    error
-                )
-                _inputState.update { it.copy(isFetching = false, fetchError = error.message, showDialog = false) }
-            }
+        runCatching { metadataManager.fetchVideoInfo(url) }
+                .onSuccess { updateStateWithInfo(it) }
+                .onFailure { error ->
+                    observabilityService.trackError(
+                            "DownloadViewModel",
+                            "fetchVideoDetails failure: ${error.message}",
+                            error
+                    )
+                    _inputState.update {
+                        it.copy(isFetching = false, fetchError = error.message, showDialog = false)
+                    }
+                }
     }
 
     private fun updateStateWithInfo(infoJson: VideoInfoJson) {
         val parsedEntries = metadataManager.parseEntries(infoJson)
+        if (parsedEntries.isEmpty()) {
+            _inputState.update {
+                it.copy(
+                        isFetching = false,
+                        fetchError = "Não foi possível processar as informações retornadas.",
+                        showDialog = false
+                )
+            }
+            return
+        }
+
         val first = parsedEntries.firstOrNull()
         val metadataPlaylist = metadataManager.isPlaylist(infoJson)
         val isPlaylist = metadataPlaylist && parsedEntries.isNotEmpty() || parsedEntries.size > 1
 
         val data = org.json.JSONObject(infoJson.value).optJSONObject("data")
-        val uploaderName = data?.optString("uploader").takeIf { !it.isNullOrBlank() }
-            ?: data?.optString("channel").takeIf { !it.isNullOrBlank() }
+        val uploaderName =
+                data?.optString("uploader")?.takeIf { it.isNotBlank() }
+                        ?: data?.optString("channel")?.takeIf { it.isNotBlank() }
 
         // Validamos se os campos explicitos de metadados chegaram.
         val artistField = data?.optString("artist").takeIf { !it.isNullOrBlank() }
         val albumField = data?.optString("album").takeIf { !it.isNullOrBlank() }
 
-        val playlistTitle = data?.optString("playlist_title").takeIf { !it.isNullOrBlank() }
-            ?: data?.optString("playlist").takeIf { !it.isNullOrBlank() }
-            ?: data?.optString("title").takeIf { !it.isNullOrBlank() }
+        val playlistTitle =
+                data?.optString("playlist_title").takeIf { !it.isNullOrBlank() }
+                        ?: data?.optString("playlist").takeIf { !it.isNullOrBlank() }
+                                ?: data?.optString("title").takeIf { !it.isNullOrBlank() }
         val titleForGuess = first?.title?.value ?: ""
 
-        val artistForSingle = artistField
-            ?: uploaderName
-            ?: ""
+        val artistForSingle = artistField ?: uploaderName ?: ""
 
         val albumForSingle = albumField ?: ""
 
-        val artistForPlaylist = artistField
-            ?: metadataManager.guessArtistFromTitle(playlistTitle ?: titleForGuess)
-            ?: uploaderName
-            ?: ""
+        val artistForPlaylist =
+                artistField
+                        ?: metadataManager.guessArtistFromTitle(playlistTitle ?: titleForGuess)
+                                ?: uploaderName ?: ""
 
-        val albumForPlaylist = albumField
-            ?: playlistTitle
-            ?: ""
+        val albumForPlaylist = albumField ?: playlistTitle ?: ""
 
         val artistInput = if (isPlaylist) artistForPlaylist else artistForSingle
         val albumInput = if (isPlaylist) albumForPlaylist else albumForSingle
 
         observabilityService.info(
-            "DownloadViewModel",
-            "updateStateWithInfo isPlaylist=$isPlaylist artistField=${artistField ?: "missing"} " +
-                "albumField=${albumField ?: "missing"} uploaderName=${uploaderName ?: "missing"} " +
-                "playlistTitle=${playlistTitle ?: "missing"}"
+                "DownloadViewModel",
+                "updateStateWithInfo isPlaylist=$isPlaylist artistField=${artistField ?: "missing"} " +
+                        "albumField=${albumField ?: "missing"} uploaderName=${uploaderName ?: "missing"} " +
+                        "playlistTitle=${playlistTitle ?: "missing"}"
         )
 
         _inputState.update { state ->
             state.copy(
-                fetchedItems = parsedEntries,
-                artistInput = artistInput,
-                albumInput = albumInput,
-                isPlaylist = isPlaylist,
-                isFetching = false,
-                showDialog = true
+                    fetchedItems = parsedEntries,
+                    artistInput = artistInput,
+                    albumInput = albumInput,
+                    isPlaylist = isPlaylist,
+                    isFetching = false,
+                    showDialog = true
             )
         }
+    }
+
+    fun clearFetchError() {
+        _inputState.update { it.copy(fetchError = null) }
     }
 
     fun onDismissDialog() {
@@ -333,37 +379,44 @@ class DownloadViewModel @Inject constructor(
 
     fun startDownloadFlow(folder: FilePath) {
         val currentState = _inputState.value
-        val selectedItems = currentState.fetchedItems.filter { item ->
-            if (!currentState.isPlaylist) return@filter true
-            item.isSelected
-        }
+        val selectedItems =
+                currentState.fetchedItems.filter { item ->
+                    if (!currentState.isPlaylist) return@filter true
+                    item.isSelected
+                }
 
         if (selectedItems.isEmpty()) return
 
         viewModelScope.launch {
-            val baseMeta = MediaMetadata(
-                title = MediaTitle(""),
-                artist = ArtistName(currentState.artistInput),
-                album = AlbumName(currentState.albumInput)
-            )
-            val downloadOptions = DownloadOptions(
-                type = currentState.selectedDownloadType,
-                format = currentState.selectedFormat,
-                quality = currentState.selectedQuality
-            )
+            val baseMeta =
+                    MediaMetadata(
+                            title = MediaTitle(""),
+                            artist = ArtistName(currentState.artistInput),
+                            album = AlbumName(currentState.albumInput)
+                    )
+            val downloadOptions =
+                    DownloadOptions(
+                            type = currentState.selectedDownloadType,
+                            format = currentState.selectedFormat,
+                            quality = currentState.selectedQuality
+                    )
 
             var resolvedArtworkUrl: String? = null
             if (currentState.artistInput.isNotBlank()) {
-                resolvedArtworkUrl = currentState.albumInput.takeIf { it.isNotBlank() }
-                    ?.let { artworkManager.getAlbumCover(currentState.artistInput, it) }
-                    ?: artworkManager.getArtistImage(currentState.artistInput)
+                resolvedArtworkUrl =
+                        currentState.albumInput.takeIf { it.isNotBlank() }?.let {
+                            artworkManager.getAlbumCover(currentState.artistInput, it)
+                        }
+                                ?: artworkManager.getArtistImage(currentState.artistInput)
             }
 
             selectedItems.forEach { item ->
                 val finalMeta = baseMeta.copy(title = item.title)
                 scheduler.schedule(item.url, folder, finalMeta, downloadOptions, resolvedArtworkUrl)
             }
-            _inputState.update { it.copy(fetchedItems = emptyList(), urlInput = "", showDialog = false) }
+            _inputState.update {
+                it.copy(fetchedItems = emptyList(), urlInput = "", showDialog = false)
+            }
         }
     }
 }

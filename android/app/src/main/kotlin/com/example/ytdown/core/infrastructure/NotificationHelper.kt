@@ -67,4 +67,15 @@ class NotificationHelper(private val context: Context) {
             .setAutoCancel(progress >= 100)
             .build()
     }
+
+    fun buildFailureNotification(title: String, error: String? = null): android.app.Notification {
+        val safeTitle = sanitizeTitle(title)
+        return NotificationCompat.Builder(context, channelId)
+            .setContentTitle("❌ Falha no download")
+            .setContentText(safeTitle + if (!error.isNullOrBlank()) " — $error" else "")
+            .setSmallIcon(android.R.drawable.stat_notify_error)
+            .setOngoing(false)
+            .setAutoCancel(true)
+            .build()
+    }
 }

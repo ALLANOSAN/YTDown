@@ -12,4 +12,7 @@ sealed class Screen(val route: String) {
     object PlaylistDetail : Screen("playlist_detail/{playlistId}") {
         fun createRoute(id: String) = "playlist_detail/$id"
     }
+    object PlaylistById : Screen("playlist_by_id/{playlistId}") {
+        fun createRoute(id: String) = "playlist_by_id/$id"
+    }
 }

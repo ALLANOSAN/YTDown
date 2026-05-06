@@ -52,9 +52,17 @@ class LibraryRepository @Inject constructor(
         libraryDao.insertPlaylist(PlaylistEntity(id, name, description, null))
     }
 
+    suspend fun deletePlaylist(id: String) {
+        libraryDao.deletePlaylist(id)
+    }
+
     suspend fun addTrackToPlaylist(playlistId: String, trackId: String) {
         val track = PlaylistTrackEntity(playlistId, trackId, 0) 
         libraryDao.addTrackToPlaylist(track)
+    }
+
+    suspend fun removeTrackFromPlaylist(playlistId: String, trackId: String) {
+        libraryDao.removeTrackFromPlaylist(playlistId, trackId)
     }
 
     fun getPlaylistTracks(playlistId: String): Flow<List<DownloadItemEntity>> = 

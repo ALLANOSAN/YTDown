@@ -13,7 +13,7 @@ import androidx.room.Index
     indices = [
         Index(value = ["artist"]),
         Index(value = ["album"]),
-        Index(value = ["status"]),
+        Index(value = ["type", "status"]),
         Index(value = ["createdAt"])
     ]
 )

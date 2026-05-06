@@ -1,9 +1,7 @@
 package com.example.ytdown.core.business
 
-import androidx.work.Data
-import androidx.work.ExistingWorkPolicy
-import androidx.work.OneTimeWorkRequestBuilder
-import androidx.work.WorkManager
+import androidx.paging.PagingData
+import androidx.work.*
 import com.example.ytdown.core.domain.*
 import com.example.ytdown.core.infrastructure.work.DownloadWorker
 import kotlinx.coroutines.flow.Flow
@@ -17,11 +15,15 @@ class DownloadScheduler @Inject constructor(
 ) {
     fun stream(): Flow<List<DownloadItemEntity>> = repository.stream()
 
+    fun streamPaged(query: String = "", typeFilter: Int? = null): Flow<PagingData<DownloadItemEntity>> =
+        repository.streamPaged(query, typeFilter)
+
     suspend fun schedule(
         url: VideoUrl, path: FilePath, meta: MediaMetadata,
         options: DownloadOptions,
         artworkUrl: String? = null
     ) {
+        android.util.Log.e("DownloadScheduler", "🔍 Scheduling: Artist=${meta.artist.value}, Album=${meta.album.value}, Title=${meta.title.value}")
         val id = UUID.randomUUID().toString()
 
         // Garantir que a pasta de destino exista antes de agendar o download.
@@ -58,7 +60,7 @@ class DownloadScheduler @Inject constructor(
         val data = Data.Builder().apply {
             putString("VIDEO_ID", id)
             putString("VIDEO_URL", url.value)
-            putString("OUTPUT_PATH", finalPath)
+            putString("OUTPUT_PATH", path.value)  // só o diretório — YtDlpWrapper adiciona %(title)s.%(ext)s
             putString("TITLE", meta.title.value)
             putString("ARTIST", meta.artist.value)
             putString("ALBUM", meta.album.value)
@@ -68,13 +70,19 @@ class DownloadScheduler @Inject constructor(
             putString("ARTWORK_URL", artworkUrl)
         }.build()
 
+        val constraints = Constraints.Builder()
+            .setRequiredNetworkType(NetworkType.CONNECTED)
+            .build()
+
         val request = OneTimeWorkRequestBuilder<DownloadWorker>()
+            .setConstraints(constraints)
             .setInputData(data)
+            .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
             .build()
 
         workManager.enqueueUniqueWork(
-            "download-${id}",
-            ExistingWorkPolicy.APPEND_OR_REPLACE,
+            "download_$id",
+            ExistingWorkPolicy.REPLACE,
             request
         )
     }

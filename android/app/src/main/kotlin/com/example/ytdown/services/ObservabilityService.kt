@@ -23,12 +23,18 @@ class ObservabilityService @Inject constructor(
     private val urlPattern = Pattern.compile("https?:\\/\\/[a-zA-Z0-9\\-\\.]+\\.[a-zA-Z]{2,3}(\\/\\S*)?")
     private val pathPattern = Pattern.compile("/data/user/\\d+/[a-zA-Z0-9\\-\\.]+(/\\S*)?|/storage/emulated/\\d+(/\\S*)?")
 
-    fun trackError(tag: String, message: String, throwable: Throwable? = null) {
+    fun trackError(tag: String, message: String, throwable: Throwable? = null, metadata: Map<String, String>? = null) {
         val sanitizedMsg = sanitize(message)
         
         // Log Remoto (Firebase)
         val crashlytics = FirebaseCrashlytics.getInstance()
         crashlytics.setCustomKey("tag", tag)
+        
+        // Adiciona metadados extras para busca via MCP
+        metadata?.forEach { (key, value) ->
+            crashlytics.setCustomKey(key, value)
+        }
+
         crashlytics.log("[$tag] $sanitizedMsg")
         throwable?.let { crashlytics.recordException(it) }
 
@@ -38,8 +44,8 @@ class ObservabilityService @Inject constructor(
 
     fun info(tag: String, message: String) {
         val sanitizedMsg = sanitize(message)
+        // info() só vai para o logcat local — não polui os relatórios do Crashlytics
         android.util.Log.i(tag, sanitizedMsg)
-        FirebaseCrashlytics.getInstance().log("INFO [$tag]: $sanitizedMsg")
     }
 
     private fun sanitize(message: String): String {

@@ -37,7 +37,12 @@ class DownloadQueueService @Inject constructor() {
     }
 
     private suspend fun releaseLockIfEmpty(id: String) {
-        // No Kotlin Mutex não temos contador de espera simples, 
-        // então mantemos os mutexes no mapa para simplicidade e segurança.
+        globalLock.withLock {
+            val mutex = locks[id] ?: return@withLock
+            // Remove do mapa somente se não há ninguém esperando o lock
+            if (!mutex.isLocked) {
+                locks.remove(id)
+            }
+        }
     }
 }

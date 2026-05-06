@@ -1,6 +1,5 @@
 pluginManagement {
-   
-   repositories {
+    repositories {
         google()
         mavenCentral()
         gradlePluginPortal()
@@ -8,5 +7,14 @@ pluginManagement {
     }
 }
 
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        google()
+        mavenCentral()
+        maven { url = uri("https://chaquo.com/maven") }
+    }
+}
 
+rootProject.name = "ytdown"
 include(":app")

@@ -1,27 +1,31 @@
 package com.example.ytdown.ui.screens
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.example.ytdown.core.domain.DownloadItemEntity
 import com.example.ytdown.core.infrastructure.persistence.PlaylistWithCount
@@ -32,7 +36,13 @@ import com.example.ytdown.ui.theme.SurfaceDark
 import com.example.ytdown.ui.theme.TextSecondary
 import com.example.ytdown.ui.theme.YTDownPurple
 
-@OptIn(ExperimentalMaterial3Api::class)
+/**
+ * Tela de detalhe unificada — serve para:
+ *   • Artista  (title = nome do artista)
+ *   • Álbum    (title = nome do álbum)
+ *   • Playlist (title = id da playlist — isPlaylistId = true)
+ */
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun PlaylistDetailScreen(
     title: String,
@@ -40,29 +50,53 @@ fun PlaylistDetailScreen(
     systemViewModel: SystemViewModel,
     playerViewModel: PlayerViewModel,
     onNavigateToPlayer: () -> Unit,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    isPlaylistId: Boolean = false
 ) {
-    val allItems by viewModel.downloads.collectAsState()
-    val groupItems = allItems.filter {
-        it.album == title || it.artist == title || it.folderName == title
-    }.filter { it.status == "completed" }
+    val haptic = LocalHapticFeedback.current
+    val allItems: List<DownloadItemEntity> by viewModel.allDownloads.collectAsStateWithLifecycle(initialValue = emptyList())
+    val playlists by systemViewModel.playlists.collectAsStateWithLifecycle()
 
-    val playlists by systemViewModel.playlists.collectAsState()
+    // Descobre o nome da playlist se estivermos no modo playlist-por-ID
+    val playlistName = if (isPlaylistId) {
+        playlists.firstOrNull { it.playlist.id == title }?.playlist?.name ?: title
+    } else title
 
-    var trackToEdit by remember { mutableStateOf<DownloadItemEntity?>(null) }
-    var trackForPlaylist by remember { mutableStateOf<DownloadItemEntity?>(null) }
-    var showTrackMenu by remember { mutableStateOf<DownloadItemEntity?>(null) }
+    // Filtra as músicas dependendo do modo
+    val groupItems: List<DownloadItemEntity> = if (isPlaylistId) {
+        // Carrega as faixas da playlist via Flow reativo
+        val playlistTracks by systemViewModel.getPlaylistTracksFlow(title)
+            .collectAsStateWithLifecycle(initialValue = emptyList())
+        playlistTracks
+    } else {
+        allItems.filter {
+            (it.album == title || it.artist == title) && it.status == "completed"
+        }
+    }
 
     val artwork = groupItems.firstOrNull { !it.albumImageUrl.isNullOrEmpty() }?.albumImageUrl
         ?: groupItems.firstOrNull { !it.thumbnailPath.isNullOrEmpty() }?.thumbnailPath
 
+    var showTrackMenu by remember { mutableStateOf<DownloadItemEntity?>(null) }
+    var trackForPlaylist by remember { mutableStateOf<DownloadItemEntity?>(null) }
+    var trackToEdit by remember { mutableStateOf<DownloadItemEntity?>(null) }
+    var showDeleteConfirm by remember { mutableStateOf(false) }
+
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(title, color = Color.White) },
+                title = { Text(playlistName, color = Color.White) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = Color.White)
+                    }
+                },
+                actions = {
+                    // Botão deletar playlist (só aparece em playlists)
+                    if (isPlaylistId) {
+                        IconButton(onClick = { showDeleteConfirm = true }) {
+                            Icon(Icons.Default.Delete, null, tint = Color.White)
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Black)
@@ -70,14 +104,31 @@ fun PlaylistDetailScreen(
         },
         containerColor = Color.Black
     ) { padding ->
-        Column(modifier = Modifier.padding(padding).fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .padding(padding)
+                .fillMaxSize()
+        ) {
+            // Capa do grupo
             if (artwork != null) {
                 AsyncImage(
                     model = artwork,
                     contentDescription = null,
-                    modifier = Modifier.fillMaxWidth().height(200.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(200.dp),
                     contentScale = ContentScale.Crop
                 )
+            }
+
+            if (groupItems.isEmpty()) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("Nenhuma música aqui ainda.", color = TextSecondary, fontSize = 16.sp)
+                }
+                return@Scaffold
             }
 
             LazyColumn(
@@ -85,44 +136,113 @@ fun PlaylistDetailScreen(
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                items(groupItems) { song ->
-                    PlaylistDetailSongRow(
-                        song = song,
-                        onClick = {
-                            playerViewModel.playTrack(song)
-                            onNavigateToPlayer()
-                        },
-                        onLongClick = { showTrackMenu = song }
-                    )
+                itemsIndexed(items = groupItems, key = { _, s -> s.id }) { index, song ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(SurfaceDark)
+                            .combinedClickable(
+                                onClick = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    // Toca a fila completa a partir do item clicado
+                                    playerViewModel.playPlaylist(groupItems, index)
+                                    onNavigateToPlayer()
+                                },
+                                onLongClick = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    showTrackMenu = song
+                                }
+                            )
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        AsyncImage(
+                            model = song.thumbnailPath,
+                            contentDescription = null,
+                            modifier = Modifier
+                                .size(56.dp)
+                                .clip(RoundedCornerShape(8.dp)),
+                            contentScale = ContentScale.Crop
+                        )
+
+                        Spacer(modifier = Modifier.width(12.dp))
+
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                song.title,
+                                color = Color.White,
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 14.sp,
+                                maxLines = 2
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                song.artist ?: "Desconhecido",
+                                color = TextSecondary,
+                                fontSize = 12.sp,
+                                maxLines = 1
+                            )
+                        }
+                    }
                 }
             }
         }
     }
 
+    // --- Menu de long press ---
     showTrackMenu?.let { song ->
         AlertDialog(
             onDismissRequest = { showTrackMenu = null },
             containerColor = SurfaceDark,
-            title = { Text(song.title, color = Color.White, fontSize = 16.sp, maxLines = 1) },
+            title = {
+                Text(song.title, color = Color.White, fontSize = 15.sp, maxLines = 2)
+            },
             text = {
                 Column {
                     ListItem(
                         headlineContent = { Text("Adicionar à Playlist") },
-                        leadingContent = { Icon(Icons.AutoMirrored.Filled.PlaylistAdd, null, tint = YTDownPurple) },
+                        leadingContent = {
+                            Icon(Icons.AutoMirrored.Filled.PlaylistAdd, null, tint = YTDownPurple)
+                        },
                         modifier = Modifier.clickable {
                             trackForPlaylist = song
                             showTrackMenu = null
                         },
-                        colors = ListItemDefaults.colors(containerColor = Color.Transparent, headlineColor = Color.White)
+                        colors = ListItemDefaults.colors(
+                            containerColor = Color.Transparent,
+                            headlineColor = Color.White
+                        )
                     )
+                    if (isPlaylistId) {
+                        ListItem(
+                            headlineContent = { Text("Remover da Playlist") },
+                            leadingContent = {
+                                Icon(Icons.Default.RemoveCircleOutline, null, tint = Color(0xFFFF6B6B))
+                            },
+                            modifier = Modifier.clickable {
+                                systemViewModel.removeTrackFromPlaylist(title, song.id)
+                                showTrackMenu = null
+                            },
+                            colors = ListItemDefaults.colors(
+                                containerColor = Color.Transparent,
+                                headlineColor = Color.White
+                            )
+                        )
+                    }
                     ListItem(
                         headlineContent = { Text("Editar Nome") },
-                        leadingContent = { Icon(Icons.Default.Edit, null, tint = YTDownPurple) },
+                        leadingContent = {
+                            Icon(Icons.Default.Edit, null, tint = YTDownPurple)
+                        },
                         modifier = Modifier.clickable {
                             trackToEdit = song
                             showTrackMenu = null
                         },
-                        colors = ListItemDefaults.colors(containerColor = Color.Transparent, headlineColor = Color.White)
+                        colors = ListItemDefaults.colors(
+                            containerColor = Color.Transparent,
+                            headlineColor = Color.White
+                        )
                     )
                 }
             },
@@ -130,6 +250,7 @@ fun PlaylistDetailScreen(
         )
     }
 
+    // --- Selecionar playlist ---
     trackForPlaylist?.let { song ->
         PlaylistSelectionDialog(
             playlists = playlists,
@@ -141,6 +262,7 @@ fun PlaylistDetailScreen(
         )
     }
 
+    // --- Editar nome da música ---
     trackToEdit?.let { song ->
         EditTrackNameDialog(
             song = song,
@@ -151,45 +273,43 @@ fun PlaylistDetailScreen(
             }
         )
     }
-}
 
-@Composable
-private fun PlaylistDetailSongRow(
-    song: DownloadItemEntity,
-    onClick: () -> Unit,
-    onLongClick: () -> Unit
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(SurfaceDark)
-            .clickable(onClick = onClick)
-            .padding(12.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        AsyncImage(
-            model = song.thumbnailPath,
-            contentDescription = null,
-            modifier = Modifier
-                .size(60.dp)
-                .clip(RoundedCornerShape(8.dp)),
-            contentScale = ContentScale.Crop
+    // --- Confirmar exclusão de playlist ---
+    if (showDeleteConfirm) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirm = false },
+            containerColor = SurfaceDark,
+            title = { Text("Excluir Playlist?", color = Color.White) },
+            text = {
+                Text(
+                    "\"$playlistName\" será excluída permanentemente.",
+                    color = TextSecondary
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        systemViewModel.deletePlaylist(title)
+                        showDeleteConfirm = false
+                        onBack()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF6B6B))
+                ) {
+                    Text("Excluir")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirm = false }) {
+                    Text("Cancelar", color = TextSecondary)
+                }
+            }
         )
-
-        Spacer(modifier = Modifier.width(12.dp))
-
-        Column(modifier = Modifier.weight(1f)) {
-            Text(song.title, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp, maxLines = 2)
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(song.artist ?: "Desconhecido", color = TextSecondary, fontSize = 12.sp)
-        }
-
-        IconButton(onClick = onLongClick) {
-            Icon(Icons.Default.MoreVert, null, tint = TextSecondary)
-        }
     }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Diálogos reutilizados nessa tela
+// ─────────────────────────────────────────────────────────────────────────────
 
 @Composable
 fun PlaylistSelectionDialog(
@@ -208,10 +328,10 @@ fun PlaylistSelectionDialog(
                 LazyColumn(modifier = Modifier.heightIn(max = 300.dp)) {
                     items(playlists) { playlist ->
                         ListItem(
-                            headlineContent = { Text(playlist.playlist.name) },
-                            supportingContent = { Text("${playlist.trackCount} músicas") },
+                            headlineContent = { Text(playlist.playlist.name, color = Color.White) },
+                            supportingContent = { Text("${playlist.trackCount} músicas", color = TextSecondary) },
                             modifier = Modifier.clickable { onSelect(playlist) },
-                            colors = ListItemDefaults.colors(containerColor = Color.Transparent, headlineColor = Color.White)
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                         )
                     }
                 }
@@ -237,11 +357,18 @@ fun EditTrackNameDialog(
                 value = name,
                 onValueChange = { name = it },
                 label = { Text("Nome da Música") },
-                colors = TextFieldDefaults.colors(focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent)
+                colors = TextFieldDefaults.colors(
+                    focusedContainerColor = Color.Transparent,
+                    unfocusedContainerColor = Color.Transparent,
+                    focusedLabelColor = YTDownPurple
+                )
             )
         },
         confirmButton = {
-            Button(onClick = { onSave(name) }, colors = ButtonDefaults.buttonColors(containerColor = YTDownPurple)) {
+            Button(
+                onClick = { onSave(name) },
+                colors = ButtonDefaults.buttonColors(containerColor = YTDownPurple)
+            ) {
                 Text("Salvar")
             }
         },

@@ -1,6 +1,8 @@
 package com.example.ytdown.services
 
 import android.content.Context
+import android.net.Uri
+import androidx.documentfile.provider.DocumentFile
 import com.example.ytdown.core.infrastructure.StorageResolver
 import com.example.ytdown.core.infrastructure.persistence.DownloadDao
 import com.example.ytdown.core.domain.DownloadItemEntity
@@ -22,6 +24,7 @@ class FileSystemScannerService @Inject constructor(
     private val storage: StorageResolver,
     private val downloadDao: DownloadDao,
     private val folderService: MusicFolderService,
+    private val artworkManager: ArtworkManager,
     @ApplicationContext private val context: Context // Adicionado para acessar SharedPreferences
 ) {
     private val audioExtensions = setOf("mp3", "m4a", "aac", "ogg", "opus", "wav", "flac")
@@ -31,55 +34,138 @@ class FileSystemScannerService @Inject constructor(
         val audioDir = storage.privateDownloadsDir(isAudio = true)
         val selectedFolders = folderService.folders.value
         
-        val scanDirs = mutableListOf<File>()
-        if (audioDir.exists()) scanDirs.add(audioDir)
-        selectedFolders.forEach { path ->
-            val dir = File(path)
-            if (dir.exists() && dir.isDirectory) scanDirs.add(dir)
-        }
-
-        if (scanDirs.isEmpty()) return@withContext 0
-
         var registered = 0
         val dbPaths = downloadDao.getAllDownloadsSync().flatMap { listOfNotNull(
             it.outputPath.takeIf { path -> path.isNotBlank() },
             it.exportedPath?.takeIf { uri -> uri.isNotBlank() }
         ) }.toSet()
 
-        scanDirs.forEach { dir ->
-            onProgress("Escaneando: ${dir.name}")
-            val lastScanned = prefs.getLong("last_scan_${dir.absolutePath}", 0L)
-            if (dir.lastModified() <= lastScanned) return@forEach
+        // 1. Escanear diretório privado (File API)
+        if (audioDir.exists()) {
+            registered += scanPhysicalDir(audioDir, dbPaths, onProgress)
+        }
 
-            val audioFiles = findAudioFiles(dir)
-            val orphans = audioFiles.filter { !dbPaths.contains(it.absolutePath) }
+        // 2. Escanear diretórios externos selecionados
+        selectedFolders.forEach { path ->
+            if (path.startsWith("content://")) {
+                // Escanear via SAF (Storage Access Framework)
+                registered += scanDocumentTree(path, dbPaths, onProgress)
+            } else {
+                // Escanear via File API
+                val dir = File(path)
+                if (dir.exists() && dir.isDirectory) {
+                    registered += scanPhysicalDir(dir, dbPaths, onProgress)
+                }
+            }
+        }
 
-            orphans.forEach { file ->
-                onProgress("Adicionando: ${file.name}")
-                val title = MetadataUtils.normalizeMetadataText(file.nameWithoutExtension)
-                val artist = MetadataUtils.guessArtistFromTitle(title) ?: "Desconhecido"
+        registered
+    }
 
-                val item = DownloadItemEntity(
-                    id = "orphan_${UUID.randomUUID().toString().take(8)}",
-                    url = "",
-                    title = MetadataUtils.toTitleCase(title),
-                    thumbnailPath = null,
-                    type = 0,
-                    format = file.extension,
-                    quality = "128",
-                    outputPath = file.absolutePath,
-                    status = "completed",
-                    progress = 1.0,
-                    createdAt = file.lastModified(),
-                    artist = artist,
-                    album = "YTDown"
-                )
-                downloadDao.upsert(item)
+    private suspend fun scanPhysicalDir(dir: File, dbPaths: Set<String>, onProgress: (String) -> Unit): Int {
+        var registered = 0
+        onProgress("Escaneando: ${dir.name}")
+        val lastScanned = prefs.getLong("last_scan_${dir.absolutePath}", 0L)
+        if (dir.lastModified() <= lastScanned) return 0
+
+        val audioFiles = findAudioFiles(dir)
+        val orphans = audioFiles.filter { !dbPaths.contains(it.absolutePath) }
+
+        orphans.forEach { file ->
+            onProgress("Adicionando: ${file.name}")
+            registerOrphan(file.absolutePath, file.nameWithoutExtension, file.extension, file.lastModified())
+            registered++
+        }
+        prefs.edit().putLong("last_scan_${dir.absolutePath}", System.currentTimeMillis()).apply()
+        return registered
+    }
+
+    private suspend fun scanDocumentTree(uriString: String, dbPaths: Set<String>, onProgress: (String) -> Unit): Int {
+        var registered = 0
+        try {
+            val treeUri = Uri.parse(uriString)
+            val rootDoc = DocumentFile.fromTreeUri(context, treeUri) ?: return 0
+            
+            onProgress("Escaneando: ${rootDoc.name ?: "Pasta externa"}")
+            
+            val audioDocs = findAudioDocuments(rootDoc)
+            val orphans = audioDocs.filter { !dbPaths.contains(it.uri.toString()) }
+
+            orphans.forEach { doc ->
+                onProgress("Adicionando: ${doc.name}")
+                val name = doc.name ?: "Sem nome"
+                val extension = name.substringAfterLast(".", "mp3")
+                val title = name.substringBeforeLast(".")
+                
+                registerOrphan(doc.uri.toString(), title, extension, doc.lastModified())
                 registered++
             }
-            prefs.edit().putLong("last_scan_${dir.absolutePath}", System.currentTimeMillis()).apply()
+        } catch (e: Exception) {
+            android.util.Log.e("FileSystemScanner", "Erro ao escanear DocumentTree: $uriString", e)
         }
-        registered
+        return registered
+    }
+
+    private fun findAudioDocuments(root: DocumentFile): List<DocumentFile> {
+        val result = mutableListOf<DocumentFile>()
+        val files = root.listFiles()
+        
+        // Ignora se houver .nomedia
+        if (files.any { it.name == ".nomedia" }) return emptyList()
+
+        files.forEach { file ->
+            if (file.isDirectory) {
+                result.addAll(findAudioDocuments(file))
+            } else if (file.isFile) {
+                val name = file.name?.lowercase() ?: ""
+                if (audioExtensions.any { name.endsWith(".$it") }) {
+                    result.add(file)
+                }
+            }
+        }
+        return result
+    }
+
+    private suspend fun registerOrphan(path: String, nameWithoutExtension: String, extension: String, lastModified: Long) {
+        val title = MetadataUtils.normalizeMetadataText(nameWithoutExtension)
+        var artist = MetadataUtils.guessArtistFromTitle(title) ?: "Desconhecido"
+        var album = "YTDown"
+        var artistImageUrl: String? = null
+        var albumImageUrl: String? = null
+
+        // Auto-Enrichment: Tenta buscar metadados e capas automaticamente
+        if (artist != "Desconhecido") {
+            try {
+                artistImageUrl = artworkManager.getArtistImage(artist)
+                // Tenta extrair álbum se o título tiver padrão "Artista - Álbum - Música"
+                val guessedAlbum = MetadataUtils.guessAlbumFromTitle(title)
+                if (guessedAlbum != null) {
+                    album = guessedAlbum
+                    albumImageUrl = artworkManager.getAlbumCover(artist, album)
+                }
+            } catch (e: Exception) {
+                // Falha silenciosa no enrichment para não travar o scan
+            }
+        }
+
+        val item = DownloadItemEntity(
+            id = "orphan_${UUID.randomUUID().toString().take(8)}",
+            url = "",
+            title = MetadataUtils.toTitleCase(title),
+            thumbnailPath = null,
+            type = 0,
+            format = extension,
+            quality = "128",
+            outputPath = path,
+            status = "completed",
+            progress = 1.0,
+            createdAt = lastModified,
+            artist = artist,
+            album = album,
+            artistImageUrl = artistImageUrl,
+            albumImageUrl = albumImageUrl
+        )
+        downloadDao.upsert(item)
     }
 
     private fun findAudioFiles(dir: File): List<File> {

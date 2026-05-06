@@ -6,6 +6,7 @@ import com.example.ytdown.core.business.DownloadRepository
 import com.example.ytdown.core.business.LibraryRepository
 import com.example.ytdown.core.domain.DownloadItemEntity
 import com.example.ytdown.services.FileSystemScannerService
+import com.example.ytdown.utils.HapticManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -24,7 +25,8 @@ class LibraryViewModel @Inject constructor(
     private val downloadRepository: DownloadRepository,
     private val libraryRepository: LibraryRepository,
     private val scannerService: FileSystemScannerService,
-    private val folderService: com.example.ytdown.services.MusicFolderService
+    private val folderService: com.example.ytdown.services.MusicFolderService,
+    private val hapticManager: HapticManager
 ) : ViewModel() {
 
     private val _searchQuery = MutableStateFlow("")
@@ -32,29 +34,19 @@ class LibraryViewModel @Inject constructor(
 
     val selectedFolders = folderService.folders
 
+    fun triggerHapticSelection() = hapticManager.selection()
+    fun triggerHapticClick() = hapticManager.impactLight()
+    fun triggerHapticHeavy() = hapticManager.impactHeavy()
+    fun triggerHapticMedium() = hapticManager.impactMedium()
+
     fun addFolder(uriString: String) {
-        val path = resolvePhysicalPath(uriString) ?: uriString
-        folderService.addFolder(path)
+        folderService.addFolder(uriString)
         performFullScan()
     }
 
-    private fun resolvePhysicalPath(uriString: String): String? {
-        // Tentativa simples de resolver caminhos comuns de documentos para File API
-        // Ex: content://com.android.externalstorage.documents/tree/primary%3AMusic
-        try {
-            val uri = android.net.Uri.parse(uriString)
-            if (uri.scheme == "content") {
-                val docId = android.provider.DocumentsContract.getTreeDocumentId(uri)
-                val split = docId.split(":")
-                if (split[0] == "primary") {
-                    return android.os.Environment.getExternalStorageDirectory().absolutePath + "/" + split[1]
-                }
-            }
-        } catch (e: Exception) {
-            // Falha ao resolver, retornamos o original
-        }
-        return null
-    }
+    // resolvePhysicalPath foi removido pois agora o FileSystemScannerService
+    // suporta nativamente URIs do SAF via DocumentFile, que é mais robusto
+    // para versões modernas do Android (Scoped Storage).
 
     fun removeFolder(path: String) {
         folderService.removeFolder(path)

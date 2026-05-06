@@ -148,6 +148,9 @@ dependencies {
     // Imagem
     implementation "io.coil-kt:coil-compose:2.7.0"
 
+    // DocumentFile (Essencial para SAF/Escanear pastas externas)
+    implementation "androidx.documentfile:documentfile:1.0.1"
+
     // Media3 / ExoPlayer (Essencial para seu DAW)
     implementation "androidx.media3:media3-exoplayer:1.5.1"
     implementation "androidx.media3:media3-session:1.5.1"

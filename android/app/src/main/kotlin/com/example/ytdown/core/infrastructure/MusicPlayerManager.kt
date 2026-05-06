@@ -176,6 +176,9 @@ class MusicPlayerManager @Inject constructor(
      */
     private suspend fun resolvePlayableItem(item: DownloadItemEntity): DownloadItemEntity? = withContext(Dispatchers.IO) {
         if (!item.exportedPath.isNullOrBlank()) return@withContext item
+        
+        // Se for um URI do SAF (content://), assumimos que é válido (o Media3 verificará ao abrir)
+        if (item.outputPath.startsWith("content://")) return@withContext item
 
         val file = File(item.outputPath)
         if (file.exists()) return@withContext item
@@ -230,7 +233,10 @@ class MusicPlayerManager @Inject constructor(
 
     private fun buildMediaItem(item: DownloadItemEntity): MediaItem {
         val uri = item.exportedPath?.takeIf { it.isNotBlank() }?.let { Uri.parse(it) }
-            ?: item.outputPath.takeIf { it.isNotBlank() }?.let { Uri.fromFile(File(it)) }
+            ?: item.outputPath.takeIf { it.isNotBlank() }?.let { 
+                if (it.startsWith("content://")) Uri.parse(it) 
+                else Uri.fromFile(File(it)) 
+            }
             ?: Uri.EMPTY
 
         return MediaItem.Builder()

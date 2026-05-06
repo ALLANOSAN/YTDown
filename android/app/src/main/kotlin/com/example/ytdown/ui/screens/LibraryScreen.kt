@@ -1,5 +1,6 @@
 package com.example.ytdown.ui.screens
 
+import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -43,6 +44,7 @@ import com.example.ytdown.ui.DownloadViewModel
 import com.example.ytdown.ui.PlayerViewModel
 import com.example.ytdown.ui.SystemViewModel
 import com.example.ytdown.ui.components.DownloadItemRow
+import com.example.ytdown.ui.components.StaggeredVerticalEntrance
 import com.example.ytdown.ui.theme.SurfaceDark
 import com.example.ytdown.ui.theme.TextSecondary
 import com.example.ytdown.ui.theme.YTDownPurple
@@ -66,7 +68,6 @@ fun LibraryScreen(
         onNavigateToPlaylist: (String) -> Unit = {},
         modifier: Modifier = Modifier
 ) {
-    val haptic = LocalHapticFeedback.current
     val context = LocalContext.current
     var selectedCategory by remember { mutableStateOf(0) }
     val categories = listOf("Artistas", "Álbuns", "Músicas", "Playlists")
@@ -77,10 +78,11 @@ fun LibraryScreen(
 
     val folderLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         uri?.let {
-            // No Android real, precisaríamos resolver o caminho físico do URI da árvore de documentos
-            // ou usar o DocumentFile. Para simplificar e atendendo ao pedido de "selecionar pasta",
-            // vamos registrar o URI ou tentar converter se for um caminho simples.
-            // NOTA: Em apps modernos, usa-se o URI persistível.
+            // Concede permissão persistente para que o app possa acessar e EDITAR a pasta após reiniciar
+            context.contentResolver.takePersistableUriPermission(
+                it,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+            )
             val path = it.toString()
             libraryViewModel.addFolder(path)
         }
@@ -181,7 +183,7 @@ fun LibraryScreen(
                         Tab(
                             selected = selectedCategory == index,
                             onClick = {
-                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                libraryViewModel.triggerHapticSelection()
                                 selectedCategory = index
                             },
                             text = {
@@ -206,6 +208,7 @@ fun LibraryScreen(
                                 icon = Icons.Default.Person,
                                 onNavigate = onNavigateToDetail,
                                 isArtistGroup = true,
+                                libraryViewModel = libraryViewModel,
                                 onLongClick = { name, photo ->
                                     editingItem = EditingMetadata(name, photo, isArtist = true)
                                 }
@@ -218,6 +221,7 @@ fun LibraryScreen(
                                 icon = Icons.Default.Album,
                                 onNavigate = onNavigateToDetail,
                                 isArtistGroup = false,
+                                libraryViewModel = libraryViewModel,
                                 onLongClick = { name, photo ->
                                     editingItem = EditingMetadata(name, photo, isArtist = false)
                                 }
@@ -228,6 +232,7 @@ fun LibraryScreen(
                         SongsList(
                                 songs = completedSongs,
                                 playerViewModel = playerViewModel,
+                                libraryViewModel = libraryViewModel,
                                 onNavigateToPlayer = onNavigateToPlayer,
                                 onAddToPlaylist = { song -> songForPlaylist = song } // CORREÇÃO: Removido envio inútil de playlists
                         )
@@ -236,6 +241,7 @@ fun LibraryScreen(
                 3 ->
                         PlaylistsTab(
                                 playlists = playlists,
+                                libraryViewModel = libraryViewModel,
                                 onNavigateToDetail = onNavigateToPlaylist,
                                 onShowCreateDialog = { showCreatePlaylistDialog = true } // CORREÇÃO: Removido envio inútil de ViewModels
                         )
@@ -296,10 +302,10 @@ fun LibraryScreen(
 private fun SongsList(
         songs: List<DownloadItemEntity>,
         playerViewModel: PlayerViewModel,
+        libraryViewModel: LibraryViewModel,
         onNavigateToPlayer: () -> Unit,
         onAddToPlaylist: (DownloadItemEntity) -> Unit // CORREÇÃO: 'playlists' removido, pois era inútil aqui
 ) {
-    val haptic = LocalHapticFeedback.current
     var songMenu by remember { mutableStateOf<DownloadItemEntity?>(null) }
 
     if (songs.isEmpty()) {
@@ -313,26 +319,24 @@ private fun SongsList(
             verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         itemsIndexed(items = songs, key = { _, s -> s.id }) { index, song ->
-            Box(
-                    modifier =
-                            Modifier.fillMaxWidth()
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .combinedClickable(
-                                            onClick = {
-                                                haptic.performHapticFeedback(
-                                                        HapticFeedbackType.TextHandleMove
-                                                )
-                                                playerViewModel.playPlaylist(songs, index)
-                                                onNavigateToPlayer()
-                                            },
-                                            onLongClick = {
-                                                haptic.performHapticFeedback(
-                                                        HapticFeedbackType.LongPress
-                                                )
-                                                songMenu = song
-                                            }
-                                    )
-            ) { DownloadItemRow(item = song, onClick = {}) }
+            StaggeredVerticalEntrance(index = index) {
+                Box(
+                        modifier =
+                                Modifier.fillMaxWidth()
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .combinedClickable(
+                                                onClick = {
+                                                    libraryViewModel.triggerHapticClick()
+                                                    playerViewModel.playPlaylist(songs, index)
+                                                    onNavigateToPlayer()
+                                                },
+                                                onLongClick = {
+                                                    libraryViewModel.triggerHapticHeavy()
+                                                    songMenu = song
+                                                }
+                                        )
+                ) { DownloadItemRow(item = song, onClick = {}) }
+            }
         }
     }
 
@@ -378,11 +382,10 @@ private fun SongsList(
 @Composable
 private fun PlaylistsTab(
         playlists: List<PlaylistWithCount>,
+        libraryViewModel: LibraryViewModel,
         onNavigateToDetail: (String) -> Unit,
         onShowCreateDialog: () -> Unit // CORREÇÃO: Removidos parâmetros systemViewModel, playerViewModel e onNavigateToPlayer
 ) {
-    val haptic = LocalHapticFeedback.current
-
     Column(modifier = Modifier.fillMaxSize()) {
         // Botão criar playlist
         Button(
@@ -408,62 +411,62 @@ private fun PlaylistsTab(
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            items(items = playlists, key = { it.playlist.id }) { playlistWithCount ->
-                Row(
-                        modifier =
-                                Modifier.fillMaxWidth()
-                                        .clip(RoundedCornerShape(12.dp))
-                                        .background(SurfaceDark)
-                                        .clickable {
-                                            haptic.performHapticFeedback(
-                                                    HapticFeedbackType.TextHandleMove
-                                            )
-                                            onNavigateToDetail(playlistWithCount.playlist.id)
-                                        }
-                                        .padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                ) {
-                    // Thumbnail ou ícone padrão
-                    if (!playlistWithCount.playlist.thumbnail.isNullOrBlank()) {
-                        AsyncImage(
-                                model = playlistWithCount.playlist.thumbnail,
-                                contentDescription = null,
-                                modifier = Modifier.size(60.dp).clip(RoundedCornerShape(8.dp)),
-                                contentScale = ContentScale.Crop
-                        )
-                    } else {
-                        Surface(
-                                modifier = Modifier.size(60.dp),
-                                shape = RoundedCornerShape(8.dp),
-                                color = Color(0xFF1A1A1A)
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(
-                                        Icons.AutoMirrored.Filled.QueueMusic,
-                                        null,
-                                        tint = YTDownPurple
-                                )
+            itemsIndexed(items = playlists, key = { _, it -> it.playlist.id }) { index, playlistWithCount ->
+                StaggeredVerticalEntrance(index = index) {
+                    Row(
+                            modifier =
+                                    Modifier.fillMaxWidth()
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .background(SurfaceDark)
+                                            .clickable {
+                                                libraryViewModel.triggerHapticClick()
+                                                onNavigateToDetail(playlistWithCount.playlist.id)
+                                            }
+                                            .padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // Thumbnail ou ícone padrão
+                        if (!playlistWithCount.playlist.thumbnail.isNullOrBlank()) {
+                            AsyncImage(
+                                    model = playlistWithCount.playlist.thumbnail,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(60.dp).clip(RoundedCornerShape(8.dp)),
+                                    contentScale = ContentScale.Crop
+                            )
+                        } else {
+                            Surface(
+                                    modifier = Modifier.size(60.dp),
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = Color(0xFF1A1A1A)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                            Icons.AutoMirrored.Filled.QueueMusic,
+                                            null,
+                                            tint = YTDownPurple
+                                    )
+                                }
                             }
                         }
+
+                        Spacer(modifier = Modifier.width(16.dp))
+
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                    playlistWithCount.playlist.name,
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 16.sp
+                            )
+                            Text(
+                                    "${playlistWithCount.trackCount} músicas",
+                                    color = TextSecondary,
+                                    fontSize = 12.sp
+                            )
+                        }
+
+                        Icon(Icons.Default.ChevronRight, null, tint = TextSecondary)
                     }
-
-                    Spacer(modifier = Modifier.width(16.dp))
-
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                                playlistWithCount.playlist.name,
-                                color = Color.White,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 16.sp
-                        )
-                        Text(
-                                "${playlistWithCount.trackCount} músicas",
-                                color = TextSecondary,
-                                fontSize = 12.sp
-                        )
-                    }
-
-                    Icon(Icons.Default.ChevronRight, null, tint = TextSecondary)
                 }
             }
         }
@@ -480,10 +483,10 @@ private fun GroupedList(
         groups: Map<String, List<DownloadItemEntity>>,
         icon: ImageVector,
         onNavigate: (String) -> Unit,
+        libraryViewModel: LibraryViewModel,
         isArtistGroup: Boolean = false,
         onLongClick: ((String, String?) -> Unit)? = null
 ) {
-    val haptic = LocalHapticFeedback.current
     if (groups.isEmpty()) {
         EmptyLibraryMessage()
         return
@@ -493,65 +496,64 @@ private fun GroupedList(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        items(items = groups.keys.toList(), key = { it }) { key ->
-            val groupItems = groups[key] ?: emptyList()
-            var artwork =
-                    groupItems.firstOrNull { !it.albumImageUrl.isNullOrEmpty() }?.albumImageUrl
-            if (isArtistGroup) {
-                artwork =
-                        groupItems
-                                .firstOrNull { !it.artistImageUrl.isNullOrEmpty() }
-                                ?.artistImageUrl
-            }
-            if (artwork.isNullOrEmpty()) {
-                artwork =
-                        groupItems.firstOrNull { !it.thumbnailPath.isNullOrEmpty() }?.thumbnailPath
-            }
-
-            Row(
-                    modifier =
-                            Modifier.fillMaxWidth()
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .combinedClickable(
-                                            onClick = {
-                                                haptic.performHapticFeedback(
-                                                        HapticFeedbackType.TextHandleMove
-                                                )
-                                                onNavigate(key)
-                                            },
-                                            onLongClick = {
-                                                haptic.performHapticFeedback(
-                                                        HapticFeedbackType.LongPress
-                                                )
-                                                onLongClick?.invoke(key, artwork)
-                                            }
-                                    ),
-                    verticalAlignment = Alignment.CenterVertically
-            ) {
-                if (artwork != null) {
-                    AsyncImage(
-                            model = artwork,
-                            contentDescription = null,
-                            modifier = Modifier.size(60.dp).clip(RoundedCornerShape(8.dp)),
-                            contentScale = ContentScale.Crop
-                    )
-                } else {
-                    Surface(
-                            modifier = Modifier.size(60.dp),
-                            shape = RoundedCornerShape(8.dp),
-                            color = Color(0xFF1A1A1A)
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(icon, null, tint = TextSecondary)
-                        }
-                    }
+        val keys = groups.keys.toList()
+        itemsIndexed(items = keys, key = { _, it -> it }) { index, key ->
+            StaggeredVerticalEntrance(index = index) {
+                val groupItems = groups[key] ?: emptyList()
+                var artwork =
+                        groupItems.firstOrNull { !it.albumImageUrl.isNullOrEmpty() }?.albumImageUrl
+                if (isArtistGroup) {
+                    artwork =
+                            groupItems
+                                    .firstOrNull { !it.artistImageUrl.isNullOrEmpty() }
+                                    ?.artistImageUrl
+                }
+                if (artwork.isNullOrEmpty()) {
+                    artwork =
+                            groupItems.firstOrNull { !it.thumbnailPath.isNullOrEmpty() }?.thumbnailPath
                 }
 
-                Spacer(modifier = Modifier.width(16.dp))
+                Row(
+                        modifier =
+                                Modifier.fillMaxWidth()
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .combinedClickable(
+                                                onClick = {
+                                                    libraryViewModel.triggerHapticClick()
+                                                    onNavigate(key)
+                                                },
+                                                onLongClick = {
+                                                    libraryViewModel.triggerHapticHeavy()
+                                                    onLongClick?.invoke(key, artwork)
+                                                }
+                                        ),
+                        verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (artwork != null) {
+                        AsyncImage(
+                                model = artwork,
+                                contentDescription = null,
+                                modifier = Modifier.size(60.dp).clip(RoundedCornerShape(8.dp)),
+                                contentScale = ContentScale.Crop
+                        )
+                    } else {
+                        Surface(
+                                modifier = Modifier.size(60.dp),
+                                shape = RoundedCornerShape(8.dp),
+                                color = Color(0xFF1A1A1A)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(icon, null, tint = TextSecondary)
+                            }
+                        }
+                    }
 
-                Column {
-                    Text(key, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                    Text("${groupItems.size} músicas", color = TextSecondary, fontSize = 12.sp)
+                    Spacer(modifier = Modifier.width(16.dp))
+
+                    Column {
+                        Text(key, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                        Text("${groupItems.size} músicas", color = TextSecondary, fontSize = 12.sp)
+                    }
                 }
             }
         }

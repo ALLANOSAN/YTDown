@@ -23,6 +23,10 @@ import com.example.ytdown.ui.theme.YTDownPurple
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
+import android.Manifest
+import android.os.Build
+import androidx.activity.result.contract.ActivityResultContracts
+
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
@@ -32,6 +36,12 @@ class MainActivity : ComponentActivity() {
     lateinit var sharingIntentService: SharingIntentService
     
     private var isRuntimeReady by mutableStateOf(false)
+
+    private val requestPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted: Boolean ->
+        android.util.Log.d("MainActivity", "Permissão de notificação concedida: $isGranted")
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -69,18 +79,9 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun checkAndRequestPermissions() {
-        val permissions = mutableListOf(
-            android.Manifest.permission.INTERNET,
-            android.Manifest.permission.WAKE_LOCK
-        )
-        if (android.os.Build.VERSION.SDK_INT <= android.os.Build.VERSION_CODES.P) {
-            permissions.add(android.Manifest.permission.WRITE_EXTERNAL_STORAGE)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-            permissions.add(android.Manifest.permission.POST_NOTIFICATIONS)
-        }
-        
-        requestPermissions(permissions.toTypedArray(), 1001)
     }
 }
 

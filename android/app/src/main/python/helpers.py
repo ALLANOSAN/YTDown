@@ -9,18 +9,32 @@ from urllib.request import Request, urlopen
 _MAX_THUMBNAIL_BYTES = 6 * 1024 * 1024
 
 
-def _failure_payload(error, stage=None, retryable=None, **extra):
-    payload = {
-        "success": False,
-        "error": str(error),
-    }
-    if stage:
-        payload["stage"] = stage
-    if retryable is not None:
-        payload["retryable"] = bool(retryable)
-    if extra:
-        payload.update(extra)
-    return payload
+import traceback
+import logging
+import os
+import datetime
+
+# Configuração de logs persistentes
+LOG_FILE = "/data/user/0/com.example.ytdown/files/python_errors.log"
+
+def report_error_to_firebase(error, stage=None, **extra):
+    """
+    Registra erros em log local persistente e formata para o ObservabilityService capturar via PythonBridge.
+    """
+    timestamp = datetime.datetime.now().isoformat()
+    error_msg = f"{timestamp} | Stage: {stage} | Error: {str(error)} | Extra: {str(extra)}"
+    
+    # Log local
+    try:
+        with open(LOG_FILE, "a") as f:
+            f.write(error_msg + "\n" + traceback.format_exc() + "\n---\n")
+    except:
+        pass
+
+    # Print para o logcat ser capturado pela ponte Kotlin
+    print(f"[FIREBASE_REPORT] {error_msg}")
+    
+    return _failure_payload(error, stage, **extra)
 
 
 def _is_retryable_network_error(error):

@@ -25,7 +25,7 @@ class FileSystemScannerService @Inject constructor(
     private val downloadDao: DownloadDao,
     private val folderService: MusicFolderService,
     private val artworkManager: ArtworkManager,
-    @ApplicationContext private val context: Context // Adicionado para acessar SharedPreferences
+    @param:ApplicationContext private val context: Context // Adicionado para acessar SharedPreferences
 ) {
     private val audioExtensions = setOf("mp3", "m4a", "aac", "ogg", "opus", "wav", "flac")
     private val prefs = context.getSharedPreferences("scanner_prefs", Context.MODE_PRIVATE)

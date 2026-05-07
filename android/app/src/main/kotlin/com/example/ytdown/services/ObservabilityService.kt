@@ -23,6 +23,27 @@ class ObservabilityService @Inject constructor(
     private val urlPattern = Pattern.compile("https?:\\/\\/[a-zA-Z0-9\\-\\.]+\\.[a-zA-Z]{2,3}(\\/\\S*)?")
     private val pathPattern = Pattern.compile("/data/user/\\d+/[a-zA-Z0-9\\-\\.]+(/\\S*)?|/storage/emulated/\\d+(/\\S*)?")
 
+    init {
+        startLogcatMonitor()
+    }
+
+    private fun startLogcatMonitor() {
+        scope.launch(Dispatchers.IO) {
+            try {
+                val process = Runtime.getRuntime().exec("logcat -s System.out")
+                val reader = process.inputStream.bufferedReader()
+                reader.forEachLine { line ->
+                    if (line.contains("[FIREBASE_REPORT]")) {
+                        val report = line.substringAfter("[FIREBASE_REPORT] ")
+                        trackError("PythonBackend", report)
+                    }
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("Observability", "Erro ao monitorar logcat", e)
+            }
+        }
+    }
+
     fun trackError(tag: String, message: String, throwable: Throwable? = null, metadata: Map<String, String>? = null) {
         val sanitizedMsg = sanitize(message)
         

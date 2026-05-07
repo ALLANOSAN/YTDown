@@ -11,7 +11,7 @@ import javax.inject.Singleton
 
 @Singleton
 class MusicFolderService @Inject constructor(
-    @ApplicationContext private val context: Context
+    @param:ApplicationContext private val context: Context
 ) {
     private val prefs: SharedPreferences = context.getSharedPreferences("music_folders_prefs", Context.MODE_PRIVATE)
     private val KEY_FOLDERS = "selected_music_folders"

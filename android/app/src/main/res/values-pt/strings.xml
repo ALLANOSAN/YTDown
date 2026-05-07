@@ -1,0 +1,38 @@
+<resources>
+    <string name="app_name">YTDown</string>
+    
+    <!-- Library -->
+    <string name="lib_artists">Artistas</string>
+    <string name="lib_albums">Álbuns</string>
+    <string name="lib_songs">Músicas</string>
+    <string name="lib_playlists">Playlists</string>
+    <string name="lib_search_placeholder">Buscar na biblioteca…</string>
+    <string name="lib_add_local_folder">Adicionar Pasta Local</string>
+    <string name="lib_no_items">Nenhum item encontrado.</string>
+    <string name="lib_recent_searches">Buscas Recentes</string>
+    <string name="lib_recently_added">Adicionadas Recentemente</string>
+    <string name="lib_all_songs">Todas as Músicas</string>
+    
+    <!-- Player -->
+    <string name="player_now_playing">TOCANDO AGORA</string>
+    <string name="player_no_track">Nenhuma música carregada</string>
+    <string name="player_unknown_artist">Desconhecido</string>
+    <string name="player_unknown_title">Título Desconhecido</string>
+    <string name="player_sleep_timer">Sleep Timer</string>
+    <string name="player_timer_label">Timer: %1$dm</string>
+    
+    <!-- Settings -->
+    <string name="settings_title">Configurações</string>
+    <string name="settings_engine_title">Motor de Download</string>
+    <string name="settings_repair_tags">Reparar Tags</string>
+    <string name="settings_diagnostics">Diagnóstico</string>
+    <string name="settings_export_library">Exportar Biblioteca</string>
+    <string name="settings_enrich_artwork">Enriquecimento de Capas</string>
+    
+    <!-- Actions -->
+    <string name="action_save">Salvar</string>
+    <string name="action_cancel">Cancelar</string>
+    <string name="action_delete">Excluir</string>
+    <string name="action_edit">Editar</string>
+    <string name="action_export">Exportar Agora</string>
+</resources>

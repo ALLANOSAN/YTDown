@@ -116,19 +116,23 @@ object StorageService {
     ): Boolean {
         return try {
             val sourceFile = File(sourcePath)
-            if (!sourceFile.exists()) return false
+            if (!sourceFile.exists()) {
+                android.util.Log.e("StorageService", "Source file not found: $sourcePath")
+                return false
+            }
 
             val isContentUri = exportedPath.startsWith("content://")
 
             if (isContentUri) {
                 writeSourceFileToUri(context, sourceFile, Uri.parse(exportedPath))
-            }
-            if (!isContentUri) {
+            } else {
                 copySourceFileToPath(sourceFile, exportedPath)
             }
 
+            android.util.Log.d("StorageService", "Sync successful: $sourcePath -> $exportedPath")
             true
         } catch (e: Exception) {
+            android.util.Log.e("StorageService", "Sync failed: ${e.message}", e)
             false
         }
     }

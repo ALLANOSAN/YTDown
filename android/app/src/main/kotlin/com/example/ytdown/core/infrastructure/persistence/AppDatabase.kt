@@ -19,4 +19,8 @@ import com.example.ytdown.core.infrastructure.persistence.entities.*
 abstract class AppDatabase : RoomDatabase() {
     abstract fun downloadDao(): DownloadDao
     abstract fun libraryDao(): LibraryDao
+
+    companion object {
+        val ALL_MIGRATIONS = arrayOf<androidx.room.migration.Migration>()
+    }
 }

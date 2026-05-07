@@ -14,6 +14,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
@@ -54,6 +56,7 @@ import com.example.ytdown.ui.LibraryViewModel
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.AutoFixHigh
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalContext
 
 
@@ -74,7 +77,11 @@ fun LibraryScreen(
     val allItems: List<DownloadItemEntity> by viewModel.allDownloads.collectAsStateWithLifecycle(initialValue = emptyList())
     val playlists by systemViewModel.playlists.collectAsStateWithLifecycle()
     val selectedFolders by libraryViewModel.selectedFolders.collectAsStateWithLifecycle()
+    val recentSearches by libraryViewModel.recentSearches.collectAsStateWithLifecycle()
+    val recentlyAdded by libraryViewModel.recentlyAdded.collectAsStateWithLifecycle()
+    
     var searchQuery by remember { mutableStateOf("") }
+    var isSearchFocused by remember { mutableStateOf(false) }
 
     val folderLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         uri?.let {
@@ -111,10 +118,29 @@ fun LibraryScreen(
 
     Surface(modifier = modifier.fillMaxSize(), color = Color.Black) {
         Column(modifier = Modifier.fillMaxSize()) {
-            LibrarySearchBar(query = searchQuery, onQueryChange = { searchQuery = it })
+            LibrarySearchBar(
+                query = searchQuery, 
+                onQueryChange = { 
+                    searchQuery = it
+                    libraryViewModel.onSearchQueryChanged(it)
+                },
+                onFocusChange = { isSearchFocused = it }
+            )
+
+            // Buscas Recentes
+            if (isSearchFocused && searchQuery.isEmpty() && recentSearches.isNotEmpty()) {
+                RecentSearchesList(
+                    searches = recentSearches,
+                    onSearchClick = { 
+                        searchQuery = it
+                        libraryViewModel.onSearchQueryChanged(it)
+                    },
+                    onDeleteSearch = { libraryViewModel.deleteSearch(it) }
+                )
+            }
 
             // Botão para adicionar pastas de música fora do app
-            if (selectedCategory == 2) { // Aba Músicas
+            if (selectedCategory == 2 && !isSearchFocused) { // Aba Músicas
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
@@ -168,88 +194,101 @@ fun LibraryScreen(
                 }
             }
 
-            PrimaryScrollableTabRow(
-                selectedTabIndex = selectedCategory,
-                containerColor = Color.Black,
-                contentColor = YTDownPurple,
-                indicator = {
-                TabRowDefaults.PrimaryIndicator(
-                modifier = Modifier.tabIndicatorOffset(selectedTabIndex = selectedCategory),
-                color = YTDownPurple
-                )
-                },
-                tabs = {
-                    categories.forEachIndexed { index, title ->
-                        Tab(
-                            selected = selectedCategory == index,
-                            onClick = {
-                                libraryViewModel.triggerHapticSelection()
-                                selectedCategory = index
-                            },
-                            text = {
-                                Text(
-                                    text = title,
-                                    color = if (selectedCategory == index) YTDownPurple else Color.White,
-                                    fontWeight = if (selectedCategory == index) FontWeight.Bold else FontWeight.Normal
-                                )
-                            }
+            if (!isSearchFocused) {
+                PrimaryScrollableTabRow(
+                    selectedTabIndex = selectedCategory,
+                    containerColor = Color.Black,
+                    contentColor = YTDownPurple,
+                    indicator = {
+                        TabRowDefaults.PrimaryIndicator(
+                            modifier = Modifier.tabIndicatorOffset(selectedTabIndex = selectedCategory),
+                            color = YTDownPurple
                         )
+                    },
+                    tabs = {
+                        categories.forEachIndexed { index, title ->
+                            Tab(
+                                selected = selectedCategory == index,
+                                onClick = {
+                                    libraryViewModel.triggerHapticSelection()
+                                    selectedCategory = index
+                                },
+                                text = {
+                                    Text(
+                                        text = title,
+                                        color = if (selectedCategory == index) YTDownPurple else Color.White,
+                                        fontWeight = if (selectedCategory == index) FontWeight.Bold else FontWeight.Normal
+                                    )
+                                }
+                            )
+                        }
                     }
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                when (selectedCategory) {
+                    // --- ABA ARTISTAS ---
+                    0 ->
+                            GroupedList(
+                                    groups = completedSongs.groupBy { it.artist ?: "Desconhecido" },
+                                    icon = Icons.Default.Person,
+                                    onNavigate = onNavigateToDetail,
+                                    isArtistGroup = true,
+                                    libraryViewModel = libraryViewModel,
+                                    onLongClick = { name, photo ->
+                                        editingItem = EditingMetadata(name, photo, isArtist = true)
+                                    }
+                            )
+
+                    // --- ABA ÁLBUNS ---
+                    1 ->
+                            GroupedList(
+                                    groups = completedSongs.groupBy { it.album ?: "Sem Álbum" },
+                                    icon = Icons.Default.Album,
+                                    onNavigate = onNavigateToDetail,
+                                    isArtistGroup = false,
+                                    libraryViewModel = libraryViewModel,
+                                    onLongClick = { name, photo ->
+                                        editingItem = EditingMetadata(name, photo, isArtist = false)
+                                    }
+                            )
+
+                    // --- ABA MÚSICAS ---
+                    2 ->
+                            SongsList(
+                                    songs = completedSongs,
+                                    recentlyAdded = recentlyAdded,
+                                    playerViewModel = playerViewModel,
+                                    libraryViewModel = libraryViewModel,
+                                    onNavigateToPlayer = onNavigateToPlayer,
+                                    onAddToPlaylist = { song -> songForPlaylist = song }
+                            )
+
+                    // --- ABA PLAYLISTS ---
+                    3 ->
+                            PlaylistsTab(
+                                    playlists = playlists,
+                                    libraryViewModel = libraryViewModel,
+                                    onNavigateToDetail = onNavigateToPlaylist,
+                                    onShowCreateDialog = { showCreatePlaylistDialog = true }
+                            )
                 }
-            ) // CORREÇÃO: Chave solta removida daqui
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            when (selectedCategory) {
-                // --- ABA ARTISTAS ---
-                0 ->
-                        GroupedList(
-                                groups = completedSongs.groupBy { it.artist ?: "Desconhecido" },
-                                icon = Icons.Default.Person,
-                                onNavigate = onNavigateToDetail,
-                                isArtistGroup = true,
-                                libraryViewModel = libraryViewModel,
-                                onLongClick = { name, photo ->
-                                    editingItem = EditingMetadata(name, photo, isArtist = true)
-                                }
-                        )
-
-                // --- ABA ÁLBUNS ---
-                1 ->
-                        GroupedList(
-                                groups = completedSongs.groupBy { it.album ?: "Sem Álbum" },
-                                icon = Icons.Default.Album,
-                                onNavigate = onNavigateToDetail,
-                                isArtistGroup = false,
-                                libraryViewModel = libraryViewModel,
-                                onLongClick = { name, photo ->
-                                    editingItem = EditingMetadata(name, photo, isArtist = false)
-                                }
-                        )
-
-                // --- ABA MÚSICAS ---
-                2 ->
-                        SongsList(
-                                songs = completedSongs,
-                                playerViewModel = playerViewModel,
-                                libraryViewModel = libraryViewModel,
-                                onNavigateToPlayer = onNavigateToPlayer,
-                                onAddToPlaylist = { song -> songForPlaylist = song } // CORREÇÃO: Removido envio inútil de playlists
-                        )
-
-                // --- ABA PLAYLISTS ---
-                3 ->
-                        PlaylistsTab(
-                                playlists = playlists,
-                                libraryViewModel = libraryViewModel,
-                                onNavigateToDetail = onNavigateToPlaylist,
-                                onShowCreateDialog = { showCreatePlaylistDialog = true } // CORREÇÃO: Removido envio inútil de ViewModels
-                        )
+            } else if (searchQuery.isNotEmpty()) {
+                // Resultados de busca em tempo real quando focado
+                SongsList(
+                    songs = completedSongs,
+                    recentlyAdded = emptyList(),
+                    playerViewModel = playerViewModel,
+                    libraryViewModel = libraryViewModel,
+                    onNavigateToPlayer = onNavigateToPlayer,
+                    onAddToPlaylist = { song -> songForPlaylist = song }
+                )
             }
-        } // CORREÇÃO: Column sendo fechada no lugar certo, após o Spacer e o When
-    } // CORREÇÃO: Surface sendo fechada aqui
+        }
+    }
 
-    // --- Dialogo editar artista/álbum ---
+    // --- Dialogos ---
     editingItem?.let { item ->
         EditLibraryDialog(
                 item = item,
@@ -269,7 +308,6 @@ fun LibraryScreen(
         )
     }
 
-    // --- Dialogo adicionar música a playlist (aba Músicas) ---
     songForPlaylist?.let { song ->
         PlaylistSelectionDialog(
                 playlists = playlists,
@@ -281,7 +319,6 @@ fun LibraryScreen(
         )
     }
 
-    // --- Dialogo criar playlist ---
     if (showCreatePlaylistDialog) {
         CreatePlaylistDialog(
                 onDismiss = { showCreatePlaylistDialog = false },
@@ -291,20 +328,58 @@ fun LibraryScreen(
                 }
         )
     }
-} // CORREÇÃO: Aqui sim, a função LibraryScreen acaba fechando os diálogos dentro dela
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ABA MÚSICAS — long press mostra opção de adicionar à playlist
+// COMPONENTES DE BUSCA RECENTE
+// ─────────────────────────────────────────────────────────────────────────────
+
+@Composable
+private fun RecentSearchesList(
+    searches: List<String>,
+    onSearchClick: (String) -> Unit,
+    onDeleteSearch: (String) -> Unit
+) {
+    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+        Text(
+            "Buscas Recentes",
+            color = YTDownPurple,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(vertical = 8.dp)
+        )
+        searches.take(5).forEach { search ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onSearchClick(search) }
+                    .padding(vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Default.History, null, tint = TextSecondary, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(16.dp))
+                Text(search, color = Color.White, modifier = Modifier.weight(1f))
+                IconButton(onClick = { onDeleteSearch(search) }, modifier = Modifier.size(24.dp)) {
+                    Icon(Icons.Default.Close, null, tint = TextSecondary, modifier = Modifier.size(14.dp))
+                }
+            }
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ABA MÚSICAS
 // ─────────────────────────────────────────────────────────────────────────────
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun SongsList(
         songs: List<DownloadItemEntity>,
+        recentlyAdded: List<DownloadItemEntity>,
         playerViewModel: PlayerViewModel,
         libraryViewModel: LibraryViewModel,
         onNavigateToPlayer: () -> Unit,
-        onAddToPlaylist: (DownloadItemEntity) -> Unit // CORREÇÃO: 'playlists' removido, pois era inútil aqui
+        onAddToPlaylist: (DownloadItemEntity) -> Unit
 ) {
     var songMenu by remember { mutableStateOf<DownloadItemEntity?>(null) }
 
@@ -318,6 +393,39 @@ private fun SongsList(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
+        // --- SMART PLAYLIST: RECENTLY ADDED ---
+        if (recentlyAdded.isNotEmpty() && songs.size > 10) {
+            item {
+                Text(
+                    "Adicionadas Recentemente",
+                    color = YTDownPurple,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    recentlyAdded.take(10).forEach { song ->
+                        RecentSongCard(song = song, onClick = {
+                            libraryViewModel.triggerHapticClick()
+                            playerViewModel.playTrack(song)
+                            onNavigateToPlayer()
+                        })
+                    }
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    "Todas as Músicas",
+                    color = YTDownPurple,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+            }
+        }
+
         itemsIndexed(items = songs, key = { _, s -> s.id }) { index, song ->
             StaggeredVerticalEntrance(index = index) {
                 Box(
@@ -340,7 +448,6 @@ private fun SongsList(
         }
     }
 
-    // Menu de long press da música
     songMenu?.let { song ->
         AlertDialog(
                 onDismissRequest = { songMenu = null },
@@ -375,8 +482,35 @@ private fun SongsList(
     }
 }
 
+@Composable
+private fun RecentSongCard(song: DownloadItemEntity, onClick: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .width(100.dp)
+            .clickable { onClick() },
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        AsyncImage(
+            model = song.thumbnailPath,
+            contentDescription = null,
+            modifier = Modifier
+                .size(100.dp)
+                .clip(RoundedCornerShape(12.dp)),
+            contentScale = ContentScale.Crop
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = song.title,
+            color = Color.White,
+            fontSize = 11.sp,
+            maxLines = 1,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+        )
+    }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
-// ABA PLAYLISTS — lista + botão criar
+// ABA PLAYLISTS
 // ─────────────────────────────────────────────────────────────────────────────
 
 @Composable
@@ -384,10 +518,9 @@ private fun PlaylistsTab(
         playlists: List<PlaylistWithCount>,
         libraryViewModel: LibraryViewModel,
         onNavigateToDetail: (String) -> Unit,
-        onShowCreateDialog: () -> Unit // CORREÇÃO: Removidos parâmetros systemViewModel, playerViewModel e onNavigateToPlayer
+        onShowCreateDialog: () -> Unit
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
-        // Botão criar playlist
         Button(
                 onClick = onShowCreateDialog,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
@@ -425,7 +558,6 @@ private fun PlaylistsTab(
                                             .padding(12.dp),
                             verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // Thumbnail ou ícone padrão
                         if (!playlistWithCount.playlist.thumbnail.isNullOrBlank()) {
                             AsyncImage(
                                     model = playlistWithCount.playlist.thumbnail,
@@ -682,7 +814,11 @@ data class EditingMetadata(val name: String, val currentPhoto: String?, val isAr
 // ─────────────────────────────────────────────────────────────────────────────
 
 @Composable
-private fun LibrarySearchBar(query: String = "", onQueryChange: (String) -> Unit = {}) {
+private fun LibrarySearchBar(
+    query: String = "", 
+    onQueryChange: (String) -> Unit = {},
+    onFocusChange: (Boolean) -> Unit = {}
+) {
     Surface(
             modifier =
                     Modifier.fillMaxWidth()
@@ -712,7 +848,7 @@ private fun LibrarySearchBar(query: String = "", onQueryChange: (String) -> Unit
                         }
                         inner()
                     },
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f).onFocusChanged { onFocusChange(it.isFocused) }
             )
             if (query.isNotEmpty()) {
                 IconButton(onClick = { onQueryChange("") }, modifier = Modifier.size(24.dp)) {

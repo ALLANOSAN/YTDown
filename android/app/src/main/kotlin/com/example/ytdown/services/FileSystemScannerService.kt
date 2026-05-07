@@ -205,9 +205,15 @@ class FileSystemScannerService @Inject constructor(
             if (!item.exportedPath.isNullOrBlank()) return@forEach
 
             val outputPath = item.outputPath.takeIf { it.isNotBlank() } ?: return@forEach
-            val file = File(outputPath)
+            
+            val exists = if (outputPath.startsWith("content://")) {
+                DocumentFile.fromSingleUri(context, Uri.parse(outputPath))?.exists() == true
+            } else {
+                File(outputPath).exists()
+            }
 
-            if (!file.exists()) {
+            if (!exists) {
+                android.util.Log.e("FileSystemScanner", "DEBUG: Arquivo não encontrado: $outputPath (Item: ${item.title})")
                 downloadDao.delete(item)
                 removed++
                 android.util.Log.d("FileSystemScanner", "Entrada removida (arquivo ausente): ${item.title}")

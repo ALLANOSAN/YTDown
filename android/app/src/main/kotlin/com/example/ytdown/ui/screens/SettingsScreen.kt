@@ -1,5 +1,7 @@
 package com.example.ytdown.ui.screens
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -8,17 +10,19 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Label
 import androidx.compose.material.icons.filled.*
-import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.ytdown.R
 import com.example.ytdown.ui.SystemViewModel
 import com.example.ytdown.ui.theme.SurfaceDark
 import com.example.ytdown.ui.theme.TextSecondary
@@ -36,7 +40,7 @@ fun SettingsScreen(
     Scaffold(
             topBar = {
                 TopAppBar(
-                        title = { Text("Configurações", color = Color.White) },
+                        title = { Text(stringResource(R.string.settings_title), color = Color.White, style = MaterialTheme.typography.titleLarge) },
                         navigationIcon = {
                             IconButton(onClick = onBack) {
                                 Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = Color.White)
@@ -55,182 +59,187 @@ fun SettingsScreen(
                                 .padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Seção yt-dlp
-            SettingsCard(
-                    title = "Motor de Download (yt-dlp)",
-                    icon = Icons.Default.SettingsInputComponent
+            // --- BENTO GRID LAYOUT ---
+
+            // Row 1: Motor de Download (Destaque)
+            BentoCard(
+                modifier = Modifier.fillMaxWidth(),
+                title = stringResource(R.string.settings_engine_title),
+                subtitle = "yt-dlp v${state.ytDlpVersion}",
+                icon = Icons.Default.SettingsInputComponent,
+                color = YTDownPurple.copy(alpha = 0.1f)
             ) {
-                Text("Versão Atual: ${state.ytDlpVersion}", color = TextSecondary, fontSize = 14.sp)
-                Text("Versão PyPI: ${state.latestVersion}", color = TextSecondary, fontSize = 14.sp)
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                Button(
+                Column {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (state.isUpdating) {
+                            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = YTDownPurple)
+                            Spacer(modifier = Modifier.width(8.dp))
+                        }
+                        Text(
+                            if (state.isUpdating) "Atualizando para v${state.latestVersion}..." else "Versão PyPI: ${state.latestVersion}",
+                            color = TextSecondary,
+                            fontSize = 12.sp
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Button(
                         onClick = { viewModel.updateYtDlp() },
                         enabled = !state.isUpdating && !state.isCheckingUpdate,
                         modifier = Modifier.fillMaxWidth(),
                         colors = ButtonDefaults.buttonColors(containerColor = YTDownPurple)
+                    ) {
+                        Text("Verificar Atualização")
+                    }
+                }
+            }
+
+            // Row 2: Bento Grid (2 columns)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                // Manutenção
+                BentoCard(
+                    modifier = Modifier.weight(1f).height(200.dp),
+                    title = stringResource(R.string.settings_repair_tags),
+                    subtitle = "ID3 & Metadados",
+                    icon = Icons.AutoMirrored.Filled.Label,
+                    onClick = { if (!state.isRepairing) viewModel.repairAllMetadata() }
                 ) {
-                    if (state.isUpdating) {
-                        CircularProgressIndicator(
-                                modifier = Modifier.size(20.dp),
-                                color = Color.White
+                    if (state.isRepairing) {
+                        LinearProgressIndicator(
+                            progress = { state.repairProgress },
+                            modifier = Modifier.fillMaxWidth().height(4.dp),
+                            color = YTDownPurple
                         )
                     }
-                    if (!state.isUpdating) {
-                        Text("Atualizar Motor")
-                    }
                 }
+
+                // Diagnóstico
+                BentoCard(
+                    modifier = Modifier.weight(1f).height(200.dp),
+                    title = stringResource(R.string.settings_diagnostics),
+                    subtitle = "Logs de Falhas",
+                    icon = Icons.Default.BugReport,
+                    onClick = onNavigateToDiagnostics,
+                    color = Color(0xFFD32F2F).copy(alpha = 0.1f)
+                )
             }
 
-            // Seção Manutenção
-            SettingsCard(title = "Manutenção da Biblioteca", icon = Icons.Default.Build) {
-                if (state.isRepairing) {
-                    LinearProgressIndicator(
-                            progress = { state.repairProgress },
-                            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(4.dp)),
-                            color = YTDownPurple
-                    )
+            // Row 3: Exportação (Full width)
+            BentoCard(
+                modifier = Modifier.fillMaxWidth(),
+                title = stringResource(R.string.settings_export_library),
+                subtitle = "Salvar na pasta pública",
+                icon = Icons.Default.FolderOpen,
+                color = Color(0xFF388E3C).copy(alpha = 0.1f)
+            ) {
+                Column {
                     Text(
-                            "Processando: ${(state.repairProgress * 100).toInt()}%",
-                            color = TextSecondary,
-                            fontSize = 12.sp
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                MaintenanceButton(
-                        text = "Regravar Tags ID3 Físicas",
-                        icon = Icons.AutoMirrored.Filled.Label,
-                        onClick = { viewModel.repairAllMetadata() },
-                        enabled = !state.isRepairing
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                MaintenanceButton(
-                        text = "Enriquecer Capas em Lote",
-                        icon = Icons.Default.Image,
-                        onClick = { viewModel.enrichAllArtwork() },
-                        enabled = !state.isRepairing
-                )
-            }
-
-            SettingsCard(title = "Exportar para Pastas Públicas", icon = Icons.Default.FolderOpen) {
-                Text(
-                        "Copia todos os downloads concluídos para Music/YTDown (áudio) ou Movies/YTDown (vídeo).",
+                        "Copia os arquivos concluídos para as pastas de Música e Vídeo do celular.",
                         color = TextSecondary,
-                        fontSize = 14.sp
-                )
-
-                if (state.isExporting) {
-                    Spacer(modifier = Modifier.height(12.dp))
-                    LinearProgressIndicator(
+                        fontSize = 13.sp
+                    )
+                    if (state.isExporting) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        LinearProgressIndicator(
                             progress = { state.exportProgress },
-                            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(4.dp)),
+                            modifier = Modifier.fillMaxWidth().height(4.dp),
                             color = YTDownPurple
-                    )
-                    Text(
-                            "Exportando: ${(state.exportProgress * 100).toInt()}%",
-                            color = TextSecondary,
-                            fontSize = 12.sp
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                Button(
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Button(
                         onClick = { viewModel.exportAllToPublicFolders() },
                         enabled = !state.isExporting && !state.isRepairing,
                         modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(containerColor = YTDownPurple)
-                ) {
-                    if (state.isExporting) {
-                        CircularProgressIndicator(
-                                modifier = Modifier.size(20.dp),
-                                color = Color.White
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Exportando...")
-                    } else {
-                        Icon(
-                                Icons.Default.FolderOpen,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Exportar Tudo Agora")
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF388E3C))
+                    ) {
+                        Text(if (state.isExporting) "Exportando..." else stringResource(R.string.action_export))
                     }
                 }
             }
 
-            SettingsCard(title = "Diagnóstico de Downloads", icon = Icons.Default.BugReport) {
-                Text(
-                        "Veja falhas recentes de download e tente recuperá-las.",
-                        color = TextSecondary,
-                        fontSize = 14.sp
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-                Button(
-                        onClick = onNavigateToDiagnostics,
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(containerColor = YTDownPurple)
-                ) { Text("Abrir Diagnóstico") }
-            }
+            // Row 4: Enriquecimento
+            BentoCard(
+                modifier = Modifier.fillMaxWidth(),
+                title = stringResource(R.string.settings_enrich_artwork),
+                subtitle = "Busca automática de fotos",
+                icon = Icons.Default.AutoFixHigh,
+                onClick = { if (!state.isRepairing) viewModel.enrichAllArtwork() }
+            )
 
             // Mensagens
             state.lastMessage?.let {
-                Text(
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    color = YTDownPurple.copy(alpha = 0.15f),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text(
                         it,
                         color = YTDownPurple,
                         fontSize = 14.sp,
-                        modifier = Modifier.padding(top = 8.dp)
-                )
+                        modifier = Modifier.padding(16.dp)
+                    )
+                }
             }
+            
+            Spacer(modifier = Modifier.height(32.dp))
         }
     }
 }
 
 @Composable
-private fun SettingsCard(
-        title: String,
-        icon: ImageVector,
-        content: @Composable ColumnScope.() -> Unit
+private fun BentoCard(
+    modifier: Modifier = Modifier,
+    title: String,
+    subtitle: String,
+    icon: ImageVector,
+    color: Color = SurfaceDark,
+    onClick: (() -> Unit)? = null,
+    content: @Composable (() -> Unit)? = null
 ) {
     Surface(
-            modifier = Modifier.fillMaxWidth(),
-            color = SurfaceDark,
-            shape = RoundedCornerShape(16.dp)
+        modifier = modifier.clip(RoundedCornerShape(24.dp)),
+        color = SurfaceDark,
+        shape = RoundedCornerShape(24.dp)
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(icon, null, tint = YTDownPurple, modifier = Modifier.size(20.dp))
-                Spacer(modifier = Modifier.width(12.dp))
-                Text(title, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+        Box(
+            modifier = Modifier
+                .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(color, SurfaceDark)
+                    )
+                )
+                .padding(20.dp)
+        ) {
+            Column {
+                Icon(
+                    icon,
+                    null,
+                    tint = if (color != SurfaceDark) color.copy(alpha = 1f) else YTDownPurple,
+                    modifier = Modifier.size(28.dp)
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    title,
+                    color = Color.White,
+                    style = MaterialTheme.typography.titleLarge,
+                    fontSize = 18.sp
+                )
+                Text(
+                    subtitle,
+                    color = TextSecondary,
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontSize = 13.sp
+                )
+                if (content != null) {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    content()
+                }
             }
-            Spacer(modifier = Modifier.height(16.dp))
-            content()
         }
-    }
-}
-
-@Composable
-private fun MaintenanceButton(
-        text: String,
-        icon: ImageVector,
-        onClick: () -> Unit,
-        enabled: Boolean
-) {
-    OutlinedButton(
-            onClick = onClick,
-            enabled = enabled,
-            modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
-            border = ButtonDefaults.outlinedButtonBorder(enabled = true).copy(width = 1.dp)
-    ) {
-        Icon(icon, null, modifier = Modifier.size(18.dp))
-        Spacer(modifier = Modifier.width(8.dp))
-        Text(text)
     }
 }

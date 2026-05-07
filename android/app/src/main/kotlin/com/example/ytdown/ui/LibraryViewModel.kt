@@ -33,6 +33,10 @@ class LibraryViewModel @Inject constructor(
     private val _isScanning = MutableStateFlow(false)
 
     val selectedFolders = folderService.folders
+    val recentSearches: StateFlow<List<String>> = libraryRepository.getRecentSearches()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val recentlyAdded: StateFlow<List<DownloadItemEntity>> = libraryRepository.getRecentlyAdded()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     fun triggerHapticSelection() = hapticManager.selection()
     fun triggerHapticClick() = hapticManager.impactLight()
@@ -81,6 +85,17 @@ class LibraryViewModel @Inject constructor(
 
     fun onSearchQueryChanged(query: String) {
         _searchQuery.value = query
+        if (query.isNotBlank() && query.length > 2) {
+            viewModelScope.launch {
+                libraryRepository.saveSearch(query)
+            }
+        }
+    }
+
+    fun deleteSearch(query: String) {
+        viewModelScope.launch {
+            libraryRepository.deleteSearch(query)
+        }
     }
 
     fun performFullScan() {

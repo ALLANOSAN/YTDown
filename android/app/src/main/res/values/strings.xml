@@ -1,0 +1,38 @@
+<resources>
+    <string name="app_name">YTDown</string>
+    
+    <!-- Library -->
+    <string name="lib_artists">Artists</string>
+    <string name="lib_albums">Albums</string>
+    <string name="lib_songs">Songs</string>
+    <string name="lib_playlists">Playlists</string>
+    <string name="lib_search_placeholder">Search library…</string>
+    <string name="lib_add_local_folder">Add Local Folder</string>
+    <string name="lib_no_items">No items found.</string>
+    <string name="lib_recent_searches">Recent Searches</string>
+    <string name="lib_recently_added">Recently Added</string>
+    <string name="lib_all_songs">All Songs</string>
+    
+    <!-- Player -->
+    <string name="player_now_playing">NOW PLAYING</string>
+    <string name="player_no_track">No track loaded</string>
+    <string name="player_unknown_artist">Unknown</string>
+    <string name="player_unknown_title">Unknown Title</string>
+    <string name="player_sleep_timer">Sleep Timer</string>
+    <string name="player_timer_label">Timer: %1$dm</string>
+    
+    <!-- Settings -->
+    <string name="settings_title">Settings</string>
+    <string name="settings_engine_title">Download Engine</string>
+    <string name="settings_repair_tags">Repair Tags</string>
+    <string name="settings_diagnostics">Diagnostics</string>
+    <string name="settings_export_library">Export Library</string>
+    <string name="settings_enrich_artwork">Enrich Artwork</string>
+    
+    <!-- Actions -->
+    <string name="action_save">Save</string>
+    <string name="action_cancel">Cancel</string>
+    <string name="action_delete">Delete</string>
+    <string name="action_edit">Edit</string>
+    <string name="action_export">Export Now</string>
+</resources>

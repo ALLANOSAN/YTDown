@@ -115,27 +115,19 @@ constructor(
             response
                     .onSuccess { json ->
                         val isSuccess = json.optBoolean("success", false)
-                        var lastMessage = json.optString("error", "Falha ao verificar versão")
-                        if (isSuccess) {
-                            lastMessage = "yt-dlp já está atualizado"
-                            if (json.optBoolean("update_available", false)) {
-                                lastMessage = "Nova versão disponível"
-                            }
+                        if (!isSuccess) {
+                            val errorMsg = json.optString("error", "Falha ao verificar versão")
+                            _state.update { it.copy(isCheckingUpdate = false, lastMessage = errorMsg) }
+                            return@onSuccess
                         }
 
-                        if (isSuccess) {
-                            _state.update {
-                                it.copy(
-                                        ytDlpVersion = json.optString("current_version", ""),
-                                        latestVersion = json.optString("latest_version", ""),
-                                        isCheckingUpdate = false,
-                                        lastMessage = lastMessage
-                                )
-                            }
-                        } else {
-                            _state.update {
-                                it.copy(isCheckingUpdate = false, lastMessage = lastMessage)
-                            }
+                        _state.update {
+                            it.copy(
+                                    ytDlpVersion = json.optString("current_version", ""),
+                                    latestVersion = json.optString("latest_version", ""),
+                                    isCheckingUpdate = false,
+                                    lastMessage = if (json.optBoolean("update_available", false)) "Nova versão disponível" else "yt-dlp já está atualizado"
+                            )
                         }
                     }
                     .onFailure {
@@ -160,19 +152,18 @@ constructor(
             response
                     .onSuccess { json ->
                         val isSuccess = json.optBoolean("success", false)
-                        var lastMessage = json.optString("message", "Atualização concluída")
-                        var ytDlpVersion = _state.value.ytDlpVersion
-                        var latestVersion = _state.value.latestVersion
-
                         if (!isSuccess) {
-                            lastMessage = json.optString("error", "Falha ao atualizar yt-dlp")
+                            val errorMsg = json.optString("error", "Falha ao atualizar yt-dlp")
+                            _state.update { it.copy(isUpdating = false, lastMessage = errorMsg) }
+                            return@onSuccess
                         }
-                        if (isSuccess) {
-                            ytDlpVersion = json.optString("current_version", ytDlpVersion)
-                            if (ytDlpVersion == "unknown") {
-                                ytDlpVersion = json.optString("latest_version", ytDlpVersion)
-                            }
-                            latestVersion = json.optString("latest_version", latestVersion)
+
+                        var ytDlpVersion = _state.value.ytDlpVersion
+                        val latestVersion = json.optString("latest_version", _state.value.latestVersion)
+                        
+                        ytDlpVersion = json.optString("current_version", ytDlpVersion)
+                        if (ytDlpVersion == "unknown") {
+                            ytDlpVersion = latestVersion
                         }
 
                         _state.update {
@@ -180,7 +171,7 @@ constructor(
                                     ytDlpVersion = ytDlpVersion,
                                     latestVersion = latestVersion,
                                     isUpdating = false,
-                                    lastMessage = lastMessage
+                                    lastMessage = json.optString("message", "Atualização concluída")
                             )
                         }
                     }

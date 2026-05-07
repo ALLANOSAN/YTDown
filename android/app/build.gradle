@@ -147,6 +147,7 @@ dependencies {
 
     // Imagem
     implementation "io.coil-kt:coil-compose:2.7.0"
+    implementation "androidx.palette:palette-ktx:1.0.0"
 
     // DocumentFile (Essencial para SAF/Escanear pastas externas)
     implementation "androidx.documentfile:documentfile:1.0.1"

@@ -68,6 +68,10 @@ class LibraryRepository @Inject constructor(
     fun getPlaylistTracks(playlistId: String): Flow<List<DownloadItemEntity>> = 
         libraryDao.getPlaylistTracks(playlistId)
 
+    // --- Smart Playlists ---
+    fun getRecentlyAdded(): Flow<List<DownloadItemEntity>> = 
+        downloadDao.getRecentlyAdded(limit = 50)
+
     // --- Edição em Cascata (Lote) ---
 
     /**

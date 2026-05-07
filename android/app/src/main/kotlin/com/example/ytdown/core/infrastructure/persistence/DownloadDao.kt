@@ -29,6 +29,9 @@ interface DownloadDao {
     @Query("SELECT * FROM downloads")
     suspend fun getAllDownloadsSync(): List<DownloadItemEntity>
 
+    @Query("SELECT * FROM downloads WHERE status = 'completed' ORDER BY createdAt DESC LIMIT :limit")
+    fun getRecentlyAdded(limit: Int): Flow<List<DownloadItemEntity>>
+
     @Query("SELECT DISTINCT artist FROM downloads WHERE artist IS NOT NULL AND artist != '' ORDER BY artist ASC")
     fun getDistinctArtists(): Flow<List<String>>
 

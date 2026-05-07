@@ -128,6 +128,22 @@ class FileSystemScannerService @Inject constructor(
 
     private suspend fun registerOrphan(path: String, nameWithoutExtension: String, extension: String, lastModified: Long) {
         val title = MetadataUtils.normalizeMetadataText(nameWithoutExtension)
+        
+        // 1. Verificação de duplicata: Busca por arquivo com mesmo título e tamanho
+        val fileSize = if (path.startsWith("content://")) {
+            // Tentar obter tamanho via DocumentFile se necessário, ou ignorar para simplificar
+            -1L 
+        } else {
+            File(path).length()
+        }
+
+        val existing = downloadDao.getAllDownloadsSync().find { 
+            it.title.equals(title, ignoreCase = true) && 
+            (fileSize == -1L || it.outputPath.let { p -> p.isNotBlank() && File(p).exists() && File(p).length() == fileSize })
+        }
+        
+        if (existing != null) return // Arquivo já existe, não duplicar
+
         var artist = MetadataUtils.guessArtistFromTitle(title) ?: "Desconhecido"
         var album = "YTDown"
         var artistImageUrl: String? = null
@@ -190,33 +206,43 @@ class FileSystemScannerService @Inject constructor(
 
     /**
      * Remove do banco todos os itens "completed" cujo arquivo privado
-     * não existe mais no disco (deletado fora do app).
-     * Retorna o número de itens removidos.
+     * não existe mais no disco ou que pertence a uma pasta não monitorada.
      */
     suspend fun removeStaleEntries(): Int = withContext(Dispatchers.IO) {
         val allItems = downloadDao.getAllDownloadsSync()
+        val monitoredFolders = folderService.folders.value
         var removed = 0
 
         allItems.forEach { item ->
+            // Não removemos downloads realizados internamente pelo app (tipo 0 ou sem path de pasta monitorada?)
+            // Se o item foi um download (url não vazia), mantemos. Se for "orphan", removemos se a pasta não for mais monitorada.
             if (item.status != "completed") return@forEach
-
-            // Se tem caminho exportado (content:// URI), não verificamos — o MediaStore
-            // gerencia esse arquivo e pode não ser acessível via File.
-            if (!item.exportedPath.isNullOrBlank()) return@forEach
+            
+            // Itens de download próprio (não órfãos) geralmente mantemos
+            if (!item.url.isNullOrBlank()) return@forEach
 
             val outputPath = item.outputPath.takeIf { it.isNotBlank() } ?: return@forEach
             
-            val exists = if (outputPath.startsWith("content://")) {
+            // Verifica se o arquivo ainda existe
+            val fileExists = if (outputPath.startsWith("content://")) {
                 DocumentFile.fromSingleUri(context, Uri.parse(outputPath))?.exists() == true
             } else {
                 File(outputPath).exists()
             }
 
-            if (!exists) {
-                android.util.Log.e("FileSystemScanner", "DEBUG: Arquivo não encontrado: $outputPath (Item: ${item.title})")
+            // Verifica se o arquivo pertence a alguma pasta monitorada
+            val isMonitored = monitoredFolders.any { folder ->
+                if (folder.startsWith("content://")) {
+                    outputPath.startsWith(folder)
+                } else {
+                    outputPath.startsWith(folder)
+                }
+            }
+
+            if (!fileExists || !isMonitored) {
                 downloadDao.delete(item)
                 removed++
-                android.util.Log.d("FileSystemScanner", "Entrada removida (arquivo ausente): ${item.title}")
+                android.util.Log.d("FileSystemScanner", "Entrada removida: ${item.title} (Status: ${if(!fileExists) "Arquivo sumiu" else "Pasta não monitorada"})")
             }
         }
         removed

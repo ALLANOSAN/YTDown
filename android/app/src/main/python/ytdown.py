@@ -7,6 +7,7 @@ from download import download_video
 from fetch import fetch_video_info
 from metadata import rewrite_file_metadata
 from runtime import check_yt_dlp_update, update_yt_dlp_if_needed
+from enrich import _search_metadata as search_metadata
 
 __all__ = [
     "download_video",

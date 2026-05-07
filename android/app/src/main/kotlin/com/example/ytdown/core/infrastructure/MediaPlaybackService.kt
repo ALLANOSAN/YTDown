@@ -4,6 +4,7 @@ import android.content.Intent
 import androidx.media3.common.Player
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
+import androidx.media3.session.MediaNotification
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
@@ -19,6 +20,12 @@ class MediaPlaybackService : MediaSessionService() {
         super.onCreate()
         val player = playerManager.getPlayer()
         mediaSession = MediaSession.Builder(this, player).build()
+        
+        // Habilita a notificação automática de mídia
+        setMediaNotificationProvider(
+            MediaNotification.Provider.Builder(this)
+                .build()
+        )
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? {

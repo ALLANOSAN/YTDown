@@ -86,6 +86,15 @@ class YtDlpWrapper(
         return exit
     }
 
+    fun fetchMetadataFromSource(artist: String, title: String): JSONObject? {
+        val py = Python.getInstance()
+        val module = py.getModule("ytdown")
+        val result = module.callAttr("search_metadata", artist, title)
+        
+        if (result == null || result.toString() == "None") return null
+        return JSONObject(result.toString())
+    }
+
     fun checkUpdate(appFilesDir: String, forceRemote: Boolean = false): String {
         val py = Python.getInstance()
         val module = py.getModule("ytdown")

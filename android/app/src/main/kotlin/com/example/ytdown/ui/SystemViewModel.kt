@@ -193,6 +193,8 @@ constructor(
 
     private suspend fun processMetadataRepairBatch() {
         val items = databaseService.getLibraryAudios()
+        android.util.Log.d("SystemViewModel", "DEBUG: Iniciando reparo de metadados para ${items.size} itens.")
+        
         if (items.isEmpty()) {
             _state.update {
                 it.copy(
@@ -215,23 +217,41 @@ constructor(
         for (item in items) {
             processed++
             _state.update { it.copy(repairProgress = processed / items.size.toFloat()) }
+            
+            android.util.Log.d("SystemViewModel", "DEBUG: Processando ($processed/${items.size}): ${item.title} - Path: ${item.outputPath}")
 
             if (item.outputPath.isBlank()) {
+                android.util.Log.e("SystemViewModel", "DEBUG: Falha - Path vazio para ${item.title}")
                 failed++
                 continue
             }
 
             val file = File(item.outputPath)
             if (!file.exists()) {
+                android.util.Log.e("SystemViewModel", "DEBUG: Falha - Arquivo inexistente: ${item.outputPath}")
                 failed++
                 continue
             }
 
+            // --- NOVO: Enriquecimento com MusicBrainz ---
+            var finalTitle = item.title.trim()
+            var finalArtist = item.artist?.trim().orEmpty()
+            var finalAlbum = item.album?.trim().orEmpty()
+
+            val enriched = ytDlp.fetchMetadataFromSource(finalArtist, finalTitle)
+            if (enriched != null) {
+                finalTitle = enriched.optString("title", finalTitle)
+                finalArtist = enriched.optString("artist", finalArtist)
+                finalAlbum = enriched.optString("album", finalAlbum)
+                android.util.Log.d("SystemViewModel", "DEBUG: Dados enriquecidos: $finalTitle, $finalArtist, $finalAlbum")
+            }
+            // --------------------------------------------
+
             val metadata =
                     MediaMetadata(
-                            title = MediaTitle(item.title.trim()),
-                            artist = ArtistName(item.artist?.trim().orEmpty()),
-                            album = AlbumName(item.album?.trim().orEmpty())
+                            title = MediaTitle(finalTitle),
+                            artist = ArtistName(finalArtist),
+                            album = AlbumName(finalAlbum)
                     )
 
             val artworkUrl =
@@ -249,10 +269,12 @@ constructor(
                 repaired++
             }
             if (!result.isSuccess()) {
+                android.util.Log.e("SystemViewModel", "DEBUG: Falha na injeção de tags para ${item.title}")
                 failed++
             }
         }
 
+        android.util.Log.d("SystemViewModel", "DEBUG: Reparo finalizado. Sucesso: $repaired, Falhas: $failed")
         _state.update {
             it.copy(
                     isRepairing = false,

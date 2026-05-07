@@ -83,12 +83,20 @@ fun SettingsScreen(
                     }
                     Spacer(modifier = Modifier.height(12.dp))
                     Button(
-                        onClick = { viewModel.updateYtDlp() },
+                        onClick = { 
+                            if (state.lastMessage?.contains("Nova versão disponível", ignoreCase = true) == true) {
+                                viewModel.updateYtDlp()
+                            } else {
+                                viewModel.refreshYtDlpVersion(forceNetwork = true)
+                            }
+                        },
                         enabled = !state.isUpdating && !state.isCheckingUpdate,
                         modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(containerColor = YTDownPurple)
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (state.lastMessage?.contains("Nova versão disponível", ignoreCase = true) == true) Color(0xFF388E3C) else YTDownPurple
+                        )
                     ) {
-                        Text("Verificar Atualização")
+                        Text(if (state.lastMessage?.contains("Nova versão disponível", ignoreCase = true) == true) "Instalar Atualização" else "Verificar Atualização")
                     }
                 }
             }

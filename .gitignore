@@ -64,3 +64,6 @@ build_error.txt
 android/app/outputs/
 android/app/intermediates/
 android/app/schemas/
+/scripts/
+.github/
+.agent/

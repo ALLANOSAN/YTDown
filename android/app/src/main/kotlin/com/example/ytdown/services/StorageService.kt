@@ -20,8 +20,32 @@ private data class ExportTarget(
     val strategy: String
 )
 
-object StorageService {
-    private const val TAG = "StorageService"
+/**
+ * FIX #2: Converted from `object` to `class` injected via Hilt.
+ * This allows proper unit testing with mocked dependencies.
+ * Kept companion object accessor for backward compatibility during migration.
+ */
+class StorageService @javax.inject.Inject constructor() {
+
+    companion object {
+        private const val TAG = "StorageService"
+
+        /** FIX #8: Deprecated — use ActivityResultContracts.CreateDocument instead */
+        @Deprecated("Use ActivityResultContracts.CreateDocument from Compose UI layer")
+        const val SAF_EXPORT_REQUEST_CODE = 1001
+
+        // Backward-compatible singleton for any code still referencing StorageService directly
+        @Volatile
+        private var instance: StorageService? = null
+
+        /** Backward-compatible accessor — prefer injection via Hilt */
+        fun getInstance(): StorageService {
+            return instance ?: synchronized(this) {
+                instance ?: StorageService().also { instance = it }
+            }
+        }
+    }
+
     private var pendingSafExport: PendingSafExport? = null
 
     private data class PendingSafExport(
@@ -117,7 +141,7 @@ object StorageService {
         return try {
             val sourceFile = File(sourcePath)
             if (!sourceFile.exists()) {
-                android.util.Log.e("StorageService", "Source file not found: $sourcePath")
+                android.util.Log.e(TAG, "Source file not found: $sourcePath")
                 return false
             }
 
@@ -129,10 +153,10 @@ object StorageService {
                 copySourceFileToPath(sourceFile, exportedPath)
             }
 
-            android.util.Log.d("StorageService", "Sync successful: $sourcePath -> $exportedPath")
+            android.util.Log.d(TAG, "Sync successful: $sourcePath -> $exportedPath")
             true
         } catch (e: Exception) {
-            android.util.Log.e("StorageService", "Sync failed: ${e.message}", e)
+            android.util.Log.e(TAG, "Sync failed: ${e.message}", e)
             false
         }
     }
@@ -275,7 +299,6 @@ object StorageService {
             diagnostics["stage"] = "insert"
 
             try {
-                // --- Verifica duplicata antes de inserir ---
                 val existingUri = findExistingInMediaStore(context, target.collection, fileName, target.relativePath)
                 if (existingUri != null) {
                     diagnostics["stage"] = "duplicate_overwrite"
@@ -380,7 +403,6 @@ object StorageService {
             diagnostics["stage"] = "legacy_duplicate_overwrite"
             LocalLogger.info("Duplicata encontrada (legacy), sobrescrevendo: $fileName")
         }
-        // overwrite = true garante que o arquivo existente seja substituído
         sourceFile.copyTo(targetFile, overwrite = true)
     }
 
@@ -420,7 +442,8 @@ object StorageService {
         sourceFile.copyTo(targetFile, overwrite = true)
     }
 
-    private fun launchSafFallback(
+    @Deprecated("Use ActivityResultContracts.CreateDocument from Compose UI layer")
+    fun launchSafFallback(
         activity: Activity?,
         sourcePath: StoragePath,
         displayName: String,
@@ -452,6 +475,7 @@ object StorageService {
                 putExtra(Intent.EXTRA_TITLE, displayName)
             }
 
+            @Suppress("DEPRECATION")
             activity.startActivityForResult(intent, SAF_EXPORT_REQUEST_CODE)
         } catch (e: Exception) {
             pendingSafExport = null

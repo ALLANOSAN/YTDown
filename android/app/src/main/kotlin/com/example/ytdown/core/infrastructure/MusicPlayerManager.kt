@@ -45,6 +45,24 @@ constructor(
 
     private var positionSaveJob: Job? = null
 
+    // FIX #16: Lifecycle methods for proper scope cancellation
+    /** Call from Activity/Fragment onCreate or when the manager becomes active. */
+    fun onCreate() {
+        // No-op for now; exists as a lifecycle anchor for future init logic
+    }
+
+    /** Call from Activity/Fragment onDestroy to cancel all coroutines and save state. */
+    fun onDestroy() {
+        destroy()
+    }
+
+    /** Cancel the CoroutineScope. Safe to call multiple times. */
+    fun destroy() {
+        positionSaveJob?.cancel()
+        saveCurrentPositionNow()
+        scope.cancel()
+    }
+
     init {
         player.addListener(
                 object : Player.Listener {
@@ -115,13 +133,12 @@ constructor(
         }
     }
 
+    // FIX #21: Replace if-chain with when expression
     fun toggleRepeatMode() {
-        var nextMode = Player.REPEAT_MODE_OFF
-        if (player.repeatMode == Player.REPEAT_MODE_OFF) {
-            nextMode = Player.REPEAT_MODE_ALL
-        }
-        if (player.repeatMode == Player.REPEAT_MODE_ALL) {
-            nextMode = Player.REPEAT_MODE_ONE
+        val nextMode = when (player.repeatMode) {
+            Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL
+            Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE
+            else -> Player.REPEAT_MODE_OFF
         }
         player.repeatMode = nextMode
         _repeatMode.value = nextMode
@@ -142,17 +159,11 @@ constructor(
     fun playPlaylist(items: List<DownloadItemEntity>, startIndex: Int = 0) {
         scope.launch {
             val intent = Intent(context, MediaPlaybackService::class.java)
-            // ✅ FIX: usa startForegroundService para garantir que o serviço
-            // seja iniciado imediatamente (obrigatório no Android 8+ para foreground).
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 context.startForegroundService(intent)
             } else {
                 context.startService(intent)
             }
-            // ✅ FIX: cede a execução para que MediaPlaybackService.onCreate()
-            // termine de criar a MediaSession ANTES de o player começar a tocar.
-            // Sem este yield(), o ExoPlayer toca sem sessão ativa e a notificação
-            // nunca aparece na barra ou na tela de bloqueio.
             kotlinx.coroutines.yield()
 
             val validItems = items.mapNotNull { resolvePlayableItem(it) }
@@ -261,7 +272,6 @@ constructor(
                                 .setTitle(item.title)
                                 .setArtist(item.artist)
                                 .setAlbumTitle(item.album)
-                                // Define explicitamente como música para o sistema ativar controles
                                 .setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC)
                                 .setArtworkUri(resolveArtworkUri(item))
                                 .build()

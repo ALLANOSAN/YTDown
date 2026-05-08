@@ -12,7 +12,11 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
     <uses-permission android:name="android.permission.VIBRATE"/>
-    
+
+    <!-- FIX #3: Legacy storage permission for Android < 10 (API < 29) -->
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28"
+        tools:ignore="ScopedStorage" />
 
     <application
         android:label="YTDown"
@@ -21,8 +25,8 @@
         android:allowBackup="false"
         android:networkSecurityConfig="@xml/network_security_config">
         <meta-data
-        android:name="firebase_crashlytics_collection_enabled"
-        android:value="true" />
+            android:name="firebase_crashlytics_collection_enabled"
+            android:value="true" />
 
         <activity
             android:name=".MainActivity"

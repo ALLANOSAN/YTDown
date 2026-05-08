@@ -15,12 +15,16 @@ import com.example.ytdown.core.infrastructure.NotificationHelper
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import java.io.File
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 @HiltWorker
 class DownloadWorker
@@ -56,9 +60,15 @@ constructor(
     private var lastProgressValue = -1
     private var lastDbUpdateTime = 0L
 
+    /** FIX #4: Watchdog now sets a flag that the download loop can check */
+    private val stalled = AtomicBoolean(false)
+
     override suspend fun doWork(): Result {
         android.util.Log.e("DownloadWorker", "🚀 doWork started!")
-        return try {
+        // FIX #5: Use try/finally to guarantee lock release
+        wakeLock.acquire(30 * 60 * 1000L)
+        wifiLock.acquire()
+        try {
             val id = inputData.getString("VIDEO_ID") ?: return Result.failure()
             val url = inputData.getString("VIDEO_URL") ?: return Result.failure()
             val path = inputData.getString("OUTPUT_PATH") ?: return Result.failure()
@@ -84,8 +94,6 @@ constructor(
                             quality = inputData.getString("QUALITY") ?: "192"
                     )
 
-            wakeLock.acquire(30 * 60 * 1000L)
-            wifiLock.acquire()
             setForeground(createForegroundInfo(title, 0))
 
             val startItem = repository.find(id)
@@ -93,6 +101,7 @@ constructor(
                 repository.persist(startItem.copy(status = "downloading", progress = 0.0))
             }
 
+            // FIX #4: Watchdog sets stalled flag + cancels the progress scope
             val watchdogScope = CoroutineScope(Dispatchers.IO + Job())
             val watchdogJob =
                     watchdogScope.launch {
@@ -104,25 +113,42 @@ constructor(
                                         "DownloadWorker",
                                         "⚠️ Watchdog: sem progresso por 5min. Abortando."
                                 )
+                                stalled.set(true)
+                                progressScope.cancel()
                                 break
                             }
                         }
                     }
 
+            // FIX #4 & #7: Wrap in withTimeoutOrNull and check stalled flag
             val downloadResult =
-                    engine.downloadAndTag(
-                            VideoUrl(url),
-                            File(path),
-                            metadata,
-                            downloadOptions,
-                            artworkUrl
-                    ) { progress ->
-                        if (progress != lastProgressValue) {
-                            lastProgressValue = progress
-                            lastProgressTime.set(System.currentTimeMillis())
-                            progressScope.launch { updateProgress(id, title, progress) }
+                    withTimeoutOrNull(30 * 60 * 1000L) {
+                        engine.downloadAndTag(
+                                VideoUrl(url),
+                                File(path),
+                                metadata,
+                                downloadOptions,
+                                artworkUrl
+                        ) { progress ->
+                            // FIX #4: Don't update if watchdog already triggered
+                            if (stalled.get()) return@downloadAndTag
+                            if (progress != lastProgressValue) {
+                                lastProgressValue = progress
+                                lastProgressTime.set(System.currentTimeMillis())
+                                if (!progressScope.isActive) return@downloadAndTag
+                                progressScope.launch { updateProgress(id, title, progress) }
+                            }
                         }
                     }
+
+            // FIX #4: If stalled or timed out, report failure
+            if (stalled.get() || downloadResult == null) {
+                android.util.Log.e("DownloadWorker", "⚠️ Download cancelled: stalled=${stalled.get()}, timedOut=${downloadResult == null}")
+                updateFinalStatus(id, success = false)
+                watchdogJob.cancel()
+                progressScope.cancel()
+                return Result.failure()
+            }
 
             val success = downloadResult.exitCode.isSuccess()
             updateFinalStatus(
@@ -132,13 +158,19 @@ constructor(
             )
             watchdogJob.cancel()
             progressScope.cancel()
-            if (wakeLock.isHeld) wakeLock.release()
-            if (wifiLock.isHeld) wifiLock.release()
 
             if (success) Result.success() else Result.failure()
+        } catch (e: CancellationException) {
+            android.util.Log.e("DownloadWorker", "🛑 doWork CANCELLED")
+            Result.failure()
         } catch (e: Exception) {
             android.util.Log.e("DownloadWorker", "❌ doWork CRASHED: ${e.message}", e)
             Result.failure()
+        } finally {
+            // FIX #5: Always release locks
+            progressScope.cancel()
+            if (wakeLock.isHeld) wakeLock.release()
+            if (wifiLock.isHeld) wifiLock.release()
         }
     }
 

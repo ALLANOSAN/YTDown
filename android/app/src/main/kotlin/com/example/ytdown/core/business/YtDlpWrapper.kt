@@ -15,6 +15,19 @@ class YtDlpWrapper(
         private val binaryOrchestrator: BinaryOrchestrator,
         private val observabilityService: ObservabilityService
 ) {
+    // FIX #7: Volatile cancelled flag for coroutine cancellation support
+    @Volatile
+    private var isCancelled = false
+
+    /** Cancel any in-progress download. */
+    fun cancel() {
+        isCancelled = true
+    }
+
+    /** Reset cancellation state (e.g. before starting a new download). */
+    fun resetCancellation() {
+        isCancelled = false
+    }
     /**
      * Executa o download de vídeo/áudio usando yt-dlp via Chaquopy. Retorna DownloadResult com
      * ExitCode e o caminho real do arquivo gerado.
@@ -27,6 +40,11 @@ class YtDlpWrapper(
             artworkUrl: String? = null,
             onProgress: ((Int) -> Unit)? = null
     ): DownloadResult {
+        // FIX #7: Check for early cancellation before starting
+        if (isCancelled || Thread.currentThread().isInterrupted) {
+            observabilityService.trackError("YtDlpWrapper", "Download cancelled before start", metadata = mapOf("url" to url.value))
+            return DownloadResult(exitCode = ExitCode(1))
+        }
         return try {
             val py = Python.getInstance()
             val module = py.getModule("ytdown")

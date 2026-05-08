@@ -25,6 +25,14 @@ import javax.inject.Inject
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 
+// FIX #9: Sealed class for proper error state exposed to UI
+sealed class DownloadUiState {
+    object Idle : DownloadUiState()
+    object Loading : DownloadUiState()
+    data class Success(val message: String = "") : DownloadUiState()
+    data class Error(val message: String, val throwable: Throwable? = null) : DownloadUiState()
+}
+
 data class DownloadInputState(
         val urlInput: String = "",
         val fetchedItems: List<VideoPreviewItem> = emptyList(),
@@ -60,7 +68,9 @@ constructor(
         private val downloadFeedService: DownloadFeedService,
         private val libraryRepository: LibraryRepository,
         private val downloadRepository: DownloadRepository,
-        private val observabilityService: ObservabilityService
+        private val observabilityService: ObservabilityService,
+        // FIX #10: Inject StorageService via Hilt instead of calling companion object directly
+        private val storageService: StorageService
 ) : ViewModel() {
     private val fetchQueue = TaskQueue(maxConcurrent = 1)
 
@@ -69,6 +79,10 @@ constructor(
 
     private val _listState = MutableStateFlow(DownloadListState())
     val listState = _listState.asStateFlow()
+
+    // FIX #9: Expose UI state with proper Loading/Success/Error states
+    private val _uiState = MutableStateFlow<DownloadUiState>(DownloadUiState.Idle)
+    val uiState: StateFlow<DownloadUiState> = _uiState.asStateFlow()
 
     /**
      * Flow de lista completa — usado pela LibraryScreen e PlaylistDetailScreen que precisam de
@@ -257,7 +271,8 @@ constructor(
             }
             var mediaType = StorageMediaType("video")
             if (item.type == 0) mediaType = StorageMediaType("audio")
-            StorageService.exportToPublicCollection(
+            // FIX #10: Use injected storageService instance instead of companion object
+            storageService.exportToPublicCollection(
                     context = context,
                     sourcePath = StoragePath(item.outputPath),
                     displayName = item.title.ifBlank { File(item.outputPath).name },
@@ -383,6 +398,7 @@ constructor(
     }
 
     fun startDownloadFlow(folder: FilePath) {
+        _uiState.value = DownloadUiState.Loading
         val currentState = _inputState.value
         val selectedItems =
                 currentState.fetchedItems.filter { item ->
@@ -393,34 +409,40 @@ constructor(
         if (selectedItems.isEmpty()) return
 
         viewModelScope.launch {
-            val baseMeta =
-                    MediaMetadata(
-                            title = MediaTitle(""),
-                            artist = ArtistName(currentState.artistInput),
-                            album = AlbumName(currentState.albumInput)
-                    )
-            val downloadOptions =
-                    DownloadOptions(
-                            type = currentState.selectedDownloadType,
-                            format = currentState.selectedFormat,
-                            quality = currentState.selectedQuality
-                    )
+            try {
+                val baseMeta =
+                        MediaMetadata(
+                                title = MediaTitle(""),
+                                artist = ArtistName(currentState.artistInput),
+                                album = AlbumName(currentState.albumInput)
+                        )
+                val downloadOptions =
+                        DownloadOptions(
+                                type = currentState.selectedDownloadType,
+                                format = currentState.selectedFormat,
+                                quality = currentState.selectedQuality
+                        )
 
-            var resolvedArtworkUrl: String? = null
-            if (currentState.artistInput.isNotBlank()) {
-                resolvedArtworkUrl =
-                        currentState.albumInput.takeIf { it.isNotBlank() }?.let {
-                            artworkManager.getAlbumCover(currentState.artistInput, it)
-                        }
-                                ?: artworkManager.getArtistImage(currentState.artistInput)
-            }
+                var resolvedArtworkUrl: String? = null
+                if (currentState.artistInput.isNotBlank()) {
+                    resolvedArtworkUrl =
+                            currentState.albumInput.takeIf { it.isNotBlank() }?.let {
+                                artworkManager.getAlbumCover(currentState.artistInput, it)
+                            }
+                                    ?: artworkManager.getArtistImage(currentState.artistInput)
+                }
 
-            selectedItems.forEach { item ->
-                val finalMeta = baseMeta.copy(title = item.title)
-                scheduler.schedule(item.url, folder, finalMeta, downloadOptions, resolvedArtworkUrl)
-            }
-            _inputState.update {
-                it.copy(fetchedItems = emptyList(), urlInput = "", showDialog = false)
+                selectedItems.forEach { item ->
+                    val finalMeta = baseMeta.copy(title = item.title)
+                    scheduler.schedule(item.url, folder, finalMeta, downloadOptions, resolvedArtworkUrl)
+                }
+                _inputState.update {
+                    it.copy(fetchedItems = emptyList(), urlInput = "", showDialog = false)
+                }
+                _uiState.value = DownloadUiState.Success(message = "${selectedItems.size} item(s) scheduled for download")
+            } catch (e: Exception) {
+                _uiState.value = DownloadUiState.Error(message = e.message ?: "Unknown error scheduling download", throwable = e)
+                observabilityService.trackError("DownloadViewModel", "startDownloadFlow failed", e)
             }
         }
     }

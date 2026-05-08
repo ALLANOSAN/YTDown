@@ -41,16 +41,14 @@ object AppModule {
     fun provideDatabase(@ApplicationContext context: Context): AppDatabase =
             Room.databaseBuilder(context, AppDatabase::class.java, "ytdown.db")
                     .addMigrations(*AppDatabase.ALL_MIGRATIONS)
-                    // fallbackToDestructiveMigration() REMOVIDO — migrations reais preservam os
-                    // dados
                     .build()
 
     @Provides
-    @Singleton // ← FIX 3: DAOs agora são Singleton — evita instâncias duplicadas
+    @Singleton
     fun provideDownloadDao(db: AppDatabase): DownloadDao = db.downloadDao()
 
     @Provides
-    @Singleton // ← FIX 3
+    @Singleton
     fun provideLibraryDao(db: AppDatabase): LibraryDao = db.libraryDao()
 
     @Provides
@@ -77,7 +75,10 @@ object AppModule {
 
     @Provides @Singleton fun provideMediaInfoParser(): MediaInfoParser = MediaInfoParser()
 
-    @Provides @Singleton fun provideStorageService(): StorageService = StorageService
+    // FIX #2: StorageService is now a proper injectable class
+    @Provides
+    @Singleton
+    fun provideStorageService(): StorageService = StorageService()
 
     @Provides
     @Singleton

@@ -14,6 +14,8 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
 class MetadataTools(val scanner: MediaScanner, val resolver: MimeTypeResolver)
@@ -87,28 +89,32 @@ constructor(
         val target = exportedPath?.takeIf { it.isNotBlank() } ?: path.value
         val resolvedArtworkUrl = resolveArtworkUrl(artworkUrl)
 
-        try {
-            if (target.startsWith("content://")) {
-                return rewriteMetadataOnContentUri(target, metadata, path, resolvedArtworkUrl)
-            }
+        // ✅ FIX: ytDlp.rewriteMetadata() é bloqueante (Chaquo Python).
+        // Sem withContext(IO) rodava na Main thread e causava ANR → app fechava ao salvar.
+        return withContext(Dispatchers.IO) {
+            try {
+                if (target.startsWith("content://")) {
+                    return@withContext rewriteMetadataOnContentUri(target, metadata, path, resolvedArtworkUrl)
+                }
 
-            val result =
-                    ytDlp.rewriteMetadata(
-                            filePath = target,
-                            title = metadata.title.value,
-                            artist = metadata.artist.value,
-                            album = metadata.album.value,
-                            artworkUrl = resolvedArtworkUrl
-                    )
+                val result =
+                        ytDlp.rewriteMetadata(
+                                filePath = target,
+                                title = metadata.title.value,
+                                artist = metadata.artist.value,
+                                album = metadata.album.value,
+                                artworkUrl = resolvedArtworkUrl
+                        )
 
-            if (result.isSuccess()) {
-                val mime = tools.resolver.fromPath(FilePath(target))
-                tools.scanner.scanSync(FilePath(target), mime)
-            }
-            return result
-        } finally {
-            if (resolvedArtworkUrl != artworkUrl) {
-                File(resolvedArtworkUrl ?: "").takeIf { it.exists() }?.delete()
+                if (result.isSuccess()) {
+                    val mime = tools.resolver.fromPath(FilePath(target))
+                    tools.scanner.scanSync(FilePath(target), mime)
+                }
+                result
+            } finally {
+                if (resolvedArtworkUrl != artworkUrl) {
+                    File(resolvedArtworkUrl ?: "").takeIf { it.exists() }?.delete()
+                }
             }
         }
     }

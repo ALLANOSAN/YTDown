@@ -40,7 +40,8 @@ class MediaPlaybackService : MediaSessionService() {
         setMediaNotificationProvider(
             DefaultMediaNotificationProvider.Builder(this)
                 .setChannelId(CHANNEL_ID)
-                .setChannelName("Reprodução de Música")
+                // ✅ setChannelName() omitido: já definido em createNotificationChannel()
+                // e o método espera @StringRes Int, não String direta
                 .build()
         )
 

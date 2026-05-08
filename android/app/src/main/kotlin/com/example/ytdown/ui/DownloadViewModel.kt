@@ -1,6 +1,7 @@
 package com.example.ytdown.ui
 
 import android.content.Context
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.paging.PagingData
@@ -273,11 +274,15 @@ constructor(
             newArtist: String?,
             newAlbum: String?
     ) {
-        viewModelScope.launch {
-            val item = downloadRepository.find(id) ?: return@launch
-            downloadRepository.persist(
-                    item.copy(title = newTitle, artist = newArtist, album = newAlbum)
-            )
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val item = downloadRepository.find(id) ?: return@launch
+                downloadRepository.persist(
+                        item.copy(title = newTitle, artist = newArtist, album = newAlbum)
+                )
+            } catch (e: Exception) {
+                observabilityService.trackError("DownloadViewModel", "Error updating download metadata", e, mapOf("id" to id))
+            }
         }
     }
 

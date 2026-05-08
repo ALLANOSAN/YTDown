@@ -262,7 +262,11 @@ fun LibraryScreen(
                                     playerViewModel = playerViewModel,
                                     libraryViewModel = libraryViewModel,
                                     onNavigateToPlayer = onNavigateToPlayer,
-                                    onAddToPlaylist = { song -> songForPlaylist = song }
+                                    onAddToPlaylist = { song -> songForPlaylist = song },
+                                    // ✅ FIX: conecta ao systemViewModel para reescrever tags no arquivo
+                                    onEditName = { updatedSong ->
+                                        systemViewModel.updateTrackName(updatedSong, updatedSong.title)
+                                    }
                             )
 
                     // --- ABA PLAYLISTS ---
@@ -282,7 +286,10 @@ fun LibraryScreen(
                     playerViewModel = playerViewModel,
                     libraryViewModel = libraryViewModel,
                     onNavigateToPlayer = onNavigateToPlayer,
-                    onAddToPlaylist = { song -> songForPlaylist = song }
+                    onAddToPlaylist = { song -> songForPlaylist = song },
+                    onEditName = { updatedSong ->
+                        systemViewModel.updateTrackName(updatedSong, updatedSong.title)
+                    }
                 )
             }
         }
@@ -379,9 +386,12 @@ private fun SongsList(
         playerViewModel: PlayerViewModel,
         libraryViewModel: LibraryViewModel,
         onNavigateToPlayer: () -> Unit,
-        onAddToPlaylist: (DownloadItemEntity) -> Unit
+        onAddToPlaylist: (DownloadItemEntity) -> Unit,
+        // ✅ FIX: callback para editar nome — wired em LibraryScreen para systemViewModel.updateTrackName()
+        onEditName: ((DownloadItemEntity) -> Unit)? = null
 ) {
     var songMenu by remember { mutableStateOf<DownloadItemEntity?>(null) }
+    var editingSong by remember { mutableStateOf<DownloadItemEntity?>(null) }
 
     if (songs.isEmpty()) {
         EmptyLibraryMessage()
@@ -428,22 +438,22 @@ private fun SongsList(
 
         itemsIndexed(items = songs, key = { _, s -> s.id }) { index, song ->
             StaggeredVerticalEntrance(index = index) {
-                Box(
-                        modifier =
-                                Modifier.fillMaxWidth()
-                                        .clip(RoundedCornerShape(12.dp))
-                                        .combinedClickable(
-                                                onClick = {
-                                                    libraryViewModel.triggerHapticClick()
-                                                    playerViewModel.playPlaylist(songs, index)
-                                                    onNavigateToPlayer()
-                                                },
-                                                onLongClick = {
-                                                    libraryViewModel.triggerHapticHeavy()
-                                                    songMenu = song
-                                                }
-                                        )
-                ) { DownloadItemRow(item = song, onClick = {}) }
+                // ✅ FIX: Antes havia um Box.combinedClickable envolvendo o DownloadItemRow
+                // que também tem combinedClickable interno. Gestures aninhados fazem o inner
+                // consumir o long press, impedindo o outer de disparar — causando crash/freezes.
+                // Solução: passar onClick/onLongClick diretamente ao componente filho.
+                DownloadItemRow(
+                    item = song,
+                    onClick = {
+                        libraryViewModel.triggerHapticClick()
+                        playerViewModel.playPlaylist(songs, index)
+                        onNavigateToPlayer()
+                    },
+                    onLongClick = {
+                        libraryViewModel.triggerHapticHeavy()
+                        songMenu = song
+                    }
+                )
             }
         }
     }
@@ -455,6 +465,25 @@ private fun SongsList(
                 title = { Text(song.title, color = Color.White, fontSize = 15.sp, maxLines = 2) },
                 text = {
                     Column {
+                        // ✅ FIX: opção de editar nome adicionada ao menu de long press
+                        if (onEditName != null) {
+                            ListItem(
+                                    headlineContent = { Text("Editar Nome") },
+                                    leadingContent = {
+                                        Icon(Icons.Default.Edit, null, tint = YTDownPurple)
+                                    },
+                                    modifier = Modifier.clickable {
+                                        // ✅ Abre o diálogo de edição inline; onEditName é
+                                        // chamado só depois que o usuário digitar o novo nome
+                                        editingSong = song
+                                        songMenu = null
+                                    },
+                                    colors = ListItemDefaults.colors(
+                                            containerColor = Color.Transparent,
+                                            headlineColor = Color.White
+                                    )
+                            )
+                        }
                         ListItem(
                                 headlineContent = { Text("Adicionar à Playlist") },
                                 leadingContent = {
@@ -478,6 +507,49 @@ private fun SongsList(
                     }
                 },
                 confirmButton = {}
+        )
+    }
+
+    // ✅ FIX: diálogo inline de edição de nome da música
+    editingSong?.let { song ->
+        var newTitle by remember(song.id) { mutableStateOf(song.title) }
+        AlertDialog(
+                onDismissRequest = { editingSong = null },
+                containerColor = SurfaceDark,
+                title = { Text("Editar Nome", color = Color.White) },
+                text = {
+                    OutlinedTextField(
+                            value = newTitle,
+                            onValueChange = { newTitle = it },
+                            label = { Text("Título") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                            textStyle = LocalTextStyle.current.copy(color = Color.White),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = YTDownPurple,
+                                    unfocusedBorderColor = SurfaceDark,
+                                    focusedLabelColor = YTDownPurple,
+                                    unfocusedLabelColor = TextSecondary
+                            )
+                    )
+                },
+                confirmButton = {
+                    Button(
+                            onClick = {
+                                if (newTitle.isNotBlank()) {
+                                    onEditName?.invoke(song.copy(title = newTitle))
+                                    editingSong = null
+                                }
+                            },
+                            enabled = newTitle.isNotBlank(),
+                            colors = ButtonDefaults.buttonColors(containerColor = YTDownPurple)
+                    ) { Text("Salvar") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { editingSong = null }) {
+                        Text("Cancelar", color = TextSecondary)
+                    }
+                }
         )
     }
 }

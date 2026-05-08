@@ -207,7 +207,10 @@ constructor(
     fun updateArtistBatch(oldName: String, newName: String, photo: String?) { viewModelScope.launch { libraryRepository.updateArtistInBatch(oldName, newName, photo) } }
 
     fun updateTrackName(song: DownloadItemEntity, newName: String) {
-        viewModelScope.launch {
+        // ✅ FIX (segunda camada): lança na IO para garantir que, mesmo que
+        // rewriteMetadata seja chamado de outro lugar sem withContext, a Main
+        // thread nunca seja bloqueada pelo Chaquo Python.
+        viewModelScope.launch(Dispatchers.IO) {
             val updatedSong = song.copy(title = newName)
             databaseService.updateDownload(updatedSong)
 

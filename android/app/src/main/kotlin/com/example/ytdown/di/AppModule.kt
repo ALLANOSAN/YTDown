@@ -103,8 +103,9 @@ object AppModule {
     @Singleton
     fun provideYtDlpWrapper(
             env: PythonEnvironment,
-            binaryOrchestrator: BinaryOrchestrator
-    ): YtDlpWrapper = YtDlpWrapper(env, binaryOrchestrator)
+            binaryOrchestrator: BinaryOrchestrator,
+            observabilityService: ObservabilityService
+    ): YtDlpWrapper = YtDlpWrapper(env, binaryOrchestrator, observabilityService)
 
     @Provides
     @Singleton

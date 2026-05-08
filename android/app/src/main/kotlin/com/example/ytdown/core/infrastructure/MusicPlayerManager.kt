@@ -3,6 +3,7 @@ package com.example.ytdown.core.infrastructure
 import android.content.Context
 import android.net.Uri
 import android.content.Intent
+import android.os.Build
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
@@ -141,7 +142,18 @@ constructor(
     fun playPlaylist(items: List<DownloadItemEntity>, startIndex: Int = 0) {
         scope.launch {
             val intent = Intent(context, MediaPlaybackService::class.java)
-            context.startService(intent)
+            // ✅ FIX: usa startForegroundService para garantir que o serviço
+            // seja iniciado imediatamente (obrigatório no Android 8+ para foreground).
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(intent)
+            } else {
+                context.startService(intent)
+            }
+            // ✅ FIX: cede a execução para que MediaPlaybackService.onCreate()
+            // termine de criar a MediaSession ANTES de o player começar a tocar.
+            // Sem este yield(), o ExoPlayer toca sem sessão ativa e a notificação
+            // nunca aparece na barra ou na tela de bloqueio.
+            kotlinx.coroutines.yield()
 
             val validItems = items.mapNotNull { resolvePlayableItem(it) }
             if (validItems.isEmpty()) return@launch

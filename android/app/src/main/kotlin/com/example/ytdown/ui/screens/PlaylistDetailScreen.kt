@@ -55,7 +55,7 @@ fun PlaylistDetailScreen(
 ) {
     val haptic = LocalHapticFeedback.current
     val allItems: List<DownloadItemEntity> by viewModel.allDownloads.collectAsStateWithLifecycle(initialValue = emptyList())
-    val playlists by systemViewModel.playlists.collectAsStateWithLifecycle()
+    val playlists by systemViewModel.playlists.collectAsStateWithLifecycle(initialValue = emptyList())
 
     // Descobre o nome da playlist se estivermos no modo playlist-por-ID
     val playlistName = if (isPlaylistId) {
@@ -305,40 +305,6 @@ fun PlaylistDetailScreen(
             }
         )
     }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Diálogos reutilizados nessa tela
-// ─────────────────────────────────────────────────────────────────────────────
-
-@Composable
-fun PlaylistSelectionDialog(
-    playlists: List<PlaylistWithCount>,
-    onDismiss: () -> Unit,
-    onSelect: (PlaylistWithCount) -> Unit
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = SurfaceDark,
-        title = { Text("Adicionar à Playlist", color = Color.White) },
-        text = {
-            if (playlists.isEmpty()) {
-                Text("Crie uma playlist primeiro na aba Playlists.", color = TextSecondary)
-            } else {
-                LazyColumn(modifier = Modifier.heightIn(max = 300.dp)) {
-                    items(playlists) { playlist ->
-                        ListItem(
-                            headlineContent = { Text(playlist.playlist.name, color = Color.White) },
-                            supportingContent = { Text("${playlist.trackCount} músicas", color = TextSecondary) },
-                            modifier = Modifier.clickable { onSelect(playlist) },
-                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-                        )
-                    }
-                }
-            }
-        },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } }
-    )
 }
 
 @Composable

@@ -134,6 +134,7 @@ constructor(
                         }
                     }
 
+            // FIX #4: If stalled or timed out, report failure
             if (stalled.get() || downloadResult == null) {
                 android.util.Log.e("DownloadWorker", "⚠️ Download cancelled: stalled=${stalled.get()}, timedOut=${downloadResult == null}")
                 updateFinalStatus(id, success = false)

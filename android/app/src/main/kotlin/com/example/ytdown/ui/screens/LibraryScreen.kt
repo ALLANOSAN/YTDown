@@ -29,7 +29,7 @@ fun LibraryScreen(
 ) {
     val uiState by libraryViewModel.uiState.collectAsStateWithLifecycle()
     val completedSongs = uiState.songs
-    val recentlyAdded by libraryViewModel.recentlyAdded.collectAsStateWithLifecycle()
+    val recentlyAdded by libraryViewModel.recentlyAdded.collectAsStateWithLifecycle(initialValue = emptyList())
     val playlists by systemViewModel.playlists.collectAsStateWithLifecycle()
     val recentSearches by libraryViewModel.recentSearches.collectAsStateWithLifecycle()
     

@@ -68,7 +68,7 @@ fun SongsList(
                     recentlyAdded.take(10).forEach { song ->
                         RecentSongCard(song = song, onClick = {
                             libraryViewModel.triggerHapticClick()
-                            playerViewModel.playerManager.playTrack(song)
+                            playerViewModel.playTrack(song)
                             onNavigateToPlayer()
                         })
                     }
@@ -84,7 +84,7 @@ fun SongsList(
                     item = song,
                     onClick = {
                         libraryViewModel.triggerHapticClick()
-                        playerViewModel.playerManager.playPlaylist(songs, index)
+                        playerViewModel.playPlaylist(songs, index)
                         onNavigateToPlayer()
                     },
                     onLongClick = {

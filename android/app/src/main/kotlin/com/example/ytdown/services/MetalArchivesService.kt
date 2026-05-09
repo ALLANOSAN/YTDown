@@ -28,6 +28,15 @@ class MetalArchivesService @Inject constructor() {
             BandDetailsResponse(success = false, error = e.message ?: "Erro desconhecido")
         }
     }
+
+    suspend fun searchAlbumArt(bandName: String, albumName: String): BandDetailsResponse = withContext(Dispatchers.IO) {
+        try {
+            val jsonResponse = PythonBridge.invokePythonJson("search_album_art", bandName, albumName)
+            gson.fromJson(jsonResponse, BandDetailsResponse::class.java)
+        } catch (e: Exception) {
+            BandDetailsResponse(success = false, error = e.message ?: "Erro desconhecido")
+        }
+    }
 }
 
 data class BandDetailsResponse(

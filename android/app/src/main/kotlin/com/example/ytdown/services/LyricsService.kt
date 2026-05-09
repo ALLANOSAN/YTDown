@@ -16,13 +16,42 @@ class LyricsService @Inject constructor() {
 
     suspend fun getLyrics(artist: String, title: String, album: String? = null, duration: Int? = null): LyricsResponse? = withContext(Dispatchers.IO) {
         try {
-            val url = "$baseUrl?artist=${java.net.URLEncoder.encode(artist, "UTF-8")}&track=${java.net.URLEncoder.encode(title, "UTF-8")}"
-            val request = Request.Builder().url(url).build()
+            val artistEncoded = java.net.URLEncoder.encode(artist, "UTF-8")
+            val trackEncoded = java.net.URLEncoder.encode(title, "UTF-8")
+            
+            var url = "$baseUrl?artist=$artistEncoded&track=$trackEncoded"
+            if (!album.isNullOrBlank()) {
+                url += "&album_name=${java.net.URLEncoder.encode(album, "UTF-8")}"
+            }
+            if (duration != null && duration > 0) {
+                url += "&duration=$duration"
+            }
+            
+            val request = Request.Builder()
+                .url(url)
+                .header("User-Agent", "YTDown (https://github.com/ALLANOSAN/APPDOWNLOADYOUTUBE)")
+                .build()
+                
             client.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) return@withContext null
-                gson.fromJson(response.body?.string(), LyricsResponse::class.java)
+                val body = response.body?.string() ?: return@withContext null
+                gson.fromJson(body, LyricsResponse::class.java)
             }
-        } catch (e: Exception) { null }
+        } catch (e: Exception) {
+            android.util.Log.e("LyricsService", "Erro ao buscar letras: ${e.message}")
+            null
+        }
     }
 }
-data class LyricsResponse(val plainLyrics: String?, val syncedLyrics: String?)
+
+data class LyricsResponse(
+    val id: Int,
+    val name: String?,
+    val trackName: String?,
+    val artistName: String?,
+    val albumName: String?,
+    val duration: Int?,
+    val instrumental: Boolean,
+    val plainLyrics: String?,
+    val syncedLyrics: String?
+)

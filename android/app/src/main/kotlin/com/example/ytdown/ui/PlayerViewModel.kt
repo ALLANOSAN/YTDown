@@ -17,7 +17,8 @@ import androidx.media3.common.Player
 @HiltViewModel
 class PlayerViewModel @Inject constructor(
     val playerManager: MusicPlayerManager,
-    private val hapticManager: HapticManager
+    private val hapticManager: HapticManager,
+    private val lyricsService: com.example.ytdown.services.LyricsService
 ) : ViewModel() {
 
     val currentTrack = playerManager.currentTrack
@@ -26,6 +27,9 @@ class PlayerViewModel @Inject constructor(
     val duration = MutableStateFlow(0L)
     val isShuffleEnabled = playerManager.isShuffleEnabled
     val repeatMode = playerManager.repeatMode
+
+    private val _lyrics = MutableStateFlow<com.example.ytdown.services.LyricsResponse?>(null)
+    val lyrics = _lyrics.asStateFlow()
 
     private val _dominantColor = MutableStateFlow<Int?>(null)
     val dominantColor = _dominantColor.asStateFlow()
@@ -57,11 +61,26 @@ class PlayerViewModel @Inject constructor(
         startProgressTicker()
         isPlaying.value = playerManager.getPlayer().isPlaying
 
-        // Extração de paleta quando a música muda
+        // Extração de paleta e busca de letras quando a música muda
         viewModelScope.launch {
             currentTrack.collect { track ->
-                track?.let { updatePalette(it) }
+                track?.let { 
+                    updatePalette(it)
+                    fetchLyrics(it)
+                } ?: run {
+                    _lyrics.value = null
+                }
             }
+        }
+    }
+
+    private fun fetchLyrics(track: DownloadItemEntity) {
+        viewModelScope.launch {
+            _lyrics.value = lyricsService.getLyrics(
+                artist = track.artist ?: "Unknown",
+                title = track.title,
+                album = track.album
+            )
         }
     }
 

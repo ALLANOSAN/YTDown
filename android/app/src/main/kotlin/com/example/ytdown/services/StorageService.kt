@@ -13,6 +13,8 @@ import java.io.File
 import java.io.IOException
 import com.example.ytdown.core.domain.*
 import com.example.ytdown.utils.LocalLogger
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.flow.MutableSharedFlow
 
 private data class ExportTarget(
     val collection: Uri,
@@ -30,15 +32,23 @@ class StorageService @javax.inject.Inject constructor() {
     companion object {
         private const val TAG = "StorageService"
 
-        /** FIX #8: Deprecated — use ActivityResultContracts.CreateDocument instead */
-        @Deprecated("Use ActivityResultContracts.CreateDocument from Compose UI layer")
-        const val SAF_EXPORT_REQUEST_CODE = 1001
+        // ✅ FIX: SharedFlow que sinaliza à UI quando o SAF picker precisa ser aberto.
+        // A UI registra ActivityResultContracts.CreateDocument e reage a este flow,
+        // eliminando o uso de startActivityForResult (deprecated).
+        data class SafPickerRequest(
+            val mimeType: String,
+            val displayName: String,
+            val sourcePath: StoragePath,
+        )
 
-        // Backward-compatible singleton for any code still referencing StorageService directly
+        val safPickerRequests = MutableSharedFlow<SafPickerRequest>(
+            extraBufferCapacity = 1,
+            onBufferOverflow = BufferOverflow.DROP_OLDEST
+        )
+
         @Volatile
         private var instance: StorageService? = null
 
-        /** Backward-compatible accessor — prefer injection via Hilt */
         fun getInstance(): StorageService {
             return instance ?: synchronized(this) {
                 instance ?: StorageService().also { instance = it }
@@ -60,6 +70,7 @@ class StorageService @javax.inject.Inject constructor() {
         LocalLogger.info("SAF export cancelled for ${context.packageName}: ${pending.sourcePath.value}")
     }
 
+    @Suppress("DEPRECATION")
     fun exportToPublicCollection(
         context: Context,
         sourcePath: StoragePath,
@@ -442,48 +453,50 @@ class StorageService @javax.inject.Inject constructor() {
         sourceFile.copyTo(targetFile, overwrite = true)
     }
 
-    @Deprecated("Use ActivityResultContracts.CreateDocument from Compose UI layer")
+    // ✅ FIX: antes usava activity.startActivityForResult() (deprecated).
+    // Agora emite no safPickerRequests SharedFlow — a UI reage com
+    // ActivityResultContracts.CreateDocument sem precisar de Activity.
     fun launchSafFallback(
-        activity: Activity?,
+        activity: android.app.Activity?,
         sourcePath: StoragePath,
         displayName: String,
         mimeType: StorageMimeType,
         diagnostics: MutableMap<String, Any>,
         strategyErrors: List<String>,
     ) {
-        if (activity == null) {
-            diagnostics["strategy"] = "saf_create_document"
-            diagnostics["stage"] = "saf_no_activity"
-            diagnostics["strategyErrors"] = strategyErrors.joinToString(" | ")
-            return
-        }
+        diagnostics["strategy"] = "saf_create_document"
+        diagnostics["stage"] = "saf_launch"
+        diagnostics["strategyErrors"] = strategyErrors.joinToString(" | ")
+
+        pendingSafExport = PendingSafExport(
+            sourcePath = sourcePath,
+            mimeType = mimeType,
+            diagnostics = diagnostics,
+        )
+
+        safPickerRequests.tryEmit(
+            SafPickerRequest(
+                mimeType = mimeType.value,
+                displayName = displayName,
+                sourcePath = sourcePath,
+            )
+        )
+    }
+
+    // ✅ Novo: chamado pela UI após o usuário escolher o destino no SAF picker
+    fun completeSafExport(context: Context, uri: android.net.Uri) {
+        val pending = pendingSafExport ?: return
+        pendingSafExport = null
 
         try {
-            diagnostics["strategy"] = "saf_create_document"
-            diagnostics["stage"] = "saf_launch"
-            diagnostics["strategyErrors"] = strategyErrors.joinToString(" | ")
+            val sourceFile = java.io.File(pending.sourcePath.value)
+            if (!sourceFile.exists()) return
 
-            pendingSafExport = PendingSafExport(
-                sourcePath = sourcePath,
-                mimeType = mimeType,
-                diagnostics = diagnostics,
-            )
-
-            val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
-                addCategory(Intent.CATEGORY_OPENABLE)
-                type = mimeType.value
-                putExtra(Intent.EXTRA_TITLE, displayName)
+            context.contentResolver.openOutputStream(uri)?.use { output ->
+                sourceFile.inputStream().use { input -> input.copyTo(output) }
             }
-
-            @Suppress("DEPRECATION")
-            activity.startActivityForResult(intent, SAF_EXPORT_REQUEST_CODE)
         } catch (e: Exception) {
-            pendingSafExport = null
-            diagnostics["strategy"] = "saf_create_document"
-            diagnostics["stage"] = "saf_launch_failed"
-            diagnostics["strategyErrors"] = strategyErrors.joinToString(" | ")
-
-            LocalLogger.error("Erro ao iniciar seletor SAF", e)
+            LocalLogger.error("Erro ao completar SAF export: ${e.message}", e)
         }
     }
 }

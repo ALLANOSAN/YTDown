@@ -130,6 +130,50 @@ fun SongsList(
             confirmButton = {}
         )
     }
+
+    // Dialog inline de edição de nome
+    editingSong?.let { song ->
+        var newTitle by remember(song.id) { mutableStateOf(song.title) }
+        AlertDialog(
+            onDismissRequest = { editingSong = null },
+            containerColor = SurfaceDark,
+            title = { Text("Editar Nome", color = Color.White) },
+            text = {
+                OutlinedTextField(
+                    value = newTitle,
+                    onValueChange = { newTitle = it },
+                    label = { Text("Título") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = YTDownPurple,
+                        unfocusedBorderColor = SurfaceDark,
+                        focusedLabelColor = YTDownPurple,
+                        unfocusedLabelColor = TextSecondary,
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White
+                    )
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (newTitle.isNotBlank()) {
+                            onEditName?.invoke(song.copy(title = newTitle))
+                            editingSong = null
+                        }
+                    },
+                    enabled = newTitle.isNotBlank(),
+                    colors = ButtonDefaults.buttonColors(containerColor = YTDownPurple)
+                ) { Text("Salvar") }
+            },
+            dismissButton = {
+                TextButton(onClick = { editingSong = null }) {
+                    Text("Cancelar", color = TextSecondary)
+                }
+            }
+        )
+    }
 }
 
 @Composable

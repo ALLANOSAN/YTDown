@@ -16,6 +16,7 @@ import com.example.ytdown.services.LyricsService
 import com.example.ytdown.services.MetalArchivesService
 import com.example.ytdown.services.MusicFolderService
 import com.example.ytdown.services.ProgressBus
+import com.example.ytdown.services.StorageService
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
@@ -57,6 +58,10 @@ class SystemViewModel @Inject constructor(
     private val _isScanning = MutableStateFlow(false)
     val isScanning = _isScanning.asStateFlow()
 
+    // ✅ FIX: expõe o evento SAF para a UI registrar ActivityResultContracts.CreateDocument
+    private val _safPickerRequest = MutableStateFlow<StorageService.Companion.SafPickerRequest?>(null)
+    val safPickerRequest: StateFlow<StorageService.Companion.SafPickerRequest?> = _safPickerRequest.asStateFlow()
+
     val playlists = libraryRepository.getPlaylists()
 
     init {
@@ -65,8 +70,16 @@ class SystemViewModel @Inject constructor(
                 _state.update { it.copy(folders = folders.toList()) }
             }
         }
+        // ✅ Coleta eventos SAF do StorageService e repassa para a UI
+        viewModelScope.launch {
+            StorageService.safPickerRequests.collect { request ->
+                _safPickerRequest.value = request
+            }
+        }
         refreshYtDlpVersion(forceNetwork = false)
     }
+
+    fun clearSafPickerRequest() { _safPickerRequest.value = null }
 
     // ─── Pastas ───────────────────────────────────────────────────────────────
     fun addFolder(path: String) { viewModelScope.launch { folderService.addFolder(path) } }

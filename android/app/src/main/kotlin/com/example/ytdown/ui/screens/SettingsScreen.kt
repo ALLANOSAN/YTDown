@@ -18,11 +18,16 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.ytdown.R
+import com.example.ytdown.services.StorageService
 import com.example.ytdown.ui.SystemViewModel
 import com.example.ytdown.ui.theme.SurfaceDark
 import com.example.ytdown.ui.theme.TextSecondary
@@ -36,6 +41,27 @@ fun SettingsScreen(
         onNavigateToDiagnostics: () -> Unit
 ) {
     val state by viewModel.state.collectAsState()
+    val context = LocalContext.current
+
+    // ✅ FIX: registra o launcher moderno para o SAF file picker.
+    // Quando StorageService não consegue exportar via MediaStore, emite um
+    // SafPickerRequest — este launcher abre o seletor de arquivo nativo do Android.
+    val safPickerRequest: StorageService.Companion.SafPickerRequest? by viewModel.safPickerRequest.collectAsStateWithLifecycle()
+    val safLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument(
+            safPickerRequest?.mimeType ?: "*/*"
+        )
+    ) { uri ->
+        uri?.let { StorageService.getInstance().completeSafExport(context, it) }
+        viewModel.clearSafPickerRequest()
+    }
+
+    // Lança o picker quando há uma solicitação pendente
+    LaunchedEffect(safPickerRequest) {
+        safPickerRequest?.let { req ->
+            safLauncher.launch(req.displayName)
+        }
+    }
 
     Scaffold(
             topBar = {

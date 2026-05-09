@@ -155,7 +155,7 @@ constructor(
     }
 
     fun getPlayer(): Player = player
-
+    fun getAudioSessionId(): Int = player.audioSessionId
     fun playPlaylist(items: List<DownloadItemEntity>, startIndex: Int = 0) {
         scope.launch {
             val intent = Intent(context, MediaPlaybackService::class.java)

@@ -38,7 +38,8 @@ import com.example.ytdown.ui.theme.YTDownPurple
 fun SettingsScreen(
         viewModel: SystemViewModel,
         onBack: () -> Unit,
-        onNavigateToDiagnostics: () -> Unit
+        onNavigateToDiagnostics: () -> Unit,
+        onNavigateToEqualizer: () -> Unit
 ) {
     val state by viewModel.state.collectAsState()
     val context = LocalContext.current

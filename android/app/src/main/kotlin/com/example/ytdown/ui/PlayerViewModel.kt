@@ -16,7 +16,7 @@ import androidx.media3.common.Player
 
 @HiltViewModel
 class PlayerViewModel @Inject constructor(
-    private val playerManager: MusicPlayerManager,
+    val playerManager: MusicPlayerManager,
     private val hapticManager: HapticManager
 ) : ViewModel() {
 

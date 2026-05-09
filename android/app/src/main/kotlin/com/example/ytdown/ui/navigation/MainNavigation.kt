@@ -13,6 +13,7 @@ import com.example.ytdown.ui.LibraryViewModel
 import com.example.ytdown.ui.PlayerViewModel
 import com.example.ytdown.ui.SystemViewModel
 import com.example.ytdown.ui.screens.*
+import com.example.ytdown.ui.screens.EqualizerScreen
 
 @Composable
 fun MainNavigation(
@@ -73,7 +74,15 @@ fun MainNavigation(
             SettingsScreen(
                 viewModel = systemViewModel,
                 onBack = { navController.popBackStack() },
-                onNavigateToDiagnostics = { navController.navigate(Screen.Diagnostics.route) }
+                onNavigateToDiagnostics = { navController.navigate(Screen.Diagnostics.route) },
+                onNavigateToEqualizer = { navController.navigate(Screen.Equalizer.route) }
+            )
+        }
+        composable(Screen.Equalizer.route) {
+            val equalizerManager = com.example.ytdown.di.HiltEntryPoints.getEqualizerManager(LocalContext.current)
+            EqualizerScreen(
+                playerViewModel = playerViewModel,
+                equalizerManager = equalizerManager
             )
         }
         composable(Screen.Diagnostics.route) {

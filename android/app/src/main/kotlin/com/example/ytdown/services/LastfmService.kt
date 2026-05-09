@@ -71,20 +71,38 @@ class LastfmService @Inject constructor(
 
     private fun extractBestImage(json: JsonObject?): String? {
         if (json == null) return null
-        val images = json.deepSearch("image")
-        return images.firstOrNull { it.isJsonPrimitive && it.asJsonPrimitive.isString && it.asString.isNotBlank() }?.asString
+
+        // Last.fm retorna imagens como array: [{"#text": "url", "size": "small"}, ..., {"#text": "url", "size": "mega"}]
+        // ✅ FIX: o código anterior fazia deepSearch("image") e checava isJsonPrimitive,
+        // mas o resultado é um JsonArray — nunca era primitivo → sempre retornava null.
+        val imageArrays = json.deepSearchArrays("image")
+        val sizePreference = listOf("mega", "extralarge", "large", "medium", "small", "")
+
+        for (imageArray in imageArrays) {
+            val bySize = mutableMapOf<String, String>()
+            imageArray.forEach { element ->
+                if (element.isJsonObject) {
+                    val text = element.asJsonObject["#text"]?.asString
+                    val size = element.asJsonObject["size"]?.asString ?: ""
+                    if (!text.isNullOrBlank()) bySize[size] = text
+                }
+            }
+            for (size in sizePreference) {
+                val url = bySize[size]
+                if (!url.isNullOrBlank()) return url
+            }
+        }
+        return null
     }
 
-    private fun JsonObject.deepSearch(key: String): List<JsonElement> {
-        val results = mutableListOf<JsonElement>()
+    private fun JsonObject.deepSearchArrays(key: String): List<com.google.gson.JsonArray> {
+        val results = mutableListOf<com.google.gson.JsonArray>()
         for ((name, value) in entrySet()) {
-            if (name == key) {
-                results.add(value)
-            }
+            if (name == key && value.isJsonArray) results.add(value.asJsonArray)
             when {
-                value.isJsonObject -> results += value.asJsonObject.deepSearch(key)
-                value.isJsonArray -> value.asJsonArray.forEach { element ->
-                    if (element.isJsonObject) results += element.asJsonObject.deepSearch(key)
+                value.isJsonObject -> results += value.asJsonObject.deepSearchArrays(key)
+                value.isJsonArray -> value.asJsonArray.forEach { el ->
+                    if (el.isJsonObject) results += el.asJsonObject.deepSearchArrays(key)
                 }
             }
         }

@@ -37,21 +37,19 @@ def get_band_details(band_name):
             if len(dd_tags) >= 2:
                 genre = dd_tags[1].text.strip()
         
-        # Foto (Autoridade: Metal-Archives, Fallback: Google)
+        # Foto (Autoridade: Metal-Archives)
         image_url = None
         photo_tag = soup.find('a', id='photo')
         if photo_tag:
             image_url = photo_tag.get('href')
         
-        # Fallback para imagem
-        if not image_url:
-            image_url = f"https://www.google.com/search?tbm=isch&q={band_name}+band+photo"
-            
+        # Sem foto no Metal-Archives: retorna sucesso mas sem imagem
+        # O Kotlin (ArtworkManager → LastFM/iTunes/Deezer) fará o fallback
         return json.dumps({
             "success": True,
             "name": band_name,
             "genre": genre,
-            "image_url": image_url
+            "image_url": image_url  # None se não encontrado
         })
         
     except Exception as e:

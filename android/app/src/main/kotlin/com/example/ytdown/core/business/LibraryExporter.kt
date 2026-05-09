@@ -58,7 +58,7 @@ class LibraryExporter @Inject constructor(
             val mediaType = if (isAudio) StorageMediaType("audio") else StorageMediaType("video")
 
             try {
-                StorageService.exportToPublicCollection(
+                StorageService.getInstance().exportToPublicCollection(
                     context = context,
                     sourcePath = StoragePath(item.outputPath),
                     displayName = item.title.ifBlank { sourceFile.name },

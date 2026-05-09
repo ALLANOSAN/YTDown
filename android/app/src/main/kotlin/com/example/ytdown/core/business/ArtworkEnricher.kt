@@ -14,6 +14,10 @@ class ArtworkEnricher @Inject constructor(
     private val artworkManager: ArtworkManager,
     private val metadataManager: DownloadMetadataManager
 ) {
+    suspend fun getArtistImageFor(artist: String): String? = artworkManager.getArtistImage(artist)
+
+    suspend fun getAlbumCoverFor(artist: String, album: String): String? = artworkManager.getAlbumCover(artist, album)
+
     suspend fun enrichAll(
         onProgress: (Float, String) -> Unit
     ): Triple<Int, Int, Int> {
@@ -74,7 +78,9 @@ class ArtworkEnricher @Inject constructor(
         val albumImage = if (artist.isNotBlank() && album != "YTDown") artworkManager.getAlbumCover(artist, album) else null
         val trackImage = if (artist.isNotBlank() && title.isNotBlank()) artworkManager.getTrackCover(artist, title) else null
 
-        val finalArtwork = artistImage ?: albumImage ?: trackImage
+        // ✅ FIX: prioridade correta para arte embarcada no arquivo.
+        // Arte de álbum é mais adequada que foto do artista para tags ID3/MP4.
+        val finalArtwork = albumImage ?: trackImage ?: artistImage
         return ArtworkResolution(finalArtwork, artistImage, albumImage ?: trackImage)
     }
 

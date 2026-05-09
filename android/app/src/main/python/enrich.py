@@ -48,11 +48,14 @@ def _search_metadata(artist, track_name):
             releases = rec.get("releases", [])
             album_name = releases[0].get("title") if releases else "YTDown"
             
-            return {
+            result = {
                 "artist": artist_name,
                 "album": album_name,
                 "title": rec.get("title")
             }
+            # ✅ FIX: retorna JSON string, não dict Python.
+            # dict.toString() em Chaquo usa repr Python (aspas simples) que quebra JSONObject()
+            return json.dumps(result)
     except Exception as e:
         print(f"Erro na busca MusicBrainz: {e}")
         return None

@@ -10,8 +10,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
-import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.AutoFixHigh
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -60,13 +60,7 @@ fun SongsList(
     ) {
         if (recentlyAdded.isNotEmpty() && songs.size > 10) {
             item {
-                Text(
-                    "Adicionadas Recentemente",
-                    color = YTDownPurple,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(bottom = 8.dp)
-                )
+                Text("Adicionadas Recentemente", color = YTDownPurple, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 8.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -80,13 +74,7 @@ fun SongsList(
                     }
                 }
                 Spacer(modifier = Modifier.height(16.dp))
-                Text(
-                    "Todas as Músicas",
-                    color = YTDownPurple,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(bottom = 8.dp)
-                )
+                Text("Todas as Músicas", color = YTDownPurple, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 8.dp))
             }
         }
 
@@ -119,31 +107,21 @@ fun SongsList(
                         ListItem(
                             headlineContent = { Text("Editar Nome") },
                             leadingContent = { Icon(Icons.Default.Edit, null, tint = YTDownPurple) },
-                            modifier = Modifier.clickable {
-                                editingSong = song
-                                songMenu = null
-                            },
+                            modifier = Modifier.clickable { editingSong = song; songMenu = null },
                             colors = ListItemDefaults.colors(containerColor = Color.Transparent, headlineColor = Color.White)
                         )
                     }
                     ListItem(
                         headlineContent = { Text("Adicionar à Playlist") },
                         leadingContent = { Icon(Icons.AutoMirrored.Filled.PlaylistAdd, null, tint = YTDownPurple) },
-                        modifier = Modifier.clickable {
-                            onAddToPlaylist(song)
-                            songMenu = null
-                        },
+                        modifier = Modifier.clickable { onAddToPlaylist(song); songMenu = null },
                         colors = ListItemDefaults.colors(containerColor = Color.Transparent, headlineColor = Color.White)
                     )
-                    
                     if (onSuperFix != null) {
                         ListItem(
                             headlineContent = { Text("Correção Inteligente (MA)") },
                             leadingContent = { Icon(Icons.Default.AutoFixHigh, null, tint = YTDownPurple) },
-                            modifier = Modifier.clickable {
-                                onSuperFix(song)
-                                songMenu = null
-                            },
+                            modifier = Modifier.clickable { onSuperFix(song); songMenu = null },
                             colors = ListItemDefaults.colors(containerColor = Color.Transparent, headlineColor = Color.White)
                         )
                     }
@@ -152,71 +130,21 @@ fun SongsList(
             confirmButton = {}
         )
     }
-
-    editingSong?.let { song ->
-        var newTitle by remember(song.id) { mutableStateOf(song.title) }
-        AlertDialog(
-            onDismissRequest = { editingSong = null },
-            containerColor = SurfaceDark,
-            title = { Text("Editar Nome", color = Color.White) },
-            text = {
-                OutlinedTextField(
-                    value = newTitle,
-                    onValueChange = { newTitle = it },
-                    label = { Text("Título") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                    textStyle = LocalTextStyle.current.copy(color = Color.White),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = YTDownPurple,
-                        unfocusedBorderColor = SurfaceDark,
-                        focusedLabelColor = YTDownPurple,
-                        unfocusedLabelColor = TextSecondary
-                    )
-                )
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        if (newTitle.isNotBlank()) {
-                            onEditName?.invoke(song.copy(title = newTitle))
-                            editingSong = null
-                        }
-                    },
-                    enabled = newTitle.isNotBlank(),
-                    colors = ButtonDefaults.buttonColors(containerColor = YTDownPurple)
-                ) { Text("Salvar") }
-            },
-            dismissButton = {
-                TextButton(onClick = { editingSong = null }) { Text("Cancelar", color = TextSecondary) }
-            }
-        )
-    }
 }
 
 @Composable
 private fun RecentSongCard(song: DownloadItemEntity, onClick: () -> Unit) {
     Column(
-        modifier = Modifier
-            .width(100.dp)
-            .clickable { onClick() },
+        modifier = Modifier.width(100.dp).clickable { onClick() },
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         AsyncImage(
             model = song.thumbnailPath,
             contentDescription = null,
-            modifier = Modifier
-                .size(100.dp)
-                .clip(RoundedCornerShape(12.dp)),
+            modifier = Modifier.size(100.dp).clip(RoundedCornerShape(12.dp)),
             contentScale = ContentScale.Crop
         )
         Spacer(modifier = Modifier.height(4.dp))
-        Text(
-            text = song.title,
-            color = Color.White,
-            fontSize = 11.sp,
-            maxLines = 1,
-            textAlign = TextAlign.Center
-        )
+        Text(text = song.title, color = Color.White, fontSize = 11.sp, maxLines = 1, textAlign = TextAlign.Center)
     }
 }

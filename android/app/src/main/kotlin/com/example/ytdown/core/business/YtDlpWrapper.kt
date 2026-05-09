@@ -110,7 +110,7 @@ class YtDlpWrapper(
             val module = py.getModule("ytdown")
 
             val resultJson =
-                    module.callAttr("rewrite_file_metadata", filePath, title, artist, album, artworkUrl)
+                    module.callAttr("rewrite_file_metadata", filePath, title, artist, album, artworkUrl, lyrics)
                             .toString()
 
             val result = JSONObject(resultJson)

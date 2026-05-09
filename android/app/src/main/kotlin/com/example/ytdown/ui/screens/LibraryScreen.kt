@@ -5,6 +5,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.ytdown.ui.DownloadViewModel
@@ -12,6 +13,9 @@ import com.example.ytdown.ui.LibraryViewModel
 import com.example.ytdown.ui.PlayerViewModel
 import com.example.ytdown.ui.SystemViewModel
 import com.example.ytdown.core.domain.DownloadItemEntity
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Album
+import androidx.compose.material.icons.filled.Person
 
 @Composable
 fun LibraryScreen(
@@ -58,7 +62,7 @@ fun LibraryScreen(
             when (selectedTab) {
                 0 -> GroupedList(
                     groups = completedSongs.groupBy { it.artist ?: "Desconhecido" },
-                    icon = androidx.compose.material.icons.Icons.Default.Person,
+                    icon = Icons.Default.Person,
                     onNavigate = onNavigateToDetail,
                     libraryViewModel = libraryViewModel,
                     isArtistGroup = true,
@@ -66,7 +70,7 @@ fun LibraryScreen(
                 )
                 1 -> GroupedList(
                     groups = completedSongs.groupBy { it.album ?: "Desconhecido" },
-                    icon = androidx.compose.material.icons.Icons.Default.Album,
+                    icon = Icons.Default.Album,
                     onNavigate = onNavigateToDetail,
                     libraryViewModel = libraryViewModel,
                     isArtistGroup = false,

@@ -73,6 +73,8 @@ android {
             pip {
                 install("yt-dlp")
                 install("mutagen")
+                install("requests")
+                install("beautifulsoup4")
             }
         }
     }

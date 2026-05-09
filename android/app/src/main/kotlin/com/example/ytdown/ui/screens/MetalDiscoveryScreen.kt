@@ -108,13 +108,13 @@ fun DiscoveryBandRow(
                     fontSize = 16.sp
                 )
                 Text(
-                    band.genre,
+                    band.genre ?: "Metal",
                     color = YTDownPurple,
                     fontSize = 12.sp,
                     maxLines = 1
                 )
                 Text(
-                    band.country,
+                    band.country ?: "Desconhecido",
                     color = TextSecondary,
                     fontSize = 11.sp
                 )

@@ -8,7 +8,7 @@ from fetch import fetch_video_info
 from metadata import rewrite_file_metadata
 from runtime import check_yt_dlp_update, update_yt_dlp_if_needed
 from enrich import _search_metadata as search_metadata
-from metal_archives import get_band_details, get_similar_bands, search_album_art
+from metal_archives import get_similar_bands, get_band_details, get_band_albums
 
 __all__ = [
     "download_video",
@@ -19,5 +19,5 @@ __all__ = [
     "search_metadata",
     "get_band_details",
     "get_similar_bands",
-    "search_album_art",
+    "get_band_albums",
 ]

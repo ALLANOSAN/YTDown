@@ -12,7 +12,12 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-data class DiscoveryUIState(val suggestions: List<MetalBand> = emptyList(), val isLoading: Boolean = false, val error: String? = null)
+data class DiscoveryUIState(
+    val suggestions: List<MetalBand> = emptyList(), 
+    val albums: List<MetalAlbum> = emptyList(),
+    val isLoading: Boolean = false, 
+    val error: String? = null
+)
 
 @HiltViewModel
 class DiscoveryViewModel @Inject constructor(
@@ -39,6 +44,29 @@ class DiscoveryViewModel @Inject constructor(
             } else {
                 _uiState.update { it.copy(isLoading = false, error = response.error) }
             }
+        }
+    }
+
+    fun loadAlbums(bandName: String) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true) }
+            val response = metalArchivesService.getBandAlbums(bandName)
+            if (response.success) {
+                _uiState.update { it.copy(albums = response.albums ?: emptyList(), isLoading = false) }
+            } else {
+                _uiState.update { it.copy(isLoading = false, error = response.error) }
+            }
+        }
+    }
+
+    fun downloadAlbum(bandName: String, albumName: String) {
+        viewModelScope.launch {
+            scheduler.schedule(
+                url = VideoUrl("ytsearch1:\"$bandName $albumName - Full Album\""),
+                path = FilePath(storageResolver.privateDownloadsDir(isAudio = true).absolutePath),
+                meta = MediaMetadata(MediaTitle(albumName), ArtistName(bandName), AlbumName(albumName)),
+                options = DownloadOptions(DownloadType.AUDIO, "m4a", "128")
+            )
         }
     }
 

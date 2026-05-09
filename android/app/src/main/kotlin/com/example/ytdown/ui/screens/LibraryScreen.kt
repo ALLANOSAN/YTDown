@@ -97,7 +97,7 @@ fun LibraryScreen(
                     onNavigateToPlayer = onNavigateToPlayer,
                     onAddToPlaylist = { song -> songForPlaylist = song },
                     onEditName = { song -> systemViewModel.updateTrackName(song, song.title) },
-                    onSuperFix = { song -> systemViewModel.superFixID3(song) }
+                    onSuperFix = { systemViewModel.superFixID3() }
                 )
                 3 -> PlaylistsTab(
                     playlists = playlists,

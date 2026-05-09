@@ -16,7 +16,7 @@ class MetalArchivesService @Inject constructor() {
             val jsonResponse = PythonBridge.invokePythonJson("get_similar_bands", bandName)
             gson.fromJson(jsonResponse, MetalDiscoveryResponse::class.java)
         } catch (e: Exception) {
-            MetalDiscoveryResponse(success = false, error = e.message ?: "Erro desconhecido")
+            MetalDiscoveryResponse(success = false, error = e.message ?: "Erro")
         }
     }
 
@@ -25,38 +25,22 @@ class MetalArchivesService @Inject constructor() {
             val jsonResponse = PythonBridge.invokePythonJson("get_band_details", bandName)
             gson.fromJson(jsonResponse, BandDetailsResponse::class.java)
         } catch (e: Exception) {
-            BandDetailsResponse(success = false, error = e.message ?: "Erro desconhecido")
+            BandDetailsResponse(success = false, error = e.message ?: "Erro")
         }
     }
 
-    suspend fun searchAlbumArt(bandName: String, albumName: String): BandDetailsResponse = withContext(Dispatchers.IO) {
+    suspend fun getBandAlbums(bandName: String): BandAlbumsResponse = withContext(Dispatchers.IO) {
         try {
-            val jsonResponse = PythonBridge.invokePythonJson("search_album_art", bandName, albumName)
-            gson.fromJson(jsonResponse, BandDetailsResponse::class.java)
+            val jsonResponse = PythonBridge.invokePythonJson("get_band_albums", bandName)
+            gson.fromJson(jsonResponse, BandAlbumsResponse::class.java)
         } catch (e: Exception) {
-            BandDetailsResponse(success = false, error = e.message ?: "Erro desconhecido")
+            BandAlbumsResponse(success = false, error = e.message ?: "Erro")
         }
     }
 }
 
-data class BandDetailsResponse(
-    val success: Boolean,
-    val name: String? = null,
-    val genre: String? = null,
-    val image_url: String? = null,
-    val error: String? = null
-)
-
-data class MetalDiscoveryResponse(
-    val success: Boolean,
-    val source_band: String? = null,
-    val bands: List<MetalBand>? = null,
-    val error: String? = null
-)
-
-data class MetalBand(
-    val name: String,
-    val genre: String,
-    val country: String,
-    val score: String
-)
+data class MetalBand(val name: String, val genre: String? = null, val country: String? = null, val score: String? = null)
+data class MetalAlbum(val name: String, val year: String)
+data class MetalDiscoveryResponse(val success: Boolean, val bands: List<MetalBand>? = null, val error: String? = null)
+data class BandDetailsResponse(val success: Boolean, val name: String? = null, val genre: String? = null, val image_url: String? = null, val error: String? = null)
+data class BandAlbumsResponse(val success: Boolean, val albums: List<MetalAlbum>? = null, val error: String? = null)

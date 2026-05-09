@@ -13,6 +13,7 @@ import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.media3.common.Player
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
@@ -40,8 +41,8 @@ fun PlayerFullScreen(
     val position by viewModel.position.collectAsState()
     val duration by viewModel.duration.collectAsState()
     val showArtistImage by viewModel.showArtistImage.collectAsState()
-    val isShuffleEnabled by viewModel.isShuffleEnabled.collectAsState()
-    val repeatMode by viewModel.repeatMode.collectAsState()
+    val isShuffleEnabled: Boolean by viewModel.isShuffleEnabled.collectAsState(initial = false)
+    val repeatMode: Int by viewModel.repeatMode.collectAsState(initial = Player.REPEAT_MODE_OFF)
     val dominantColorInt by viewModel.dominantColor.collectAsState()
     val sleepTimerMinutes by viewModel.sleepTimerMinutes.collectAsState()
     

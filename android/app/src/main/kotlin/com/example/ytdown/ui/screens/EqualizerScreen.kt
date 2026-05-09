@@ -54,7 +54,7 @@ fun EqualizerScreen(
         }
 
         Spacer(modifier = Modifier.height(32.dp))
-        Divider(color = Color.DarkGray)
+        HorizontalDivider(color = Color.DarkGray)
         Spacer(modifier = Modifier.height(24.dp))
 
         // --- Bass Boost ---

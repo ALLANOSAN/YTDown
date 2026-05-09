@@ -86,6 +86,8 @@ class MediaPlaybackService : MediaSessionService() {
     }
 
     override fun onDestroy() {
+        // Salva a posição final antes de destruir
+        playerManager.saveCurrentPositionNow()
         mediaSession?.run {
             release()
             mediaSession = null

@@ -17,14 +17,7 @@ import dagger.assisted.AssistedInject
 import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.cancel
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.*
 
 @HiltWorker
 class DownloadWorker
@@ -65,10 +58,10 @@ constructor(
 
     override suspend fun doWork(): Result {
         android.util.Log.e("DownloadWorker", "🚀 doWork started!")
-        // FIX #5: Use try/finally to guarantee lock release
         wakeLock.acquire(30 * 60 * 1000L)
         wifiLock.acquire()
-        try {
+
+        val result = try {
             val id = inputData.getString("VIDEO_ID") ?: return Result.failure()
             val url = inputData.getString("VIDEO_URL") ?: return Result.failure()
             val path = inputData.getString("OUTPUT_PATH") ?: return Result.failure()
@@ -141,7 +134,6 @@ constructor(
                         }
                     }
 
-            // FIX #4: If stalled or timed out, report failure
             if (stalled.get() || downloadResult == null) {
                 android.util.Log.e("DownloadWorker", "⚠️ Download cancelled: stalled=${stalled.get()}, timedOut=${downloadResult == null}")
                 updateFinalStatus(id, success = false)
@@ -167,11 +159,12 @@ constructor(
             android.util.Log.e("DownloadWorker", "❌ doWork CRASHED: ${e.message}", e)
             Result.failure()
         } finally {
-            // FIX #5: Always release locks
             progressScope.cancel()
             if (wakeLock.isHeld) wakeLock.release()
             if (wifiLock.isHeld) wifiLock.release()
         }
+
+        return result
     }
 
     private fun createForegroundInfo(title: String, progress: Int): ForegroundInfo {

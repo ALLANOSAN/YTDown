@@ -39,7 +39,7 @@ class SystemViewModel @Inject constructor(
     private val scannerService: FileSystemScannerService,
     private val databaseService: DatabaseService,
     private val downloadMetadataManager: DownloadMetadataManager,
-    private val metalArchivesService: MetalArchivesService,
+    private val musicBrainzService: MusicBrainzService,
     private val lyricsService: LyricsService,
     private val workManager: WorkManager,
     private val libraryExporter: LibraryExporter,

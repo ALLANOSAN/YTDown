@@ -5,15 +5,13 @@ import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.example.ytdown.DownloadMetadataManager
-import com.example.ytdown.core.business.DownloadRepository
-import com.example.ytdown.core.domain.ArtistName
 import com.example.ytdown.core.domain.AlbumName
+import com.example.ytdown.core.domain.ArtistName
 import com.example.ytdown.core.domain.FilePath
 import com.example.ytdown.core.domain.MediaMetadata
 import com.example.ytdown.core.domain.MediaTitle
 import com.example.ytdown.services.DatabaseService
-import com.example.ytdown.services.LyricsService
-import com.example.ytdown.services.MetalArchivesService
+import com.example.ytdown.services.MusicBrainzService
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import kotlinx.coroutines.Dispatchers
@@ -24,8 +22,7 @@ class MetadataFixWorker @AssistedInject constructor(
     @Assisted context: Context,
     @Assisted params: WorkerParameters,
     private val databaseService: DatabaseService,
-    private val metalArchivesService: MetalArchivesService,
-    private val lyricsService: LyricsService,
+    private val musicBrainzService: MusicBrainzService,
     private val downloadMetadataManager: DownloadMetadataManager
 ) : CoroutineWorker(context, params) {
 
@@ -36,26 +33,24 @@ class MetadataFixWorker @AssistedInject constructor(
 
         try {
             val artistName = song.artist?.takeIf { it.isNotBlank() } ?: "Unknown"
-            val response = metalArchivesService.getBandDetails(artistName)
-            
-            if (response.success) {
-                val artworkUrl = response.image_url ?: song.albumImageUrl ?: song.thumbnailPath
+            val tags = musicBrainzService.getArtistTags(artistName)
+            val genre = tags.firstOrNull()?.name
+            val artworkUrl = song.albumImageUrl ?: song.thumbnailPath
 
-                val updatedSong = song.copy(artistImageUrl = artworkUrl)
-                databaseService.updateDownload(updatedSong)
-                
-                val targetPath = updatedSong.exportedPath?.takeIf { it.isNotBlank() } ?: updatedSong.outputPath
-                
-                downloadMetadataManager.rewriteMetadata(
-                    path = FilePath(targetPath),
-                    metadata = MediaMetadata(
-                        MediaTitle(updatedSong.title),
-                        ArtistName(updatedSong.artist.orEmpty()),
-                        AlbumName(updatedSong.album.orEmpty())
-                    ),
-                    artworkUrl = artworkUrl
-                )
-            }
+            val updatedSong = song.copy(artistImageUrl = artworkUrl)
+            databaseService.updateDownload(updatedSong)
+
+            val targetPath = updatedSong.exportedPath?.takeIf { it.isNotBlank() } ?: updatedSong.outputPath
+
+            downloadMetadataManager.rewriteMetadata(
+                path = FilePath(targetPath),
+                metadata = MediaMetadata(
+                    MediaTitle(updatedSong.title),
+                    ArtistName(updatedSong.artist.orEmpty()),
+                    AlbumName(updatedSong.album.orEmpty())
+                ),
+                artworkUrl = artworkUrl
+            )
             Result.success()
         } catch (e: Exception) {
             android.util.Log.e("MetadataFixWorker", "Erro: ${e.message}")

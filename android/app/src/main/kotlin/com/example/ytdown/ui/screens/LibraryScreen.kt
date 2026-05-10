@@ -85,10 +85,10 @@ fun LibraryScreen(
 
             if (!isSearchFocused && searchQuery.isEmpty()) {
                 PrimaryTabRow(selectedTabIndex = selectedTab, containerColor = Color.Black) {
-                    Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }) { Text("Artistas", modifier = Modifier.padding(16.dp), color = Color.White) }
-                    Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }) { Text("Álbuns", modifier = Modifier.padding(16.dp), color = Color.White) }
-                    Tab(selected = selectedTab == 2, onClick = { selectedTab = 2 }) { Text("Músicas", modifier = Modifier.padding(16.dp), color = Color.White) }
-                    Tab(selected = selectedTab == 3, onClick = { selectedTab = 3 }) { Text("Playlists", modifier = Modifier.padding(16.dp), color = Color.White) }
+                    Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }) { Text("Artistas", modifier = Modifier.padding(vertical = 12.dp), color = Color.White, fontSize = 12.sp) }
+                    Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }) { Text("Álbuns", modifier = Modifier.padding(vertical = 12.dp), color = Color.White, fontSize = 12.sp) }
+                    Tab(selected = selectedTab == 2, onClick = { selectedTab = 2 }) { Text("Músicas", modifier = Modifier.padding(vertical = 12.dp), color = Color.White, fontSize = 12.sp) }
+                    Tab(selected = selectedTab == 3, onClick = { selectedTab = 3 }) { Text("Playlists", modifier = Modifier.padding(vertical = 12.dp), color = Color.White, fontSize = 12.sp) }
                 }
 
                 when (selectedTab) {

@@ -13,16 +13,16 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 data class DiscoveryUIState(
-    val suggestions: List<MetalBand> = emptyList(), 
-    val albums: List<MetalAlbum> = emptyList(),
-    val isLoading: Boolean = false, 
+    val suggestions: List<MBBand> = emptyList(),
+    val albums: List<MBAlbum> = emptyList(),
+    val isLoading: Boolean = false,
     val error: String? = null
 )
 
 @HiltViewModel
 class DiscoveryViewModel @Inject constructor(
     private val downloadRepository: DownloadRepository,
-    private val metalArchivesService: MetalArchivesService,
+    private val musicBrainzService: MusicBrainzService,
     private val scheduler: DownloadScheduler,
     private val storageResolver: StorageResolver
 ) : ViewModel() {
@@ -38,7 +38,7 @@ class DiscoveryViewModel @Inject constructor(
                 _uiState.update { it.copy(isLoading = false, error = "Biblioteca vazia.") }
                 return@launch
             }
-            val response = metalArchivesService.discoverSimilarBands(currentArtists.random())
+            val response = musicBrainzService.discoverSimilarBands(currentArtists.random())
             if (response.success) {
                 _uiState.update { it.copy(suggestions = response.bands ?: emptyList(), isLoading = false) }
             } else {
@@ -50,7 +50,7 @@ class DiscoveryViewModel @Inject constructor(
     fun loadAlbums(bandName: String) {
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true) }
-            val response = metalArchivesService.getBandAlbums(bandName)
+            val response = musicBrainzService.getBandAlbums(bandName)
             if (response.success) {
                 _uiState.update { it.copy(albums = response.albums ?: emptyList(), isLoading = false) }
             } else {

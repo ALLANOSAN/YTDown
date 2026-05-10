@@ -75,6 +75,7 @@ android {
                 install("mutagen")
                 install("requests")
                 install("beautifulsoup4")
+                install("cloudscraper")
             }
         }
     }

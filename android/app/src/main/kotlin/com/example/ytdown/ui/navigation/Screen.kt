@@ -6,6 +6,7 @@ sealed class Screen(val route: String) {
     object Library : Screen("library")
     object Browser : Screen("browser")
     object Player : Screen("player")
+    object MetalDiscovery : Screen("metal_discovery")
     object PlaylistSelection : Screen("playlist_selection")
     object Settings : Screen("settings")
     object Equalizer : Screen("equalizer")

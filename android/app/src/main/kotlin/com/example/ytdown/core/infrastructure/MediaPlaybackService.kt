@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import androidx.annotation.OptIn
+import androidx.core.app.NotificationCompat
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.DefaultMediaNotificationProvider
 import androidx.media3.session.MediaSession
@@ -29,19 +30,24 @@ class MediaPlaybackService : MediaSessionService() {
     @OptIn(UnstableApi::class)
     override fun onCreate() {
         super.onCreate()
+
+        // ✅ CRITICAL FIX: startForeground() DEVE ser chamado ANTES de qualquer processamento
+        // para evitar ForegroundServiceDidNotStartInTimeException
+        createNotificationChannel()
+        val notification = NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle("YTDown")
+            .setContentText("Reproduzindo música...")
+            .setSmallIcon(android.R.drawable.ic_media_play)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setOngoing(true)
+            .build()
+        startForeground(1, notification)
+
         val player = playerManager.getPlayer()
 
-        createNotificationChannel()
-
-        // ✅ FIX: vincula o canal customizado ao Media3.
-        // Sem isso, o DefaultMediaNotificationProvider cria seu próprio canal interno
-        // e ignora o VISIBILITY_PUBLIC que definimos — a notificação não aparece
-        // na tela de bloqueio nem na barra de status.
         setMediaNotificationProvider(
             DefaultMediaNotificationProvider.Builder(this)
                 .setChannelId(CHANNEL_ID)
-                // ✅ setChannelName() omitido: já definido em createNotificationChannel()
-                // e o método espera @StringRes Int, não String direta
                 .build()
         )
 

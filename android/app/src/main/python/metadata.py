@@ -16,6 +16,17 @@ from helpers import (
 def _import_mutagen_submodule(name):
     return importlib.import_module(name)
 
+def _force_metadata_with_mutagen(filepath, title, artist, album, thumbnail_url=None, lyrics=None):
+    """
+    Força o write de metadata com mutagen, mesmo se já existir.
+    Usa _write_mp3_id3_tags ou _write_mp4_m4a_tags baseado na extensão.
+    """
+    if filepath.lower().endswith(".mp3"):
+        return _write_mp3_id3_tags(filepath, title, artist, album, thumbnail_url, lyrics)
+    elif filepath.lower().endswith((".m4a", ".mp4")):
+        return _write_mp4_m4a_tags(filepath, title, artist, album, thumbnail_url, lyrics)
+    return json.dumps({"success": False, "error": "Formato não suportado"})
+
 def rewrite_file_metadata(filepath, title=None, artist=None, album=None, artwork_url=None, lyrics=None):
     try:
         if filepath.lower().endswith(".mp3"):

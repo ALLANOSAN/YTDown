@@ -8,6 +8,20 @@ from urllib.request import Request, urlopen
 
 _MAX_THUMBNAIL_BYTES = 6 * 1024 * 1024
 
+def _failure_payload(error, stage, retryable=False, **extra):
+    """
+    Cria um payload de erro padronizado para retorno JSON.
+    """
+    import json
+    payload = {
+        "success": False,
+        "error": str(error),
+        "stage": stage,
+        "retryable": retryable
+    }
+    payload.update(extra)
+    return json.dumps(payload)
+
 
 import traceback
 import logging

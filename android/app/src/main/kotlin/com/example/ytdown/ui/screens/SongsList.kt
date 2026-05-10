@@ -12,6 +12,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.AutoFixHigh
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -43,7 +44,8 @@ fun SongsList(
     onNavigateToPlayer: () -> Unit,
     onAddToPlaylist: (DownloadItemEntity) -> Unit,
     onEditName: ((DownloadItemEntity) -> Unit)? = null,
-    onSuperFix: ((DownloadItemEntity) -> Unit)? = null
+    onSuperFix: ((DownloadItemEntity) -> Unit)? = null,
+    onAddFolder: (() -> Unit)? = null
 ) {
     var songMenu by remember { mutableStateOf<DownloadItemEntity?>(null) }
     var editingSong by remember { mutableStateOf<DownloadItemEntity?>(null) }

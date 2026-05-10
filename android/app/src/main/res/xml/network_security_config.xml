@@ -10,4 +10,8 @@
     <domain-config cleartextTrafficPermitted="true">
         <domain includeSubdomains="true">localhost</domain>
     </domain-config>
+    <!-- Allow Metal-Archives (may have SSL issues) -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">metal-archives.com</domain>
+    </domain-config>
 </network-security-config>

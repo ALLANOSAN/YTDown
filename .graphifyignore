@@ -75,6 +75,4 @@ android/app/schemas/
 /scripts/
 .github/
 .agent/
-.planning
-.opencode
-graphify-out
+.graphifyignore

@@ -18,13 +18,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.ytdown.ui.DiscoveryViewModel
+import com.example.ytdown.ui.MetalDiscoveryViewModel
 import com.example.ytdown.ui.theme.SurfaceDark
 import com.example.ytdown.ui.theme.TextSecondary
 import com.example.ytdown.ui.theme.YTDownPurple
 
 @Composable
 fun MetalDiscoveryScreen(
-    viewModel: DiscoveryViewModel,
+    viewModel: MetalDiscoveryViewModel,
     onBack: () -> Unit
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()

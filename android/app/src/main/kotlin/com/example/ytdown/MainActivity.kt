@@ -46,10 +46,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Inicializa o Chaquopy (Python no Android)
-        if (!Python.isStarted()) {
-            Python.start(AndroidPlatform(this))
-        }
+        // Inicializa o Chaquopy e PythonBridge
+        PythonBridge.initializePython(this)
         isRuntimeReady = true
 
         setContent {

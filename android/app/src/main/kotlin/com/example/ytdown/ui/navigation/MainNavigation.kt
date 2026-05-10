@@ -14,6 +14,8 @@ import com.example.ytdown.ui.PlayerViewModel
 import com.example.ytdown.ui.SystemViewModel
 import com.example.ytdown.ui.screens.*
 import com.example.ytdown.ui.screens.EqualizerScreen
+import com.example.ytdown.ui.screens.MetalDiscoveryScreen
+import com.example.ytdown.ui.MetalDiscoveryViewModel
 
 @Composable
 fun MainNavigation(
@@ -56,6 +58,13 @@ fun MainNavigation(
                 viewModel.fetchVideoDetails(context, videoUrl)
                 navController.navigate(Screen.Home.route)
             })
+        }
+        composable(Screen.MetalDiscovery.route) {
+            val discoveryViewModel: MetalDiscoveryViewModel = hiltViewModel()
+            MetalDiscoveryScreen(
+                viewModel = discoveryViewModel,
+                onBack = { navController.popBackStack() }
+            )
         }
         composable(Screen.Player.route) {
             PlayerFullScreen(

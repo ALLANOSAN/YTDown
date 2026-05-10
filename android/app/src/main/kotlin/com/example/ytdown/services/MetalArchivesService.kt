@@ -16,7 +16,7 @@ class MetalArchivesService @Inject constructor() {
             val jsonResponse = PythonBridge.invokePythonJson("get_similar_bands", bandName)
             gson.fromJson(jsonResponse, MetalDiscoveryResponse::class.java)
         } catch (e: Exception) {
-            MetalDiscoveryResponse(success = false, error = e.message ?: "Erro")
+            MetalDiscoveryResponse(success = false, error = e.message ?: "Erro ao buscar bandas similares")
         }
     }
 

@@ -1,10 +1,14 @@
 package com.example.ytdown.ui.screens
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -18,11 +22,6 @@ import com.example.ytdown.ui.LibraryViewModel
 import com.example.ytdown.ui.PlayerViewModel
 import com.example.ytdown.ui.SystemViewModel
 import com.example.ytdown.core.domain.DownloadItemEntity
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Album
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.MusicNote
-import androidx.compose.material.icons.filled.Person
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import com.example.ytdown.core.infrastructure.persistence.PlaylistWithCount
@@ -45,87 +44,109 @@ fun LibraryScreen(
     val recentlyAdded by libraryViewModel.recentlyAdded.collectAsStateWithLifecycle(initialValue = emptyList())
     val playlists by systemViewModel.playlists.collectAsStateWithLifecycle(initialValue = emptyList())
     val recentSearches by libraryViewModel.recentSearches.collectAsStateWithLifecycle()
-    
+
     var selectedTab by remember { mutableIntStateOf(0) }
     var searchQuery by remember { mutableStateOf("") }
     var isSearchFocused by remember { mutableStateOf(false) }
-    
+
     var editingItem by remember { mutableStateOf<EditingMetadata?>(null) }
     var showCreatePlaylistDialog by remember { mutableStateOf(false) }
     var songForPlaylist by remember { mutableStateOf<DownloadItemEntity?>(null) }
 
-    Column(modifier = Modifier.fillMaxSize()) {
-        LibrarySearchBar(
-            query = searchQuery,
-            onQueryChange = { 
-                searchQuery = it
-                libraryViewModel.onSearchQueryChanged(it)
-            },
-            onFocusChange = { isSearchFocused = it }
-        )
+    val folderPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocumentTree()
+    ) { uri ->
+        uri?.let { libraryViewModel.addFolder(it.toString()) }
+    }
 
-        if (!isSearchFocused && searchQuery.isEmpty()) {
-            PrimaryTabRow(selectedTabIndex = selectedTab, containerColor = Color.Black) {
-                Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }) { Text("Artistas", modifier = Modifier.padding(16.dp), color = Color.White) }
-                Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }) { Text("Álbuns", modifier = Modifier.padding(16.dp), color = Color.White) }
-                Tab(selected = selectedTab == 2, onClick = { selectedTab = 2 }) { Text("Músicas", modifier = Modifier.padding(16.dp), color = Color.White) }
-                Tab(selected = selectedTab == 3, onClick = { selectedTab = 3 }) { Text("Playlists", modifier = Modifier.padding(16.dp), color = Color.White) }
+    Scaffold(
+        floatingActionButton = {
+            if (selectedTab == 2) {
+                FloatingActionButton(
+                    onClick = { folderPickerLauncher.launch(null) },
+                    containerColor = YTDownPurple,
+                    contentColor = Color.White
+                ) {
+                    Icon(Icons.Default.FolderOpen, contentDescription = "Adicionar pasta de música")
+                }
             }
+        },
+        containerColor = Color.Transparent
+    ) { pad ->
+        Column(modifier = Modifier.fillMaxSize()) {
+            LibrarySearchBar(
+                query = searchQuery,
+                onQueryChange = {
+                    searchQuery = it
+                    libraryViewModel.onSearchQueryChanged(it)
+                },
+                onFocusChange = { isSearchFocused = it }
+            )
 
-            when (selectedTab) {
-                0 -> GroupedList(
-                    groups = completedSongs.groupBy { it.artist ?: "Desconhecido" },
-                    icon = Icons.Default.Person,
-                    onNavigate = onNavigateToDetail,
-                    libraryViewModel = libraryViewModel,
-                    isArtistGroup = true,
-                    onLongClick = { name, photo -> editingItem = EditingMetadata(name, photo, true) }
+            if (!isSearchFocused && searchQuery.isEmpty()) {
+                PrimaryTabRow(selectedTabIndex = selectedTab, containerColor = Color.Black) {
+                    Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }) { Text("Artistas", modifier = Modifier.padding(16.dp), color = Color.White) }
+                    Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }) { Text("Álbuns", modifier = Modifier.padding(16.dp), color = Color.White) }
+                    Tab(selected = selectedTab == 2, onClick = { selectedTab = 2 }) { Text("Músicas", modifier = Modifier.padding(16.dp), color = Color.White) }
+                    Tab(selected = selectedTab == 3, onClick = { selectedTab = 3 }) { Text("Playlists", modifier = Modifier.padding(16.dp), color = Color.White) }
+                }
+
+                when (selectedTab) {
+                    0 -> GroupedList(
+                        groups = completedSongs.groupBy { it.artist ?: "Desconhecido" },
+                        icon = Icons.Default.Person,
+                        onNavigate = onNavigateToDetail,
+                        libraryViewModel = libraryViewModel,
+                        isArtistGroup = true,
+                        onLongClick = { name, photo -> editingItem = EditingMetadata(name, photo, true) }
+                    )
+                    1 -> GroupedList(
+                        groups = completedSongs.groupBy { it.album ?: "Desconhecido" },
+                        icon = Icons.Default.Album,
+                        onNavigate = onNavigateToDetail,
+                        libraryViewModel = libraryViewModel,
+                        isArtistGroup = false,
+                        onLongClick = { name, photo -> editingItem = EditingMetadata(name, photo, false) }
+                    )
+                    2 -> SongsList(
+                        songs = completedSongs,
+                        recentlyAdded = recentlyAdded,
+                        playerViewModel = playerViewModel,
+                        libraryViewModel = libraryViewModel,
+                        onNavigateToPlayer = onNavigateToPlayer,
+                        onAddToPlaylist = { song -> songForPlaylist = song },
+                        onEditName = { song -> systemViewModel.updateTrackName(song, song.title) },
+                        onSuperFix = { systemViewModel.superFixID3() },
+                        onAddFolder = { folderPickerLauncher.launch(null) }
+                    )
+                    3 -> PlaylistsTab(
+                        playlists = playlists,
+                        libraryViewModel = libraryViewModel,
+                        onNavigateToDetail = onNavigateToPlaylist,
+                        onShowCreateDialog = { showCreatePlaylistDialog = true }
+                    )
+                }
+            } else if (isSearchFocused && searchQuery.isEmpty()) {
+                RecentSearchesList(
+                    searches = recentSearches,
+                    onSearchClick = {
+                        searchQuery = it
+                        libraryViewModel.onSearchQueryChanged(it)
+                    },
+                    onDeleteSearch = { libraryViewModel.deleteSearch(it) }
                 )
-                1 -> GroupedList(
-                    groups = completedSongs.groupBy { it.album ?: "Desconhecido" },
-                    icon = Icons.Default.Album,
-                    onNavigate = onNavigateToDetail,
-                    libraryViewModel = libraryViewModel,
-                    isArtistGroup = false,
-                    onLongClick = { name, photo -> editingItem = EditingMetadata(name, photo, false) }
-                )
-                2 -> SongsList(
+            } else {
+                SongsList(
                     songs = completedSongs,
-                    recentlyAdded = recentlyAdded,
+                    recentlyAdded = emptyList(),
                     playerViewModel = playerViewModel,
                     libraryViewModel = libraryViewModel,
                     onNavigateToPlayer = onNavigateToPlayer,
                     onAddToPlaylist = { song -> songForPlaylist = song },
                     onEditName = { song -> systemViewModel.updateTrackName(song, song.title) },
-                    onSuperFix = { systemViewModel.superFixID3() }
-                )
-                3 -> PlaylistsTab(
-                    playlists = playlists,
-                    libraryViewModel = libraryViewModel,
-                    onNavigateToDetail = onNavigateToPlaylist,
-                    onShowCreateDialog = { showCreatePlaylistDialog = true }
+                    onSuperFix = { song -> systemViewModel.superFixID3(song) }
                 )
             }
-        } else if (isSearchFocused && searchQuery.isEmpty()) {
-            RecentSearchesList(
-                searches = recentSearches,
-                onSearchClick = { 
-                    searchQuery = it
-                    libraryViewModel.onSearchQueryChanged(it)
-                },
-                onDeleteSearch = { libraryViewModel.deleteSearch(it) }
-            )
-        } else {
-            SongsList(
-                songs = completedSongs,
-                recentlyAdded = emptyList(),
-                playerViewModel = playerViewModel,
-                libraryViewModel = libraryViewModel,
-                onNavigateToPlayer = onNavigateToPlayer,
-                onAddToPlaylist = { song -> songForPlaylist = song },
-                onEditName = { song -> systemViewModel.updateTrackName(song, song.title) },
-                onSuperFix = { song -> systemViewModel.superFixID3(song) }
-            )
         }
     }
 

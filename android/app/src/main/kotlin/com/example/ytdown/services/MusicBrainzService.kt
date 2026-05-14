@@ -126,6 +126,65 @@ class MusicBrainzService @Inject constructor() {
             }
         }
 
+    suspend fun respectRateLimit() {
+        delay(REQUEST_DELAY_MS)
+    }
+
+    suspend fun getArtistTags(artistName: String): List<TagEntry> =
+        withContext(Dispatchers.IO) {
+            try {
+                val artistId = searchArtistId(artistName) ?: return@withContext emptyList()
+                val artist = lookupArtist(artistId, inc = "tags") ?: return@withContext emptyList()
+                val tagsArray = artist.optJSONArray("tags") ?: return@withContext emptyList()
+
+                val tags = mutableListOf<TagEntry>()
+                for (i in 0 until tagsArray.length()) {
+                    val tagObj = tagsArray.getJSONObject(i)
+                    tags.add(TagEntry(
+                        name = tagObj.optString("name"),
+                        count = tagObj.optInt("count", 0)
+                    ))
+                }
+                tags.sortedByDescending { it.count }
+            } catch (e: Exception) {
+                emptyList()
+            }
+        }
+
+    suspend fun searchBandsByTag(tag: String, limit: Int = 20): List<MBBand> =
+        withContext(Dispatchers.IO) {
+            try {
+                delay(REQUEST_DELAY_MS)
+                val encodedTag = URLEncoder.encode("tag:\"$tag\"", "UTF-8")
+                val url = "$BASE/artist?query=$encodedTag&limit=$limit&fmt=json"
+                val json = fetchJson(url) ?: return@withContext emptyList()
+                val artists = json.optJSONArray("artists") ?: return@withContext emptyList()
+
+                val bands = mutableListOf<MBBand>()
+                for (i in 0 until artists.length()) {
+                    val artist = artists.getJSONObject(i)
+                    val tags = mutableListOf<String>()
+                    val tagsArray = artist.optJSONArray("tags")
+                    if (tagsArray != null) {
+                        for (j in 0 until tagsArray.length()) {
+                            tags.add(tagsArray.getJSONObject(j).optString("name"))
+                        }
+                    }
+
+                    bands.add(MBBand(
+                        name = artist.optString("name"),
+                        mbid = artist.optString("id"),
+                        genre = tag,
+                        country = artist.optString("country"),
+                        tags = tags
+                    ))
+                }
+                bands
+            } catch (e: Exception) {
+                emptyList()
+            }
+        }
+
     suspend fun searchArtistId(name: String): String? {
         delay(REQUEST_DELAY_MS)
         val q = URLEncoder.encode(name, "UTF-8")

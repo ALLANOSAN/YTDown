@@ -63,14 +63,38 @@
                 tools:node="remove" />
         </provider>
 
+        <!--
+            MediaSessionService - Implementação completa de媒体播放服务
+            Necessário para:
+            - Notificação do player com controles
+            - Tela de bloqueio com botões
+            - Media Chip/Isla (Android 13+)
+            - Controles Bluetooth e headset
+            - Reprodução em background
+            
+            Configuração feita programaticamente no MediaPlaybackService.kt
+        -->
         <service
             android:name=".core.infrastructure.MediaPlaybackService"
             android:foregroundServiceType="mediaPlayback"
-            android:exported="true">
+            android:exported="true"
+            android:permission="android.permission.BIND_MEDIA_SESSION">
             <intent-filter>
                 <action android:name="androidx.media3.session.MediaSessionService" />
             </intent-filter>
         </service>
+
+        <!--
+            MediaButtonReceiver - Necessário para botões de hardware (headset/Bluetooth)
+            Traduz eventos de mídia (play/pause/next/previous) para o MediaSessionService
+        -->
+        <receiver
+            android:name="androidx.media.session.MediaButtonReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MEDIA_BUTTON" />
+            </intent-filter>
+        </receiver>
 
         <!--
             WorkManager foreground service — obrigatório no Android 14+ (API 34+).

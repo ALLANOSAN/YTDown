@@ -8,6 +8,7 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverter
 import androidx.room.TypeConverters
+import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.example.ytdown.data.local.metal.dao.*
 import com.example.ytdown.data.local.metal.entities.*
@@ -30,8 +31,8 @@ import java.util.concurrent.Executors
         ListeningHistoryEntity::class,
         MusicProfileEntity::class
     ],
-    version = 1,
-    exportSchema = false
+    version = 2,
+    exportSchema = true
 )
 @TypeConverters(Converters::class)
 abstract class MetalDatabase : RoomDatabase() {
@@ -44,6 +45,91 @@ abstract class MetalDatabase : RoomDatabase() {
     companion object {
         private const val DATABASE_NAME = "metal_database"
         
+        /**
+         * Migration da versão 1 para 2
+         * Adiciona colunas de metadados, status de download e índices necessários
+         * Usa estratégia de recriação de tabela para garantir alinhamento exato de schema.
+         */
+        private val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                Log.d("MIGRATION", "Iniciando MIGRATION_1_2: Recriação de tabelas para integridade")
+
+                // 1. Recriar metal_albums para garantir nulidade e colunas novas
+                database.execSQL("""
+                    CREATE TABLE IF NOT EXISTS metal_albums_new (
+                        mbid TEXT NOT NULL PRIMARY KEY,
+                        artistMbid TEXT NOT NULL,
+                        artistName TEXT NOT NULL,
+                        title TEXT NOT NULL,
+                        sortTitle TEXT NOT NULL,
+                        releaseYear TEXT,
+                        releaseDate TEXT,
+                        primaryType TEXT NOT NULL,
+                        secondaryTypesJson TEXT NOT NULL,
+                        frontCoverUrl TEXT,
+                        backCoverUrl TEXT,
+                        coverThumbnail250 TEXT,
+                        coverThumbnail500 TEXT,
+                        format TEXT,
+                        country TEXT,
+                        barcode TEXT,
+                        trackCount INTEGER NOT NULL,
+                        durationMs INTEGER,
+                        hasLyrics INTEGER NOT NULL,
+                        isComplete INTEGER NOT NULL,
+                        cachedAt INTEGER NOT NULL,
+                        lastUpdated INTEGER NOT NULL,
+                        releaseGroupMbid TEXT,
+                        downloadStatus TEXT NOT NULL,
+                        localPath TEXT,
+                        downloadedAt INTEGER,
+                        fileSize INTEGER,
+                        isFavorite INTEGER NOT NULL,
+                        userRating REAL,
+                        playCount INTEGER NOT NULL,
+                        lastPlayedAt INTEGER,
+                        FOREIGN KEY(artistMbid) REFERENCES metal_artists(mbid) ON UPDATE NO ACTION ON DELETE CASCADE 
+                    )
+                """.trimIndent())
+
+                // Copiar dados existentes de metal_albums
+                database.execSQL("""
+                    INSERT INTO metal_albums_new (
+                        mbid, artistMbid, artistName, title, sortTitle, releaseYear, releaseDate, 
+                        primaryType, secondaryTypesJson, trackCount, hasLyrics, isComplete, 
+                        cachedAt, lastUpdated, downloadStatus, isFavorite, playCount
+                    )
+                    SELECT 
+                        mbid, artistMbid, artistName, title, sortTitle, releaseYear, releaseDate, 
+                        primaryType, secondaryTypesJson, trackCount, hasLyrics, isComplete, 
+                        cachedAt, lastUpdated, 
+                        COALESCE(downloadStatus, 'NOT_DOWNLOADED'), 
+                        COALESCE(isFavorite, 0), 
+                        COALESCE(playCount, 0)
+                    FROM metal_albums
+                """.trimIndent())
+
+                database.execSQL("DROP TABLE metal_albums")
+                database.execSQL("ALTER TABLE metal_albums_new RENAME TO metal_albums")
+
+                // Recriar índices de metal_albums
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_metal_albums_artistMbid ON metal_albums(artistMbid)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_metal_albums_releaseYear ON metal_albums(releaseYear)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_metal_albums_cachedAt ON metal_albums(cachedAt)")
+                
+                // 2. Atualizar ListeningHistory
+                if (!database.hasColumn("listening_history", "favoriteGenre")) {
+                    database.execSQL("ALTER TABLE listening_history ADD COLUMN favoriteGenre TEXT")
+                }
+                
+                // 3. metal_artists: o schema v1 e v2 são idênticos na estrutura da tabela.
+                // A única diferença é o novo índice por country. Não recriar a tabela.
+                database.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_metal_artists_country ON metal_artists(country)"
+                )
+            }
+        }
+
         @Volatile
         private var INSTANCE: MetalDatabase? = null
         
@@ -56,6 +142,9 @@ abstract class MetalDatabase : RoomDatabase() {
                 )
                     // Configurações de otimização
                     .setJournalMode(JournalMode.TRUNCATE)
+                    
+                    // Adicionar Migrations aqui
+                    .addMigrations(MIGRATION_1_2)
                     
                     // Callback para eventos de banco
                     .addCallback(DatabaseCallback())
@@ -79,6 +168,25 @@ abstract class MetalDatabase : RoomDatabase() {
             }
         }
         
+        /**
+         * Helper para verificar a existência de colunas no SQLite.
+         * Essencial para migrations resilientes.
+         */
+        private fun SupportSQLiteDatabase.hasColumn(tableName: String, columnName: String): Boolean {
+            return try {
+                query("PRAGMA table_info($tableName)", emptyArray()).use { cursor ->
+                    val nameIndex = cursor.getColumnIndex("name")
+                    if (nameIndex == -1) return false
+                    while (cursor.moveToNext()) {
+                        if (cursor.getString(nameIndex) == columnName) return true
+                    }
+                    false
+                }
+            } catch (e: Exception) {
+                false
+            }
+        }
+
         /**
          * Limpa a instância (para testing)
          */

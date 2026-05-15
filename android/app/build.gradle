@@ -81,6 +81,12 @@ android {
         }
     }
 
+    sourceSets {
+        // Permite que o Room e ferramentas de teste acessem os schemas exportados
+        // Essencial para validar a integridade sem destruir dados
+        debug.assets.srcDirs += files("$projectDir/schemas")
+    }
+
     packaging {
         jniLibs {
             useLegacyPackaging = true

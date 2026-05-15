@@ -166,7 +166,7 @@ interface ListeningHistoryDao {
                COUNT(*) as totalPlays,
                SUM(listenedDurationMs) as totalListenTimeMs,
                AVG(listenedDurationMs) as avgListenDurationMs,
-               AVG(CASE WHEN completed THEN 1.0 ELSE 0.0 END) as completionRate,
+               AVG(CASE WHEN completed = 1 THEN 1.0 ELSE 0.0 END) as completionRate,
                AVG(CASE WHEN interactionType = 'SKIPPED' THEN 1.0 ELSE 0.0 END) as skipRate,
                MAX(listenedAt) as lastPlayedAt,
                MIN(listenedAt) as firstPlayedAt
@@ -194,17 +194,17 @@ interface ListeningHistoryDao {
     suspend fun getGenreStats(limit: Int = 10): List<GenreListeningStats>
     
     /**
-     * Plays por país (artista)
+     * Plays por país (artista) - usando LEFT JOIN para evitar subquery no FROM
      */
     @Query("""
-        SELECT artistName, country, COUNT(*) as count
-        FROM (
-            SELECT artistName, 
-                   (SELECT country FROM metal_artists WHERE name = artistName LIMIT 1) as country
-            FROM listening_history
-        )
-        WHERE country IS NOT NULL
-        GROUP BY artistName, country
+        SELECT 
+            lh.artistName as artistName,
+            COALESCE(ma.country, 'Unknown') as country,
+            COUNT(*) as count
+        FROM listening_history lh
+        LEFT JOIN metal_artists ma ON lh.artistName = ma.name
+        WHERE ma.country IS NOT NULL
+        GROUP BY lh.artistName, ma.country
         ORDER BY count DESC
         LIMIT :limit
     """)
@@ -252,7 +252,7 @@ interface ListeningHistoryDao {
                COUNT(*) as totalPlays,
                SUM(listenedDurationMs) as totalListenTimeMs,
                AVG(listenedDurationMs) as avgListenDurationMs,
-               AVG(CASE WHEN completed THEN 1.0 ELSE 0.0 END) as completionRate,
+               AVG(CASE WHEN completed = 1 THEN 1.0 ELSE 0.0 END) as completionRate,
                AVG(CASE WHEN interactionType = 'SKIPPED' THEN 1.0 ELSE 0.0 END) as skipRate,
                MAX(listenedAt) as lastPlayedAt
         FROM listening_history

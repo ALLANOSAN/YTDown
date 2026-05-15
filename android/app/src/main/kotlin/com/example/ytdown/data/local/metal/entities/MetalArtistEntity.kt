@@ -17,7 +17,8 @@ import com.example.ytdown.data.local.metal.database.Converters
         androidx.room.Index(value = ["mbid"], unique = true),
         androidx.room.Index(value = ["compatibilityScore"]),
         androidx.room.Index(value = ["lastUpdated"]),
-        androidx.room.Index(value = ["name"])
+        androidx.room.Index(value = ["name"]),
+        androidx.room.Index(value = ["country"])
     ]
 )
 @TypeConverters(Converters::class)

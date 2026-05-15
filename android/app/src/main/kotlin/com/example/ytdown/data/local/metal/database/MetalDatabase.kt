@@ -1,15 +1,18 @@
 package com.example.ytdown.data.local.metal.database
 
 import android.content.Context
+import android.util.Log
 import androidx.room.*
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverter
 import androidx.room.TypeConverters
+import androidx.sqlite.db.SupportSQLiteDatabase
 import com.example.ytdown.data.local.metal.dao.*
 import com.example.ytdown.data.local.metal.entities.*
 import kotlinx.coroutines.flow.Flow
+import java.util.concurrent.Executors
 
 /**
  * Database do Sistema Metal - Cache Offline Completo
@@ -59,6 +62,15 @@ abstract class MetalDatabase : RoomDatabase() {
                     
                     // Builder de queries compiladas
                     .enableMultiInstanceInvalidation()
+                    
+                    // Callback para debugging de queries
+                    // FIX: Adicionado tipos explícitos para evitar "Cannot infer type"
+                    .setQueryCallback(
+                        { sqlQuery: String, bindArgs: List<Any?> ->
+                            Log.d("ROOM_SQL", "Query: $sqlQuery | Args: $bindArgs")
+                        }, 
+                        Executors.newSingleThreadExecutor()
+                    )
                     
                     .build()
                 
@@ -123,22 +135,26 @@ class Converters {
  */
 private class DatabaseCallback : RoomDatabase.Callback() {
     
-    override fun onCreate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+    override fun onCreate(db: SupportSQLiteDatabase) {
         super.onCreate(db)
-        // Criar índices adicionais se necessário
-        db.execSQL("CREATE INDEX IF NOT EXISTS idx_metal_artists_country ON metal_artists(country)")
-        db.execSQL("CREATE INDEX IF NOT EXISTS idx_metal_artists_score ON metal_artists(compatibilityScore)")
-        db.execSQL("CREATE INDEX IF NOT EXISTS idx_metal_albums_artist ON metal_albums(artistMbid)")
-        db.execSQL("CREATE INDEX IF NOT EXISTS idx_listening_history_artist ON listening_history(artistName)")
-        db.execSQL("CREATE INDEX IF NOT EXISTS idx_listening_history_date ON listening_history(listenedAt)")
+        // Os índices principais já estão definidos nas entidades @Entity
     }
     
-    override fun onOpen(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+    override fun onOpen(db: SupportSQLiteDatabase) {
         super.onOpen(db)
-        // Otimizar pragmas ao abrir
-        db.execSQL("PRAGMA journal_mode = TRUNCATE")
-        db.execSQL("PRAGMA synchronous = NORMAL")
-        db.execSQL("PRAGMA cache_size = -64000") // 64MB cache
+        // Otimizar pragmas ao abrir - executados apenas uma vez por conexão
+        // FIX: Corrigido "query() candidates are not applicable" e "Unresolved reference 'close'"
+        // FIX: Removido "setForeignKeyConstraintsEnabled" (unresolved) e trocado por PRAGMA manual
+        try {
+            // Habilitar Foreign Keys manualmente no onOpen (robusto para SupportSQLiteDatabase)
+            db.execSQL("PRAGMA foreign_keys = ON")
+            
+            // Usar query(String, Array) com emptyArray() e .use {} para segurança e tipagem
+            db.query("PRAGMA synchronous = NORMAL", emptyArray<Any>()).use { _ -> }
+            db.query("PRAGMA cache_size = -64000", emptyArray<Any>()).use { _ -> }
+        } catch (e: Exception) {
+            Log.w("MetalDatabase", "PRAGMA optimization failed: ${e.message}")
+        }
     }
 }
 

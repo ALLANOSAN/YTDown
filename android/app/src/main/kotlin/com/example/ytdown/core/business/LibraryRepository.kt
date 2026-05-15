@@ -77,7 +77,11 @@ class LibraryRepository @Inject constructor(
     /**
      * Atualiza o nome e a foto de um ARTISTA em todos os seus arquivos.
      */
-    suspend fun updateArtistInBatch(oldName: String, newName: String, localPhotoPath: String?) {
+    suspend fun updateArtistInBatch(
+        oldName: String,
+        newName: String,
+        localPhotoPath: String?
+    ) {
         val allDownloads = downloadDao.getAllDownloadsSync()
         val artistTracks = allDownloads.filter { it.artist?.equals(oldName, ignoreCase = true) == true }
 
@@ -104,7 +108,12 @@ class LibraryRepository @Inject constructor(
      * Atualiza o nome e a foto de um ÁLBUM em todos os seus arquivos.
      * Mantém intactos os campos de ARTISTA para esses arquivos.
      */
-    suspend fun updateAlbumInBatch(artist: String? = null, oldAlbum: String, newAlbum: String, localPhotoPath: String?) {
+    suspend fun updateAlbumInBatch(
+        artist: String? = null,
+        oldAlbum: String,
+        newAlbum: String,
+        localPhotoPath: String?
+    ) {
         val allDownloads = downloadDao.getAllDownloadsSync()
         val albumTracks = allDownloads.filter {
             it.album?.equals(oldAlbum, ignoreCase = true) == true &&

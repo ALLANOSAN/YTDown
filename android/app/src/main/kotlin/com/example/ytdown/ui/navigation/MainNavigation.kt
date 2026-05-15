@@ -8,14 +8,14 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.NavType
 import androidx.navigation.navArgument
+import com.example.ytdown.ui.BandDetailsViewModel
 import com.example.ytdown.ui.DownloadViewModel
 import com.example.ytdown.ui.LibraryViewModel
 import com.example.ytdown.ui.PlayerViewModel
 import com.example.ytdown.ui.SystemViewModel
 import com.example.ytdown.ui.screens.*
 import com.example.ytdown.ui.screens.EqualizerScreen
-import com.example.ytdown.ui.screens.MetalDiscoveryScreen
-import com.example.ytdown.ui.MetalDiscoveryViewModel
+import com.example.ytdown.ui.screens.BandDetailsScreen
 
 @Composable
 fun MainNavigation(
@@ -60,9 +60,21 @@ fun MainNavigation(
             })
         }
         composable(Screen.MetalDiscovery.route) {
-            val discoveryViewModel: MetalDiscoveryViewModel = hiltViewModel()
-            MetalDiscoveryScreen(
-                viewModel = discoveryViewModel,
+            val enhancedMetalViewModel: com.example.ytdown.ui.EnhancedMetalViewModel = hiltViewModel()
+            com.example.ytdown.ui.screens.metal.EnhancedMetalScreen(
+                viewModel = enhancedMetalViewModel,
+                onBandClick = { bandName -> 
+                    navController.navigate(Screen.BandDetails.createRoute(bandName))
+                },
+                onNavigateToProfile = { }
+            )
+        }
+        composable(
+            route = Screen.BandDetails.route,
+            arguments = listOf(navArgument("bandName") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val bandName = backStackEntry.arguments?.getString("bandName") ?: ""
+            BandDetailsScreen(
                 onBack = { navController.popBackStack() }
             )
         }

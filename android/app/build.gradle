@@ -7,6 +7,7 @@ plugins {
     id "com.google.gms.google-services"
     id "com.google.firebase.crashlytics"
     id "com.chaquo.python"
+    id("org.jlleitschuh.gradle.ktlint") version "12.1.0"
 }
 
 // Substituiu o bloco kapt {} — KSP usa arg() diretamente

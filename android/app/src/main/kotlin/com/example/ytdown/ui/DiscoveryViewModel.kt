@@ -14,7 +14,7 @@ import javax.inject.Inject
 
 data class DiscoveryUIState(
     val suggestions: List<MBBand> = emptyList(),
-    val albums: List<MBAlbum> = emptyList(),
+    val albums: List<MBReleaseGroup> = emptyList(),
     val isLoading: Boolean = false,
     val error: String? = null
 )
@@ -49,35 +49,56 @@ class DiscoveryViewModel @Inject constructor(
 
     fun loadAlbums(bandName: String) {
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true) }
-            val response = musicBrainzService.getBandAlbums(bandName)
-            if (response.success) {
-                _uiState.update { it.copy(albums = response.albums ?: emptyList(), isLoading = false) }
-            } else {
-                _uiState.update { it.copy(isLoading = false, error = response.error) }
+            _uiState.update { it.copy(isLoading = true, error = null) }
+            
+            try {
+                // Buscar MBID primeiro
+                val mbid = musicBrainzService.searchArtistId(bandName)
+                if (mbid == null) {
+                    _uiState.update { it.copy(isLoading = false, error = "Banda não encontrada") }
+                    return@launch
+                }
+                
+                // Buscar release groups (álbuns)
+                val releaseGroups = musicBrainzService.getArtistReleaseGroups(mbid)
+                _uiState.update { it.copy(albums = releaseGroups, isLoading = false) }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(isLoading = false, error = e.message) }
             }
         }
     }
 
     fun downloadAlbum(bandName: String, albumName: String) {
         viewModelScope.launch {
-            scheduler.schedule(
-                url = VideoUrl("ytsearch1:\"$bandName $albumName - Full Album\""),
-                path = FilePath(storageResolver.privateDownloadsDir(isAudio = true).absolutePath),
-                meta = MediaMetadata(MediaTitle(albumName), ArtistName(bandName), AlbumName(albumName)),
-                options = DownloadOptions(DownloadType.AUDIO, "m4a", "128")
-            )
+            try {
+                scheduler.schedule(
+                    url = VideoUrl("ytsearch1:\"$bandName $albumName - Full Album\""),
+                    path = FilePath(storageResolver.privateDownloadsDir(isAudio = true).absolutePath),
+                    meta = MediaMetadata(MediaTitle(albumName), ArtistName(bandName), AlbumName(albumName)),
+                    options = DownloadOptions(DownloadType.AUDIO, "m4a", "128")
+                )
+            } catch (e: Exception) {
+                _uiState.update { it.copy(error = "Erro ao baixar: ${e.message}") }
+            }
         }
     }
 
     fun downloadBand(bandName: String) {
         viewModelScope.launch {
-            scheduler.schedule(
-                url = VideoUrl("ytsearch1:\"$bandName - Best Songs\""),
-                path = FilePath(storageResolver.privateDownloadsDir(isAudio = true).absolutePath),
-                meta = MediaMetadata(MediaTitle(bandName), ArtistName(bandName), AlbumName("Descoberta Metal")),
-                options = DownloadOptions(DownloadType.AUDIO, "m4a", "128")
-            )
+            try {
+                scheduler.schedule(
+                    url = VideoUrl("ytsearch1:\"$bandName - Best Songs\""),
+                    path = FilePath(storageResolver.privateDownloadsDir(isAudio = true).absolutePath),
+                    meta = MediaMetadata(MediaTitle(bandName), ArtistName(bandName), AlbumName("Descoberta Metal")),
+                    options = DownloadOptions(DownloadType.AUDIO, "m4a", "128")
+                )
+            } catch (e: Exception) {
+                _uiState.update { it.copy(error = "Erro ao baixar: ${e.message}") }
+            }
         }
+    }
+    
+    fun clearError() {
+        _uiState.update { it.copy(error = null) }
     }
 }

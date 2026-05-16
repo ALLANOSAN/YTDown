@@ -1,9 +1,6 @@
 package com.example.ytdown.di
 
 import android.content.Context
-import androidx.media3.common.AudioAttributes
-import androidx.media3.common.C
-import androidx.media3.exoplayer.ExoPlayer
 import androidx.room.Room
 import androidx.work.WorkManager
 import com.example.ytdown.DownloadMetadataManager
@@ -124,20 +121,6 @@ object AppModule {
     @Singleton
     fun provideDownloadRepository(dao: DownloadDao, storage: StorageResolver): DownloadRepository =
             DownloadRepository(dao, storage)
-
-    @Provides
-    @Singleton
-    fun provideMusicPlayer(@ApplicationContext context: Context): ExoPlayer {
-        val attributes =
-                AudioAttributes.Builder()
-                        .setUsage(C.USAGE_MEDIA)
-                        .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
-                        .build()
-        return ExoPlayer.Builder(context)
-                .setAudioAttributes(attributes, true)
-                .setHandleAudioBecomingNoisy(true)
-                .build()
-    }
 
     @Provides
     @Singleton

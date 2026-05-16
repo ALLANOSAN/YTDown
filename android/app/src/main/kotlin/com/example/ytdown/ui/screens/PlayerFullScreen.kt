@@ -12,7 +12,6 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.media3.common.Player
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -25,6 +24,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.ytdown.ui.components.SpectrumVisualizer
 import com.example.ytdown.ui.PlayerViewModel
 import com.example.ytdown.ui.theme.YTDownPurple
 import com.example.ytdown.ui.theme.SurfaceDark
@@ -36,15 +37,19 @@ fun PlayerFullScreen(
     viewModel: PlayerViewModel,
     onClose: () -> Unit
 ) {
-    val track by viewModel.currentTrack.collectAsState()
-    val isPlaying by viewModel.isPlaying.collectAsState()
-    val position by viewModel.position.collectAsState()
-    val duration by viewModel.duration.collectAsState()
-    val showArtistImage by viewModel.showArtistImage.collectAsState()
-    val isShuffleEnabled: Boolean by viewModel.isShuffleEnabled.collectAsState(initial = false)
-    val repeatMode: Int by viewModel.repeatMode.collectAsState(initial = Player.REPEAT_MODE_OFF)
-    val dominantColorInt by viewModel.dominantColor.collectAsState()
-    val sleepTimerMinutes by viewModel.sleepTimerMinutes.collectAsState()
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val track = state.currentTrack
+    val isPlaying = state.isPlaying
+    val position = state.positionMs
+    val duration = state.durationMs
+    val isShuffleEnabled = state.isShuffleEnabled
+    val repeatMode = state.repeatMode
+    
+    val showArtistImage by viewModel.showArtistImage.collectAsStateWithLifecycle()
+    val dominantColorInt by viewModel.dominantColor.collectAsStateWithLifecycle()
+    val sleepTimerMinutes by viewModel.sleepTimerMinutes.collectAsStateWithLifecycle()
+    
+    val audioEngine = viewModel.playerManager.getAudioEngine()
     
     var showSleepTimerDialog by remember { mutableStateOf(false) }
 
@@ -198,6 +203,16 @@ fun PlayerFullScreen(
 
             Spacer(modifier = Modifier.weight(0.8f))
 
+            // Spectrum Visualizer
+            SpectrumVisualizer(
+                audioEngine = audioEngine,
+                isPlaying = isPlaying,
+                modifier = Modifier.fillMaxWidth().height(60.dp),
+                barColor = accentColor.copy(alpha = 0.8f)
+            )
+
+            Spacer(modifier = Modifier.height(24.dp))
+
             // Track Info
             Column(horizontalAlignment = Alignment.Start, modifier = Modifier.fillMaxWidth()) {
                 Text(
@@ -274,10 +289,10 @@ fun PlayerFullScreen(
                     Icon(Icons.Default.SkipNext, null, tint = Color.White, modifier = Modifier.size(42.dp))
                 }
 
-                val repeatTint = if (repeatMode != Player.REPEAT_MODE_OFF) accentColor else Color.White.copy(alpha = 0.5f)
+                val repeatTint = if (repeatMode != 0) accentColor else Color.White.copy(alpha = 0.5f)
                 IconButton(onClick = { viewModel.toggleRepeatMode() }) {
                     Icon(
-                        if (repeatMode == Player.REPEAT_MODE_ONE) Icons.Default.RepeatOne else Icons.Default.Repeat,
+                        if (repeatMode == 2) Icons.Default.RepeatOne else Icons.Default.Repeat,
                         null,
                         tint = repeatTint,
                         modifier = Modifier.size(28.dp)

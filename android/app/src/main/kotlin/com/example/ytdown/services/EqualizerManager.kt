@@ -1,44 +1,48 @@
 package com.example.ytdown.services
 
-import android.media.audiofx.BassBoost
-import android.media.audiofx.Equalizer
-import android.media.audiofx.LoudnessEnhancer
+import com.example.ytdown.core.audio.BassFXEngine
+import com.example.ytdown.core.audio.PlaybackStateManager
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
-class EqualizerManager @Inject constructor() {
-    private var equalizer: Equalizer? = null
-    private var bassBoost: BassBoost? = null
-    private var loudnessEnhancer: LoudnessEnhancer? = null
+class EqualizerManager @Inject constructor(
+    private val fxEngine: BassFXEngine,
+    private val stateManager: PlaybackStateManager
+) {
+    // Frequências padrão para 10 bandas
+    private val centerFreqs = intArrayOf(31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000)
 
-    fun initEffects(audioSessionId: Int) {
-        if (audioSessionId != 0) {
-            release()
-            try {
-                equalizer = Equalizer(0, audioSessionId).apply { enabled = true }
-                bassBoost = BassBoost(0, audioSessionId).apply { enabled = true }
-                loudnessEnhancer = LoudnessEnhancer(audioSessionId).apply { enabled = true }
-            } catch (e: Exception) { android.util.Log.e("EqualizerManager", "Erro init: ${e.message}") }
-        }
+    fun getNumberOfBands(): Short = 10
+    
+    fun getBandLevelRange(): Pair<Short, Short> = Pair(-15, 15) // BASS DX8 EQ suporta +/- 15dB
+    
+    fun getCenterFreq(band: Short): Int = centerFreqs.getOrElse(band.toInt()) { 0 }
+
+    fun getBandLevel(band: Short): Short = (fxEngine.getBandGain(band.toInt()) * 100).toInt().toShort()
+
+    fun setBandLevel(band: Short, level: Short) {
+        fxEngine.setBandGain(band.toInt(), level.toFloat() / 100f)
     }
 
-    fun getNumberOfBands(): Short = equalizer?.numberOfBands ?: 0
-    fun getBandLevelRange(): Pair<Short, Short> {
-        val range = equalizer?.bandLevelRange ?: return Pair(0, 0)
-        return Pair(range[0], range[1])
+    fun setBassBoostStrength(strength: Short) {
+        // Implementação via Ganho nas bandas baixas (ex: 31Hz, 62Hz)
+        val gain = (strength.toFloat() / 1000f) * 15f // Escala 0-1000 para 0-15dB
+        fxEngine.setBandGain(0, gain)
+        fxEngine.setBandGain(1, gain)
     }
-    fun getCenterFreq(band: Short): Int = equalizer?.getCenterFreq(band) ?: 0
-    fun getBandLevel(band: Short): Short = equalizer?.getBandLevel(band) ?: 0
-    fun setBandLevel(band: Short, level: Short) { equalizer?.setBandLevel(band, level) }
-    fun setBassBoostStrength(strength: Short) { bassBoost?.setStrength(strength) }
-    fun getBassBoostStrength(): Short = bassBoost?.roundedStrength ?: 0
-    fun setTargetGain(gainmB: Int) { loudnessEnhancer?.setTargetGain(gainmB) }
-    fun getTargetGain(): Int = loudnessEnhancer?.targetGain?.toInt() ?: 0
+
+    fun getBassBoostStrength(): Short = (fxEngine.getBandGain(0) / 15f * 1000f).toInt().toShort()
+
+    fun setTargetGain(gainmB: Int) {
+        // Loudness via BASS Volume
+        val volume = 1.0f + (gainmB / 10000f)
+        stateManager.updateVolume(volume)
+    }
+
+    fun getTargetGain(): Int = ((stateManager.uiState.value.volume - 1.0f) * 10000f).toInt()
 
     fun release() {
-        equalizer?.release(); equalizer = null
-        bassBoost?.release(); bassBoost = null
-        loudnessEnhancer?.release(); loudnessEnhancer = null
+        // BASS gerencia o ciclo de vida via BassCore
     }
 }

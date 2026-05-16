@@ -21,11 +21,6 @@ fun EqualizerScreen(
     playerViewModel: PlayerViewModel,
     equalizerManager: EqualizerManager
 ) {
-    LaunchedEffect(Unit) {
-        val sessionId = playerViewModel.playerManager.getAudioSessionId()
-        equalizerManager.initEffects(sessionId)
-    }
-
     val numBands = equalizerManager.getNumberOfBands().toInt()
     val (minLevel, maxLevel) = equalizerManager.getBandLevelRange()
 

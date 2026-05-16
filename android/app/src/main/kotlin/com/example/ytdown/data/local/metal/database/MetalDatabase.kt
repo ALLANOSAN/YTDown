@@ -51,11 +51,11 @@ abstract class MetalDatabase : RoomDatabase() {
          * Usa estratégia de recriação de tabela para garantir alinhamento exato de schema.
          */
         private val MIGRATION_1_2 = object : Migration(1, 2) {
-            override fun migrate(database: SupportSQLiteDatabase) {
+            override fun migrate(db: SupportSQLiteDatabase) {
                 Log.d("MIGRATION", "Iniciando MIGRATION_1_2: Recriação de tabelas para integridade")
 
                 // 1. Recriar metal_albums para garantir nulidade e colunas novas
-                database.execSQL("""
+                db.execSQL("""
                     CREATE TABLE IF NOT EXISTS metal_albums_new (
                         mbid TEXT NOT NULL PRIMARY KEY,
                         artistMbid TEXT NOT NULL,
@@ -93,7 +93,7 @@ abstract class MetalDatabase : RoomDatabase() {
                 """.trimIndent())
 
                 // Copiar dados existentes de metal_albums
-                database.execSQL("""
+                db.execSQL("""
                     INSERT INTO metal_albums_new (
                         mbid, artistMbid, artistName, title, sortTitle, releaseYear, releaseDate, 
                         primaryType, secondaryTypesJson, trackCount, hasLyrics, isComplete, 
@@ -109,22 +109,22 @@ abstract class MetalDatabase : RoomDatabase() {
                     FROM metal_albums
                 """.trimIndent())
 
-                database.execSQL("DROP TABLE metal_albums")
-                database.execSQL("ALTER TABLE metal_albums_new RENAME TO metal_albums")
+                db.execSQL("DROP TABLE metal_albums")
+                db.execSQL("ALTER TABLE metal_albums_new RENAME TO metal_albums")
 
                 // Recriar índices de metal_albums
-                database.execSQL("CREATE INDEX IF NOT EXISTS index_metal_albums_artistMbid ON metal_albums(artistMbid)")
-                database.execSQL("CREATE INDEX IF NOT EXISTS index_metal_albums_releaseYear ON metal_albums(releaseYear)")
-                database.execSQL("CREATE INDEX IF NOT EXISTS index_metal_albums_cachedAt ON metal_albums(cachedAt)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_metal_albums_artistMbid ON metal_albums(artistMbid)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_metal_albums_releaseYear ON metal_albums(releaseYear)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_metal_albums_cachedAt ON metal_albums(cachedAt)")
                 
                 // 2. Atualizar ListeningHistory
-                if (!database.hasColumn("listening_history", "favoriteGenre")) {
-                    database.execSQL("ALTER TABLE listening_history ADD COLUMN favoriteGenre TEXT")
+                if (!db.hasColumn("listening_history", "favoriteGenre")) {
+                    db.execSQL("ALTER TABLE listening_history ADD COLUMN favoriteGenre TEXT")
                 }
                 
                 // 3. metal_artists: o schema v1 e v2 são idênticos na estrutura da tabela.
                 // A única diferença é o novo índice por country. Não recriar a tabela.
-                database.execSQL(
+                db.execSQL(
                     "CREATE INDEX IF NOT EXISTS index_metal_artists_country ON metal_artists(country)"
                 )
             }

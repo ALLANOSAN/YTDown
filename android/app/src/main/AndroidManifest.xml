@@ -77,11 +77,9 @@
         <service
             android:name=".core.infrastructure.MediaPlaybackService"
             android:foregroundServiceType="mediaPlayback"
-            android:exported="true"
-            android:permission="android.permission.BIND_MEDIA_SESSION">
+            android:exported="false">
             <intent-filter>
-                <action android:name="androidx.media3.session.MediaSessionService" />
-                <action android:name="android.media.browse.MediaBrowserService" />
+                <action android:name="android.intent.action.MEDIA_BUTTON" />
             </intent-filter>
         </service>
 

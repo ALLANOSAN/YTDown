@@ -34,6 +34,9 @@ class YTDownApplication : Application(), Configuration.Provider {
     override fun onCreate() {
         super.onCreate()
 
+        // Inicializar Motor de Áudio BASS
+        com.example.ytdown.core.audio.BassCore.initialize(this)
+
         // Sincronização automática
         val syncWorkRequest = PeriodicWorkRequestBuilder<SyncWorker>(15, TimeUnit.MINUTES)
             .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())

@@ -33,10 +33,11 @@ fun MiniPlayer(
     viewModel: PlayerViewModel,
     onClick: () -> Unit
 ) {
-    val track by viewModel.currentTrack.collectAsStateWithLifecycle()
-    val isPlaying by viewModel.isPlaying.collectAsStateWithLifecycle()
-    val position by viewModel.position.collectAsStateWithLifecycle()
-    val duration by viewModel.duration.collectAsStateWithLifecycle()
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val track = state.currentTrack
+    val isPlaying = state.isPlaying
+    val position = state.positionMs
+    val duration = state.durationMs
 
     if (track == null) return
 

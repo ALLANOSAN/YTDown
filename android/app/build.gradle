@@ -162,10 +162,8 @@ dependencies {
     // DocumentFile (Essencial para SAF/Escanear pastas externas)
     implementation "androidx.documentfile:documentfile:1.0.1"
 
-    // Media3 / ExoPlayer (Essencial para seu DAW)
-    implementation "androidx.media3:media3-exoplayer:1.5.1"
-    implementation "androidx.media3:media3-session:1.5.1"
-    implementation "androidx.media3:media3-common:1.5.1"
+    // Media Session (Legacy fallback / Compat)
+    implementation "androidx.media:media:1.7.0"
 
     // Rede & Serialização
     implementation "com.squareup.okhttp3:okhttp:4.12.0"

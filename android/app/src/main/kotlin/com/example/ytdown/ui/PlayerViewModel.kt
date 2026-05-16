@@ -12,7 +12,6 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import java.net.URL
 import javax.inject.Inject
-import androidx.media3.common.Player
 
 @HiltViewModel
 class PlayerViewModel @Inject constructor(
@@ -21,13 +20,8 @@ class PlayerViewModel @Inject constructor(
     private val lyricsService: com.example.ytdown.services.LyricsService
 ) : ViewModel() {
 
-    val currentTrack = playerManager.currentTrack
-    val isPlaying = MutableStateFlow(false)
-    val position = MutableStateFlow(0L)
-    val duration = MutableStateFlow(0L)
-    val isShuffleEnabled = playerManager.isShuffleEnabled
-    val repeatMode = playerManager.repeatMode
-
+    val uiState = playerManager.uiState
+    
     private val _lyrics = MutableStateFlow<com.example.ytdown.services.LyricsResponse?>(null)
     val lyrics = _lyrics.asStateFlow()
 
@@ -43,27 +37,14 @@ class PlayerViewModel @Inject constructor(
     private var artworkTimer: Job? = null
     private var progressTicker: Job? = null
     private var sleepTimerJob: Job? = null
-    private val playerListener = object : Player.Listener {
-        override fun onIsPlayingChanged(isPlaying: Boolean) {
-            this@PlayerViewModel.isPlaying.value = isPlaying
-        }
-
-        override fun onPlaybackStateChanged(playbackState: Int) {
-            if (playbackState == Player.STATE_READY || playbackState == Player.STATE_BUFFERING) {
-                duration.value = playerManager.getPlayer().duration.coerceAtLeast(0L)
-            }
-        }
-    }
 
     init {
         startArtworkTimer()
-        playerManager.getPlayer().addListener(playerListener)
         startProgressTicker()
-        isPlaying.value = playerManager.getPlayer().isPlaying
 
         // Extração de paleta e busca de letras quando a música muda
         viewModelScope.launch {
-            currentTrack.collect { track ->
+            uiState.map { it.currentTrack }.distinctUntilChanged().collect { track ->
                 track?.let { 
                     updatePalette(it)
                     fetchLyrics(it)
@@ -94,7 +75,7 @@ class PlayerViewModel @Inject constructor(
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val bitmap = if (imageUrl.startsWith("http")) {
-                    BitmapFactory.decodeStream(URL(imageUrl).openConnection().getInputStream())
+                    BitmapFactory.decodeStream(java.net.URL(imageUrl).openConnection().getInputStream())
                 } else if (!imageUrl.startsWith("content://")) {
                     BitmapFactory.decodeFile(imageUrl)
                 } else {
@@ -124,15 +105,9 @@ class PlayerViewModel @Inject constructor(
     }
 
     private fun startProgressTicker() {
+        // O progresso agora é atualizado automaticamente pelo BassPlaybackEngine 
+        // e refletido no stateManager.uiState
         progressTicker?.cancel()
-        progressTicker = viewModelScope.launch {
-            while (isActive) {
-                val player = playerManager.getPlayer()
-                position.value = player.currentPosition
-                duration.value = player.duration.coerceAtLeast(0L)
-                delay(200)
-            }
-        }
     }
 
     fun setSleepTimer(minutes: Int?) {
@@ -150,19 +125,14 @@ class PlayerViewModel @Inject constructor(
     }
 
     fun togglePlayPause() {
-        if (playerManager.currentTrack.value == null) return
+        if (uiState.value.currentTrack == null) return
         hapticManager.impactMedium()
-        val player = playerManager.getPlayer()
-        val currentlyPlaying = player.isPlaying
-
-        if (currentlyPlaying) {
+        
+        if (uiState.value.isPlaying) {
             playerManager.pause()
-        }
-        if (!currentlyPlaying) {
+        } else {
             playerManager.resume()
         }
-
-        isPlaying.value = playerManager.getPlayer().isPlaying
     }
 
     fun toggleShuffle() {
@@ -202,7 +172,6 @@ class PlayerViewModel @Inject constructor(
         artworkTimer?.cancel()
         progressTicker?.cancel()
         sleepTimerJob?.cancel()
-        playerManager.getPlayer().removeListener(playerListener)
         super.onCleared()
     }
 }

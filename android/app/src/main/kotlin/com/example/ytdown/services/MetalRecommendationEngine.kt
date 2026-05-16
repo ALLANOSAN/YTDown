@@ -64,69 +64,25 @@ class MetalRecommendationEngine @Inject constructor() {
         val bandFrequency = mutableMapOf<String, Int>()
         val countryFrequency = mutableMapOf<String, Int>()
 
-        // Analisar cada item da biblioteca
+        // Analisar cada item da biblioteca — baseado APENAS no nome da banda
         libraryItems.forEach { item ->
-            // Contar bandas/artistas
             item.artist?.toString()?.let { artist ->
                 if (artist.isNotBlank()) {
                     bandFrequency[artist.lowercase()] = (bandFrequency[artist.lowercase()] ?: 0) + 1
                 }
             }
-
-            // Contar países (quando disponíveis)
-            item.album?.let { album ->
-                val countryKey = extractCountryHint(album)
-                if (countryKey.isNotBlank()) {
-                    countryFrequency[countryKey] = (countryFrequency[countryKey] ?: 0) + 1
-                }
-            }
-
-            // Analisar gênero do álbum (quando disponível)
-            item.album?.let { album ->
-                val detectedGenre = detectGenreFromAlbum(album)
-                if (detectedGenre != null) {
-                    genreFrequency[detectedGenre] = (genreFrequency[detectedGenre] ?: 0) + 1
-                }
-            }
-
-            // Contar tags relacionadas a metal
-            item.album?.let { album ->
-                subgenreKeywords.forEach { (genre, keywords) ->
-                    keywords.forEach { keyword ->
-                        if (album.lowercase().contains(keyword)) {
-                            tagFrequency[genre] = (tagFrequency[genre] ?: 0) + 1
-                        }
-                    }
-                }
-            }
         }
-
-        // Criar listas ordenadas por frequência
-        val sortedGenres = genreFrequency.entries
-            .sortedByDescending { it.value }
-            .take(5)
-            .map { it.key }
-
-        val sortedTags = tagFrequency.entries
-            .sortedByDescending { it.value }
-            .take(10)
-            .map { it.key }
 
         val sortedBands = bandFrequency.entries
             .sortedByDescending { it.value }
             .take(20)
             .map { it.key }
 
-        val sortedCountries = countryFrequency.entries
-            .sortedByDescending { it.value }
-            .take(5)
-            .map { it.key }
-
         return UserMetalProfile(
-            favoriteGenres = sortedGenres,
-            favoriteTags = sortedTags,
+            favoriteGenres = emptyList(),   // preenchido via MusicBrainz no Repository
+            favoriteTags = emptyList(),     // preenchido via MusicBrainz no Repository
             favoriteBands = sortedBands,
-            favoriteCountries = sortedCountries,
+            favoriteCountries = emptyList(),
             totalTracks = libraryItems.size,
             analysisTimestamp = System.currentTimeMillis()
         )

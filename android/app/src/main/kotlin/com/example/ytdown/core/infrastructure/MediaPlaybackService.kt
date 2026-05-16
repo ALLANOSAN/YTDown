@@ -122,56 +122,9 @@ class MediaPlaybackService : MediaSessionService() {
                 .build()
         )
         
-        // =====================================================
-        // INICIAR FOREGROUND SERVICE CORRETAMENTE
-        // =====================================================
-        
-        // O MediaSessionService automaticamente chama startForeground()
-        // quando o player começa a reproduzir, mas chamamos explicitamente
-        // para garantir que o serviço inicie corretamente
-        
-        val notification = createForegroundNotification()
-        
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            // Android 14+ requer especificar o tipo de foreground service
-            startForeground(
-                NOTIFICATION_ID, 
-                notification,
-                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
-            )
-        } else {
-            startForeground(NOTIFICATION_ID, notification)
-        }
-    }
-
-    /**
-     * Cria a notificação de foreground - mostrada enquanto o MediaSession
-     * não assume o controle da notificação
-     */
-    private fun createForegroundNotification(): android.app.Notification {
-        val openIntent = Intent(this, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
-        }
-        
-        val openPendingIntent = PendingIntent.getActivity(
-            this,
-            0,
-            openIntent,
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-        )
-
-        // Builder para notificação de serviço em primeiro plano
-        return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("YTDown")
-            .setContentText("Reproduzindo música...")
-            .setSmallIcon(android.R.drawable.ic_media_play)
-            .setContentIntent(openPendingIntent)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
-            .setOngoing(true)
-            .setCategory(NotificationCompat.CATEGORY_SERVICE)
-            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-            .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
-            .build()
+        // REMOVIDO: startForeground manual. 
+        // O MediaSessionService gerenciará o Foreground automaticamente 
+        // assim que player.play() for chamado, usando o MediaNotificationProvider acima.
     }
 
     /**

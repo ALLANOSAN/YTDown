@@ -45,24 +45,48 @@ class MetalDiscoveryRepository @Inject constructor(
     }
 
     /**
-     * Versão com fallback para bibliotecas vazias
+     * Analisa o perfil e enriquece tags/generos consultando o MusicBrainz
+     * com os nomes reais das bandas da biblioteca. Sem fallback hardcoded.
      */
     suspend fun analyzeUserProfileWithFallback(): UserMetalProfile = withContext(Dispatchers.IO) {
-        val profile = analyzeUserProfile()
-        
-        // Se o perfil não está bem definido, retorna perfil padrão para novos usuários
-        if (!profile.isWellDefined()) {
-            return@withContext UserMetalProfile(
-                favoriteGenres = listOf("power metal", "heavy metal", "thrash metal"),
-                favoriteTags = listOf("power metal", "heavy metal", "thrash metal", "speed metal"),
-                favoriteBands = listOf("Iron Maiden", "Metallica", "Black Sabbath", "Slayer", "Pantera"),
-                favoriteCountries = listOf("US", "GB", "SE"),
-                totalTracks = 0,
-                analysisTimestamp = System.currentTimeMillis()
-            )
+        val baseProfile = analyzeUserProfile()
+
+        val libraryItems = downloadRepository.stream().first()
+        val libraryBandNames = libraryItems
+            .mapNotNull { it.artist?.toString()?.trim() }
+            .filter { it.isNotBlank() }
+            .distinct()
+            .take(10)
+
+        if (libraryBandNames.isEmpty()) {
+            return@withContext baseProfile
         }
-        
-        profile
+
+        val enrichedTags = mutableListOf<String>()
+        val enrichedGenres = mutableListOf<String>()
+        val enrichedCountries = mutableListOf<String>()
+
+        for (bandName in libraryBandNames) {
+            try {
+                val mbid = musicBrainzService.searchArtistId(bandName) ?: continue
+                val details = musicBrainzService.getArtistDetails(mbid) ?: continue
+                enrichedTags.addAll(details.tags)
+                enrichedGenres.addAll(details.genres)
+                details.country?.takeIf { it.isNotBlank() }?.let { enrichedCountries.add(it) }
+                kotlinx.coroutines.delay(1100)
+            } catch (e: Exception) {
+                continue
+            }
+        }
+
+        UserMetalProfile(
+            favoriteGenres = enrichedGenres.distinct().take(5),
+            favoriteTags = enrichedTags.distinct().take(10),
+            favoriteBands = libraryBandNames,
+            favoriteCountries = enrichedCountries.distinct().take(5),
+            totalTracks = baseProfile.totalTracks,
+            analysisTimestamp = System.currentTimeMillis()
+        )
     }
 
     // =====================================================
@@ -80,9 +104,27 @@ class MetalDiscoveryRepository @Inject constructor(
         excludeExistingBandNames: Set<String> = emptySet()
     ): List<RecommendedBand> = withContext(Dispatchers.IO) {
         
-        val searchTags = userProfile.getTopSearchTags().ifEmpty { 
-            listOf("power metal", "heavy metal", "black metal") 
+        // Tags vindas do perfil (já enriquecidas via MusicBrainz no analyzeUserProfileWithFallback)
+        // Se ainda vazias, buscar diretamente das bandas da biblioteca — nunca usar tags genéricas
+        var searchTags = userProfile.getTopSearchTags()
+
+        if (searchTags.isEmpty()) {
+            val dynamicTags = mutableListOf<String>()
+            for (bandName in userProfile.favoriteBands.take(5)) {
+                try {
+                    val mbid = musicBrainzService.searchArtistId(bandName) ?: continue
+                    val details = musicBrainzService.getArtistDetails(mbid) ?: continue
+                    dynamicTags.addAll(details.tags.take(3))
+                    kotlinx.coroutines.delay(1100)
+                } catch (e: Exception) {
+                    continue
+                }
+            }
+            searchTags = dynamicTags.distinct().take(6)
         }
+
+        // Sem tags mesmo após lookup = biblioteca vazia, nada a recomendar
+        if (searchTags.isEmpty()) return@withContext emptyList()
         
         val allCandidates = mutableListOf<Pair<MBArtist, SimilarityResult>>()
         val seenBandNames = mutableSetOf<String>()

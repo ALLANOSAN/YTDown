@@ -30,7 +30,7 @@ import coil.compose.AsyncImage
 import com.example.ytdown.core.domain.DownloadItemEntity
 import com.example.ytdown.core.infrastructure.persistence.PlaylistWithCount
 import com.example.ytdown.ui.DownloadViewModel
-import com.example.ytdown.ui.PlayerViewModel
+import com.example.ytdown.ui.PlaybackViewModel
 import com.example.ytdown.ui.SystemViewModel
 import com.example.ytdown.ui.theme.SurfaceDark
 import com.example.ytdown.ui.theme.TextSecondary
@@ -48,7 +48,7 @@ fun PlaylistDetailScreen(
     title: String,
     viewModel: DownloadViewModel,
     systemViewModel: SystemViewModel,
-    playerViewModel: PlayerViewModel,
+    playbackViewModel: PlaybackViewModel,
     onNavigateToPlayer: () -> Unit,
     onBack: () -> Unit,
     isPlaylistId: Boolean = false
@@ -146,7 +146,7 @@ fun PlaylistDetailScreen(
                                 onClick = {
                                     haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                     // Toca a fila completa a partir do item clicado
-                                    playerViewModel.playPlaylist(groupItems, index)
+                                    playbackViewModel.playPlaylist(groupItems, index)
                                     onNavigateToPlayer()
                                 },
                                 onLongClick = {

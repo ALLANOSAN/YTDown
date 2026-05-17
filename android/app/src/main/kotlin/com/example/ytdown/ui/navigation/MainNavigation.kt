@@ -11,7 +11,8 @@ import androidx.navigation.navArgument
 import com.example.ytdown.ui.BandDetailsViewModel
 import com.example.ytdown.ui.DownloadViewModel
 import com.example.ytdown.ui.LibraryViewModel
-import com.example.ytdown.ui.PlayerViewModel
+import com.example.ytdown.core.audio.BassFXEngine
+import com.example.ytdown.ui.PlaybackViewModel
 import com.example.ytdown.ui.SystemViewModel
 import com.example.ytdown.ui.screens.*
 import com.example.ytdown.ui.screens.EqualizerScreen
@@ -22,8 +23,9 @@ fun MainNavigation(
     navController: NavHostController,
     viewModel: DownloadViewModel
 ) {
-    val playerViewModel: PlayerViewModel = hiltViewModel()
+    val playbackViewModel: PlaybackViewModel = hiltViewModel()
     val systemViewModel: SystemViewModel = hiltViewModel()
+    val bassFXEngine: BassFXEngine = hiltViewModel()
 
     NavHost(navController = navController, startDestination = Screen.Home.route) {
         composable(Screen.Home.route) {
@@ -44,7 +46,7 @@ fun MainNavigation(
             LibraryScreen(
                 viewModel = viewModel,
                 systemViewModel = systemViewModel,
-                playerViewModel = playerViewModel,
+                playbackViewModel = playbackViewModel,
                 libraryViewModel = libraryViewModel,
                 onNavigateToPlayer = { navController.navigate(Screen.Player.route) },
                 onNavigateToDetail = { id -> navController.navigate(Screen.PlaylistDetail.createRoute(id)) },
@@ -63,7 +65,7 @@ fun MainNavigation(
             val enhancedMetalViewModel: com.example.ytdown.ui.EnhancedMetalViewModel = hiltViewModel()
             com.example.ytdown.ui.screens.metal.EnhancedMetalScreen(
                 viewModel = enhancedMetalViewModel,
-                onBandClick = { bandName -> 
+                onBandClick = { bandName ->
                     navController.navigate(Screen.BandDetails.createRoute(bandName))
                 },
                 onNavigateToProfile = { }
@@ -80,7 +82,7 @@ fun MainNavigation(
         }
         composable(Screen.Player.route) {
             PlayerFullScreen(
-                viewModel = playerViewModel,
+                viewModel = playbackViewModel,
                 onClose = { navController.popBackStack() }
             )
         }
@@ -100,10 +102,9 @@ fun MainNavigation(
             )
         }
         composable(Screen.Equalizer.route) {
-            val equalizerManager = com.example.ytdown.di.HiltEntryPoints.getEqualizerManager(LocalContext.current)
+            val equalizerViewModel: com.example.ytdown.core.audio.EqualizerViewModel = hiltViewModel()
             EqualizerScreen(
-                playerViewModel = playerViewModel,
-                equalizerManager = equalizerManager
+                viewModel = equalizerViewModel
             )
         }
         composable(Screen.Diagnostics.route) {
@@ -118,7 +119,7 @@ fun MainNavigation(
                 title = playlistId,
                 viewModel = viewModel,
                 systemViewModel = systemViewModel,
-                playerViewModel = playerViewModel,
+                playbackViewModel = playbackViewModel,
                 onNavigateToPlayer = { navController.navigate(Screen.Player.route) },
                 onBack = { navController.popBackStack() },
                 isPlaylistId = false
@@ -133,7 +134,7 @@ fun MainNavigation(
                 title = playlistId,
                 viewModel = viewModel,
                 systemViewModel = systemViewModel,
-                playerViewModel = playerViewModel,
+                playbackViewModel = playbackViewModel,
                 onNavigateToPlayer = { navController.navigate(Screen.Player.route) },
                 onBack = { navController.popBackStack() },
                 isPlaylistId = true

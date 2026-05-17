@@ -21,4 +21,11 @@ data class EqualizerPreset(
         result = 31 * result + gains.contentHashCode()
         return result
     }
+
+    companion object {
+        val Flat = EqualizerPreset("flat", "Flat", FloatArray(10) { 0f })
+        val Rock = EqualizerPreset("rock", "Rock", floatArrayOf(2f, 1f, 0f, -1f, -1f, 0f, 1f, 2f, 2f, 3f))
+        val Metal = EqualizerPreset("metal", "Metal", floatArrayOf(3f, 2f, 1f, 0f, -1f, 0f, 1f, 2f, 3f, 4f))
+        val BassBoost = EqualizerPreset("bass_boost", "Bass Boost", floatArrayOf(4f, 3f, 2f, 1f, 0f, 0f, 0f, 0f, 0f, 0f))
+    }
 }

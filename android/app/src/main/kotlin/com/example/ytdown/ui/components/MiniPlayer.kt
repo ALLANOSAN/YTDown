@@ -1,5 +1,6 @@
 package com.example.ytdown.ui.components
 
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -7,6 +8,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SkipNext
@@ -16,28 +18,56 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalContext
 import coil.compose.AsyncImage
-import com.example.ytdown.ui.PlayerViewModel
+import coil.request.ImageRequest
+import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
+import coil.request.CachePolicy
+import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.ytdown.ui.PlaybackViewModel
 import com.example.ytdown.ui.theme.YTDownPurple
 import com.example.ytdown.ui.theme.TextSecondary
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 @Composable
 fun MiniPlayer(
-    viewModel: PlayerViewModel,
+    viewModel: PlaybackViewModel,
     onClick: () -> Unit
 ) {
-    val state by viewModel.uiState.collectAsStateWithLifecycle()
-    val track = state.currentTrack
-    val isPlaying = state.isPlaying
-    val position = state.positionMs
-    val duration = state.durationMs
+    val uiState by viewModel.playbackUiState.collectAsStateWithLifecycle()
+
+    val track = uiState.currentTrack
+    val isPlaying = uiState.isPlaying
+    val position = uiState.currentPositionMs
+    val duration = uiState.durationMs
+
+    // ROTAÇÃO PROFISSIONAL: Album Art <-> Artist Art
+    var showArtistArt by remember { mutableStateOf(false) }
+    
+    // Reinicia o ciclo sempre que a track muda
+    LaunchedEffect(track?.id) {
+        showArtistArt = false // Começa sempre pelo álbum
+        while (true) {
+            delay(10000)
+            if (!track?.artistImageUrl.isNullOrBlank()) {
+                showArtistArt = !showArtistArt
+            }
+        }
+    }
+
+    val currentArtwork = remember(showArtistArt, track) {
+        if (showArtistArt && !track?.artistImageUrl.isNullOrEmpty()) 
+            track.artistImageUrl 
+        else 
+            track?.albumImageUrl ?: track?.thumbnailPath
+    }
 
     if (track == null) return
 
@@ -46,7 +76,7 @@ fun MiniPlayer(
             .fillMaxWidth()
             .padding(horizontal = 8.dp, vertical = 4.dp)
             .clickable { onClick() },
-        color = Color.Transparent, // Usaremos o background customizado
+        color = Color.Transparent,
         shape = RoundedCornerShape(12.dp),
         tonalElevation = 8.dp
     ) {
@@ -70,66 +100,85 @@ fun MiniPlayer(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Crossfade(
-                        targetState = track,
+                        targetState = currentArtwork,
                         animationSpec = tween(500),
                         label = "MiniPlayerArtwork"
-                    ) { currentTrack ->
-                        AsyncImage(
-                            model = currentTrack?.albumImageUrl?.takeIf { it.isNotBlank() } ?: currentTrack?.thumbnailPath,
-                            contentDescription = null,
-                            modifier = Modifier
-                                .size(48.dp)
-                                .clip(RoundedCornerShape(8.dp)),
-                            contentScale = ContentScale.Crop
-                        )
+                    ) { artwork ->
+                        if (!artwork.isNullOrEmpty()) {
+                            AsyncImage(
+                                model = ImageRequest.Builder(LocalContext.current)
+                                    .data(artwork)
+                                    .memoryCachePolicy(CachePolicy.ENABLED)
+                                    .allowHardware(false) // Necessário para animações pesadas
+                                    .build(),
+                                contentDescription = null,
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .clip(RoundedCornerShape(8.dp)),
+                                contentScale = ContentScale.Crop
+                            )
+                        } else {
+                            Box(
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(
+                                        Brush.verticalGradient(
+                                            colors = listOf(YTDownPurple, Color.DarkGray)
+                                        )
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    Icons.Default.MusicNote,
+                                    contentDescription = null,
+                                    tint = Color.White.copy(alpha = 0.5f),
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
+                        }
                     }
-                    
+
                     Spacer(modifier = Modifier.width(12.dp))
-                    
+
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = track?.title ?: "",
+                            text = track.title,
                             color = Color.White,
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Bold,
                             maxLines = 1
                         )
                         Text(
-                            text = track?.artist ?: "Desconhecido",
+                            text = track.artist ?: "Desconhecido",
                             color = TextSecondary,
                             fontSize = 12.sp,
                             maxLines = 1
                         )
                     }
-                    
+
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         IconButton(onClick = { viewModel.previous() }) {
                             Icon(Icons.Default.SkipPrevious, contentDescription = "Anterior", tint = Color.White, modifier = Modifier.size(24.dp))
                         }
-                        
-                        var playIcon = Icons.Default.PlayArrow
-                        if (isPlaying) {
-                            playIcon = Icons.Default.Pause
-                        }
-                        
+
                         IconButton(onClick = { viewModel.togglePlayPause() }) {
                             Icon(
-                                playIcon,
+                                if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                                 contentDescription = if (isPlaying) "Pausar" else "Reproduzir",
                                 tint = Color.White,
                                 modifier = Modifier.size(28.dp)
                             )
                         }
-                        
+
                         IconButton(onClick = { viewModel.next() }) {
                             Icon(Icons.Default.SkipNext, contentDescription = "Próxima", tint = Color.White, modifier = Modifier.size(24.dp))
                         }
                     }
                 }
-                
-                // Barra de progresso discreta no rodapé do mini player
+
                 if (duration > 0) {
-                    val progress = remember(position, duration) { 
+                    val progress = remember(position, duration) {
                         (position.toFloat() / duration.toFloat()).coerceIn(0f, 1f)
                     }
                     Box(

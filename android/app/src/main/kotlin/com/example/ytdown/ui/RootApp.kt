@@ -24,12 +24,9 @@ import com.example.ytdown.ui.theme.YTDownPurple
 @Composable
 fun RootApp(viewModel: DownloadViewModel, modifier: Modifier = Modifier) {
     val navController = rememberNavController()
-    val playerViewModel: PlayerViewModel = hiltViewModel()
+    val playbackViewModel: PlaybackViewModel = hiltViewModel()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
-
-    // Restaura a posição da última sessão assim que o app abre
-    LaunchedEffect(Unit) { playerViewModel.restoreLastPosition() }
 
     Scaffold(
             modifier = modifier,
@@ -37,7 +34,7 @@ fun RootApp(viewModel: DownloadViewModel, modifier: Modifier = Modifier) {
                 if (currentRoute != Screen.Player.route) {
                     Column {
                         MiniPlayer(
-                                viewModel = playerViewModel,
+                                viewModel = playbackViewModel,
                                 onClick = { navController.navigate(Screen.Player.route) }
                         )
                         RootBottomNavigation(currentRoute) { route ->

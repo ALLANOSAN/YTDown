@@ -59,6 +59,19 @@ def fetch_video_info(url, app_files_dir=None):
                         }
                     )
             else:
+                formats = []
+                for f in info.get("formats", []):
+                    formats.append({
+                        "format_id": f.get("format_id"),
+                        "ext": f.get("ext"),
+                        "height": f.get("height"),
+                        "note": f.get("format_note"),
+                        "vcodec": f.get("vcodec"),
+                        "acodec": f.get("acodec"),
+                        "filesize": f.get("filesize"),
+                        "tbr": f.get("tbr")
+                    })
+
                 entries.append(
                     {
                         "id": info.get("id", ""),
@@ -84,6 +97,7 @@ def fetch_video_info(url, app_files_dir=None):
                         "album": info.get("album", "YTDown"),
                         "is_playlist": is_playlist,
                         "entries": entries,
+                        "formats": formats if not is_playlist else []
                     },
                 }
             )

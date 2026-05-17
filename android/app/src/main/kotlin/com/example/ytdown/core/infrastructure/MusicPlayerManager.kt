@@ -1,9 +1,13 @@
 package com.example.ytdown.core.infrastructure
 
+import android.content.BroadcastReceiver
 import android.content.Context
-import android.net.Uri
 import android.content.Intent
+import android.content.IntentFilter
+import android.media.AudioManager
+import android.net.Uri
 import android.os.Build
+import android.util.Log
 import com.example.ytdown.core.domain.DownloadItemEntity
 import com.example.ytdown.core.infrastructure.persistence.DownloadDao
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -22,34 +26,44 @@ private const val PREFS_NAME = "player_state"
 private const val KEY_TRACK_ID = "last_track_id"
 private const val KEY_POSITION_MS = "last_position_ms"
 
+/**
+ * MusicPlayerManager - Gerenciador de reprodução que agora usa PlaybackController como Single Source of Truth.
+ * Mantido para compatibilidade com a UI existente.
+ */
 @Singleton
 class MusicPlayerManager
 @Inject
 constructor(
-        private val player: BassPlaybackEngine,
-        private val stateManager: PlaybackStateManager,
+        private val player: BassPlaybackEngine, // Motor BASS unificado
+        private val controller: PlaybackController,
         private val downloadDao: DownloadDao,
         private val metadataService: MetadataService,
         @param:ApplicationContext private val context: Context
 ) {
-    val uiState = stateManager.uiState
+    companion object {
+        private const val TAG = "MusicPlayerManager"
+    }
+
+    // Single Source of Truth - agora vem do PlaybackController
+    val uiState: StateFlow<PlaybackUiState> = controller.uiState
 
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
-    val currentTrack: StateFlow<DownloadItemEntity?> = stateManager.uiState
+    val currentTrack: StateFlow<DownloadItemEntity?> = controller.uiState
         .map { it.currentTrack }
         .distinctUntilChanged()
         .stateIn(scope, SharingStarted.Eagerly, null)
 
-    val repeatMode: StateFlow<Int> = stateManager.uiState
+    val repeatMode: StateFlow<Int> = controller.uiState
         .map { it.repeatMode }
         .distinctUntilChanged()
         .stateIn(scope, SharingStarted.Eagerly, 0)
 
-    val isShuffleEnabled: StateFlow<Boolean> = stateManager.uiState
+    val isShuffleEnabled: StateFlow<Boolean> = controller.uiState
         .map { it.isShuffleEnabled }
         .distinctUntilChanged()
         .stateIn(scope, SharingStarted.Eagerly, false)
+        
     private val prefs by lazy { context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE) }
 
     private var positionSaveJob: Job? = null
@@ -63,12 +77,27 @@ constructor(
         player.stop()
     }
 
+    private val noisyReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == AudioManager.ACTION_AUDIO_BECOMING_NOISY) {
+                pause()
+            }
+        }
+    }
+
     init {
         scope.launch {
             uiState.collect { state ->
+                Log.d(TAG, "UI State changed: isPlaying=${state.isPlaying}, track=${state.currentTrack?.title}")
                 if (state.isPlaying) startPositionSaveLoop() else stopPositionSaveLoop()
             }
         }
+
+        // Registrar Noisy Receiver
+        context.registerReceiver(
+            noisyReceiver,
+            IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY)
+        )
     }
 
     private fun startPositionSaveLoop() {
@@ -121,13 +150,15 @@ constructor(
     }
 
     fun toggleRepeatMode() {
+        Log.d(TAG, "toggleRepeatMode() called")
         val nextMode = (uiState.value.repeatMode + 1) % 3
-        stateManager.updateRepeatMode(nextMode)
+        controller.updateRepeatMode(nextMode)
     }
 
     fun toggleShuffle() {
+        Log.d(TAG, "toggleShuffle() called")
         val nextShuffle = !uiState.value.isShuffleEnabled
-        stateManager.updateShuffle(nextShuffle)
+        controller.updateShuffle(nextShuffle)
     }
 
     fun playTrack(item: DownloadItemEntity) {
@@ -138,18 +169,25 @@ constructor(
     
     fun playPlaylist(items: List<DownloadItemEntity>, startIndex: Int = 0) {
         scope.launch {
+            Log.d(TAG, "playPlaylist() called with ${items.size} items, startIndex=$startIndex")
+            
+            // Iniciar o serviço de mídia
             val intent = Intent(context, MediaPlaybackService::class.java).apply {
                 action = "PLAY_NEW_PLAYLIST"
             }
             context.startService(intent)
 
             val validItems = items.mapNotNull { resolvePlayableItem(it) }
-            if (validItems.isEmpty()) return@launch
+            if (validItems.isEmpty()) {
+                Log.w(TAG, "No valid items in playlist")
+                return@launch
+            }
 
             playlist = validItems.toMutableList()
             currentIndex = startIndex.coerceIn(0, playlist.size - 1)
             
             val item = playlist[currentIndex]
+            Log.d(TAG, "Playing item: ${item.title}")
             player.play(item)
 
             hydrateArtworkIfMissing(item)
@@ -203,7 +241,7 @@ constructor(
 
                 if (uiState.value.currentTrack?.id == item.id) {
                     withContext(Dispatchers.Main) {
-                        stateManager.updateTrack(updated)
+                        controller.updateTrack(updated)
                         updatePlayerMetadata(updated)
                     }
                 }
@@ -218,8 +256,15 @@ constructor(
         return Uri.fromFile(File(path))
     }
 
-    fun pause() = player.pause()
-    fun resume() = player.resume()
+    fun pause() {
+        Log.d(TAG, "pause() called")
+        player.pause()
+    }
+    
+    fun resume() {
+        Log.d(TAG, "resume() called")
+        player.resume()
+    }
 
     private fun updatePlayerMetadata(item: DownloadItemEntity) {
         val intent = Intent(context, MediaPlaybackService::class.java).apply {

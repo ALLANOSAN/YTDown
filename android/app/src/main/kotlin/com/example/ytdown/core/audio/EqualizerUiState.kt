@@ -8,7 +8,7 @@ data class EqualizerUiState(
     val preamp: Float = 0f,
     val bandGains: FloatArray = FloatArray(10) { 0f },
     val currentPresetId: String = "flat",
-    val spectrumData: FloatArray = FloatArray(128)
+    val spectrumData: FloatArray = FloatArray(64)
 ) {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true

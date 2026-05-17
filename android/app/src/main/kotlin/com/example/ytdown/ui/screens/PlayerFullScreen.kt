@@ -25,37 +25,32 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.ytdown.ui.PlaybackViewModel
 import com.example.ytdown.ui.components.SpectrumVisualizer
-import com.example.ytdown.ui.PlayerViewModel
 import com.example.ytdown.ui.theme.YTDownPurple
 import com.example.ytdown.ui.theme.SurfaceDark
 import com.example.ytdown.ui.theme.TextSecondary
-import com.example.ytdown.core.domain.DownloadItemEntity
+import com.example.ytdown.ui.PlaybackUiState
 
 @Composable
 fun PlayerFullScreen(
-    viewModel: PlayerViewModel,
+    viewModel: PlaybackViewModel,
     onClose: () -> Unit
 ) {
-    val state by viewModel.uiState.collectAsStateWithLifecycle()
-    val track = state.currentTrack
-    val isPlaying = state.isPlaying
-    val position = state.positionMs
-    val duration = state.durationMs
-    val isShuffleEnabled = state.isShuffleEnabled
-    val repeatMode = state.repeatMode
-    
-    val showArtistImage by viewModel.showArtistImage.collectAsStateWithLifecycle()
-    val dominantColorInt by viewModel.dominantColor.collectAsStateWithLifecycle()
-    val sleepTimerMinutes by viewModel.sleepTimerMinutes.collectAsStateWithLifecycle()
-    
-    val audioEngine = viewModel.playerManager.getAudioEngine()
-    
+    val uiState by viewModel.playbackUiState.collectAsStateWithLifecycle()
+    // Acessar spectrum do playerManager (via ViewModel, se necessário)
+    // val spectrumState by viewModel.spectrumState.collectAsStateWithLifecycle()
+
+    val track = uiState.currentTrack
+    val isPlaying = uiState.isPlaying
+    val position = uiState.currentPositionMs
+    val duration = uiState.durationMs
+    val isShuffleEnabled = uiState.isShuffleEnabled
+    val repeatMode = uiState.repeatMode
+
     var showSleepTimerDialog by remember { mutableStateOf(false) }
 
-    val accentColor = remember(dominantColorInt) {
-        dominantColorInt?.let { Color(it) } ?: YTDownPurple
-    }
+    val accentColor = YTDownPurple
 
     val currentTrack = track
     if (currentTrack == null) {
@@ -65,18 +60,10 @@ fun PlayerFullScreen(
         return
     }
 
-    val artworkSource = remember(currentTrack, showArtistImage) {
-        var source = currentTrack.thumbnailPath
-        if (showArtistImage && !currentTrack.artistImageUrl.isNullOrEmpty()) {
-            source = currentTrack.artistImageUrl
-        }
-        if (source.isNullOrEmpty() && !currentTrack.albumImageUrl.isNullOrEmpty()) {
-            source = currentTrack.albumImageUrl
-        }
-        source
-    }
+    val artworkSource = currentTrack.thumbnailPath
+        ?: currentTrack.albumImageUrl
+        ?: currentTrack.artistImageUrl
 
-    // --- AURORA UI ANIMATION ---
     val infiniteTransition = rememberInfiniteTransition(label = "Aurora")
     val auroraOffset1 by infiniteTransition.animateFloat(
         initialValue = 0f, targetValue = 1000f,
@@ -88,7 +75,6 @@ fun PlayerFullScreen(
     )
 
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
-        // 1. Background Blur Animado
         AnimatedContent(
             targetState = artworkSource,
             transitionSpec = {
@@ -96,16 +82,19 @@ fun PlayerFullScreen(
             },
             label = "BackgroundBlur"
         ) { targetSource ->
-            AsyncImage(
-                model = targetSource,
-                contentDescription = null,
-                modifier = Modifier.fillMaxSize().blur(60.dp),
-                contentScale = ContentScale.Crop,
-                alpha = 0.4f
-            )
+            if (!targetSource.isNullOrEmpty()) {
+                AsyncImage(
+                    model = targetSource,
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize().blur(60.dp),
+                    contentScale = ContentScale.Crop,
+                    alpha = 0.4f
+                )
+            } else {
+                Box(modifier = Modifier.fillMaxSize().background(Color.Black))
+            }
         }
 
-        // 2. Aurora Mesh Gradient Layer
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -118,7 +107,6 @@ fun PlayerFullScreen(
                 )
         )
 
-        // 3. Vignette Overlay
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -135,7 +123,6 @@ fun PlayerFullScreen(
                 .padding(horizontal = 24.dp, vertical = 32.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Header
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -144,7 +131,7 @@ fun PlayerFullScreen(
                 IconButton(onClick = onClose) {
                     Icon(Icons.Default.ExpandMore, "Minimizar", tint = Color.White, modifier = Modifier.size(32.dp))
                 }
-                
+
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
                         "TOCANDO AGORA",
@@ -153,28 +140,19 @@ fun PlayerFullScreen(
                         letterSpacing = 2.sp,
                         fontWeight = FontWeight.Bold
                     )
-                    if (sleepTimerMinutes != null) {
-                        Text(
-                            "Timer: ${sleepTimerMinutes}m",
-                            color = accentColor,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
                 }
 
                 IconButton(onClick = { showSleepTimerDialog = true }) {
                     Icon(
-                        if (sleepTimerMinutes != null) Icons.Default.Timer else Icons.Outlined.Timer,
+                        Icons.Outlined.Timer,
                         null,
-                        tint = if (sleepTimerMinutes != null) accentColor else Color.White
+                        tint = Color.White
                     )
                 }
             }
 
             Spacer(modifier = Modifier.weight(0.8f))
 
-            // Album Art
             AnimatedContent(
                 targetState = artworkSource,
                 transitionSpec = {
@@ -192,20 +170,39 @@ fun PlayerFullScreen(
                     shadowElevation = 20.dp,
                     color = Color.DarkGray
                 ) {
-                    AsyncImage(
-                        model = targetSource,
-                        contentDescription = null,
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop
-                    )
+                    if (!targetSource.isNullOrEmpty()) {
+                        AsyncImage(
+                            model = targetSource,
+                            contentDescription = null,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop
+                        )
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(
+                                    Brush.verticalGradient(
+                                        colors = listOf(YTDownPurple, Color.DarkGray)
+                                    )
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                Icons.Default.MusicNote,
+                                contentDescription = null,
+                                tint = Color.White.copy(alpha = 0.5f),
+                                modifier = Modifier.size(80.dp)
+                            )
+                        }
+                    }
                 }
             }
 
             Spacer(modifier = Modifier.weight(0.8f))
 
-            // Spectrum Visualizer
             SpectrumVisualizer(
-                audioEngine = audioEngine,
+                spectrumData = uiState.spectrumData,
                 isPlaying = isPlaying,
                 modifier = Modifier.fillMaxWidth().height(60.dp),
                 barColor = accentColor.copy(alpha = 0.8f)
@@ -213,17 +210,16 @@ fun PlayerFullScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // Track Info
             Column(horizontalAlignment = Alignment.Start, modifier = Modifier.fillMaxWidth()) {
                 Text(
-                    text = track?.title ?: "Título Desconhecido",
+                    text = currentTrack?.title ?: "Título Desconhecido",
                     style = MaterialTheme.typography.headlineMedium,
                     color = Color.White,
                     maxLines = 2
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = track?.artist ?: "Desconhecido",
+                    text = currentTrack?.artist ?: "Desconhecido",
                     style = MaterialTheme.typography.titleLarge,
                     color = Color.White.copy(alpha = 0.6f)
                 )
@@ -231,7 +227,6 @@ fun PlayerFullScreen(
 
             Spacer(modifier = Modifier.height(32.dp))
 
-            // Progress Bar
             Column {
                 Slider(
                     value = position.toFloat(),
@@ -254,7 +249,6 @@ fun PlayerFullScreen(
 
             Spacer(modifier = Modifier.height(32.dp))
 
-            // Controls
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -268,7 +262,7 @@ fun PlayerFullScreen(
                 IconButton(onClick = { viewModel.previous() }) {
                     Icon(Icons.Default.SkipPrevious, null, tint = Color.White, modifier = Modifier.size(42.dp))
                 }
-                
+
                 Surface(
                     onClick = { viewModel.togglePlayPause() },
                     shape = CircleShape,
@@ -290,7 +284,7 @@ fun PlayerFullScreen(
                 }
 
                 val repeatTint = if (repeatMode != 0) accentColor else Color.White.copy(alpha = 0.5f)
-                IconButton(onClick = { viewModel.toggleRepeatMode() }) {
+                IconButton(onClick = { viewModel.toggleRepeat() }) {
                     Icon(
                         if (repeatMode == 2) Icons.Default.RepeatOne else Icons.Default.Repeat,
                         null,
@@ -307,11 +301,7 @@ fun PlayerFullScreen(
     if (showSleepTimerDialog) {
         SleepTimerDialog(
             onDismiss = { showSleepTimerDialog = false },
-            onSelect = { 
-                viewModel.setSleepTimer(it)
-                showSleepTimerDialog = false
-            },
-            currentTimer = sleepTimerMinutes
+            onSelect = { showSleepTimerDialog = false }
         )
     }
 }
@@ -319,8 +309,7 @@ fun PlayerFullScreen(
 @Composable
 private fun SleepTimerDialog(
     onDismiss: () -> Unit,
-    onSelect: (Int?) -> Unit,
-    currentTimer: Int?
+    onSelect: (Int?) -> Unit
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -330,8 +319,7 @@ private fun SleepTimerDialog(
             Column {
                 listOf(null, 15, 30, 45, 60).forEach { minutes ->
                     val label = if (minutes == null) "Desativado" else "$minutes minutos"
-                    val isSelected = currentTimer == minutes
-                    
+
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -340,12 +328,12 @@ private fun SleepTimerDialog(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         RadioButton(
-                            selected = isSelected,
+                            selected = false,
                             onClick = { onSelect(minutes) },
                             colors = RadioButtonDefaults.colors(selectedColor = YTDownPurple)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text(label, color = if (isSelected) Color.White else TextSecondary)
+                        Text(label, color = Color.White)
                     }
                 }
             }

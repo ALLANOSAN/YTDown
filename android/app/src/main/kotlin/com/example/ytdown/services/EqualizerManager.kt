@@ -1,14 +1,14 @@
 package com.example.ytdown.services
 
 import com.example.ytdown.core.audio.BassFXEngine
-import com.example.ytdown.core.audio.PlaybackStateManager
+import com.example.ytdown.core.audio.PlaybackController
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
 class EqualizerManager @Inject constructor(
     private val fxEngine: BassFXEngine,
-    private val stateManager: PlaybackStateManager
+    private val controller: PlaybackController
 ) {
     // Frequências padrão para 10 bandas
     private val centerFreqs = intArrayOf(31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000)
@@ -37,10 +37,10 @@ class EqualizerManager @Inject constructor(
     fun setTargetGain(gainmB: Int) {
         // Loudness via BASS Volume
         val volume = 1.0f + (gainmB / 10000f)
-        stateManager.updateVolume(volume)
+        controller.updateVolume(volume)
     }
 
-    fun getTargetGain(): Int = ((stateManager.uiState.value.volume - 1.0f) * 10000f).toInt()
+    fun getTargetGain(): Int = ((controller.uiState.value.volume - 1.0f) * 10000f).toInt()
 
     fun release() {
         // BASS gerencia o ciclo de vida via BassCore

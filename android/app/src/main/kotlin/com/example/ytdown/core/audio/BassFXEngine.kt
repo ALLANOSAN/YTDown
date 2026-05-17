@@ -17,7 +17,8 @@ class BassFXEngine @Inject constructor(
     // Equalizador (10 bandas padrão)
     private val eqBands = IntArray(10)
     private val eqGains = FloatArray(10) { 0f }
-    private val frequencies = floatArrayOf(31f, 62f, 125f, 250f, 500f, 1000f, 2000f, 4000f, 8000f, 16000f)
+    private var currentPreamp = 1.0f
+    private val frequencies = floatArrayOf(31.25f, 62.5f, 125f, 250f, 500f, 1000f, 2000f, 4000f, 8000f, 16000f)
 
     /**
      * Aplica o Equalizador ao canal ativo.
@@ -26,21 +27,21 @@ class BassFXEngine @Inject constructor(
         val channel = playbackEngine.getActiveChannel()
         if (channel == 0) return
 
+        // Aplica o ganho do Preamp global do EQ
+        BASS.BASS_ChannelSetAttribute(channel, BASS.BASS_ATTRIB_VOL, currentPreamp)
+
         for (i in 0 until 10) {
-            // Remove o efeito anterior antes de criar um novo para evitar vazamentos
             if (eqBands[i] != 0) {
                 BASS.BASS_ChannelRemoveFX(channel, eqBands[i])
                 eqBands[i] = 0
             }
             
-            // BASS_FX_DX8_PARAMEQ é embutido no BASS (não precisa do plugin BASS_FX para EQ básico DX8)
             eqBands[i] = BASS.BASS_ChannelSetFX(channel, BASS.BASS_FX_DX8_PARAMEQ, 0)
             
-            // Verifica se alocou com sucesso antes de aplicar parâmetros
             if (eqBands[i] != 0) {
                 val params = BASS.BASS_DX8_PARAMEQ()
                 params.fCenter = frequencies[i]
-                params.fBandwidth = 18f
+                params.fBandwidth = 12f // Largura de banda para 10 bandas (oitava)
                 params.fGain = eqGains[i]
                 BASS.BASS_FXSetParameters(eqBands[i], params)
             }
@@ -63,6 +64,13 @@ class BassFXEngine @Inject constructor(
                 BASS.BASS_FXSetParameters(handle, params)
             }
         }
+    }
+
+    fun setPreamp(gainDb: Float) {
+        // Converte dB para escala linear (0.0 a 2.0)
+        currentPreamp = Math.pow(10.0, (gainDb / 20.0)).toFloat()
+        val channel = playbackEngine.getActiveChannel()
+        if (channel != 0) BASS.BASS_ChannelSetAttribute(channel, BASS.BASS_ATTRIB_VOL, currentPreamp)
     }
 
     fun getBandGain(bandIndex: Int): Float = eqGains.getOrElse(bandIndex) { 0f }

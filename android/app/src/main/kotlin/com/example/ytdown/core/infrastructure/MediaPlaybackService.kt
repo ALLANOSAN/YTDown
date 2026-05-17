@@ -33,54 +33,73 @@ import javax.inject.Inject
 
 /**
  * MediaPlaybackService - Serviço de reprodução baseado em BASS.
- * Segue padrões profissionais de sincronização e Audio Focus.
+ * SINGLE SOURCE OF TRUTH para MediaSession e Notification.
+ * 
+ * Responsabilidades:
+ * - MediaSession callbacks (lockscreen, media chip, Bluetooth)
+ * - Notificação com controles
+ * - Sincronização de estado com PlaybackController
+ * - Audio Focus
  */
 @AndroidEntryPoint
 class MediaPlaybackService : Service() {
-
-    @Inject
-    lateinit var playerManager: MusicPlayerManager
-    
-    @Inject
-    lateinit var stateManager: PlaybackStateManager
-    
-    private lateinit var mediaSession: MediaSessionCompat
-    private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
-    private lateinit var audioManager: AudioManager
-    
-    private var isForeground = false
 
     companion object {
         private const val TAG = "MediaPlaybackService"
         const val CHANNEL_ID = "bass_playback_channel"
         const val NOTIFICATION_ID = 2001
         
-        const val ACTION_PLAY = "com.example.ytdown.ACTION_PLAY"
-        const val ACTION_PAUSE = "com.example.ytdown.ACTION_PAUSE"
-        const val ACTION_NEXT = "com.example.ytdown.ACTION_NEXT"
-        const val ACTION_PREV = "com.example.ytdown.ACTION_PREV"
-        const val ACTION_STOP = "com.example.ytdown.ACTION_STOP"
+        // Actions
+        const val ACTION_PLAY = "com.ytdown.action.PLAY"
+        const val ACTION_PAUSE = "com.ytdown.action.PAUSE"
+        const val ACTION_PLAY_PAUSE = "com.ytdown.action.PLAY_PAUSE"
+        const val ACTION_NEXT = "com.ytdown.action.NEXT"
+        const val ACTION_PREVIOUS = "com.ytdown.action.PREVIOUS"
+        const val ACTION_STOP = "com.ytdown.action.STOP"
     }
+
+    @Inject
+    lateinit var playbackController: PlaybackController
+    
+    @Inject
+    lateinit var actionDispatcher: PlaybackActionDispatcher
+
+    private lateinit var mediaSession: MediaSessionCompat
+    private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+    
+    private var isForeground = false
+    private var audioManager: AudioManager? = null
+    private var audioFocusRequest: AudioFocusRequest? = null
 
     override fun onCreate() {
         super.onCreate()
-        Log.i(TAG, "Iniciando MediaPlaybackService")
+        Log.i(TAG, "MediaPlaybackService.onCreate()")
         
-        audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
         createNotificationChannel()
         setupMediaSession()
+        setupAudioFocus()
         
-        // Observar o estado unificado para atualizar o sistema
+        // ========== SINCRONIZAÇÃO CENTRALIZADA ==========
+        // O estado do PlaybackController é a única fonte de verdade.
+        // Sempre que mudar, atualizamos a MediaSession.
+        
+        // Observar mudanças no estado de reprodução
         serviceScope.launch {
-            stateManager.uiState.collect { state ->
+            playbackController.uiState.collect { state ->
+                Log.d(TAG, "State changed: isPlaying=${state.isPlaying}, track=${state.currentTrack?.title}")
                 updatePlaybackState(state)
+                updateNotification(state)
             }
         }
         
+        // Observar mudanças de track para atualizar metadados
         serviceScope.launch {
-            stateManager.uiState.map { it.currentTrack }.distinctUntilChanged().collect { track ->
-                track?.let { updateMetadata(it) }
-            }
+            playbackController.uiState
+                .map { it.currentTrack }
+                .distinctUntilChanged()
+                .collect { track ->
+                    track?.let { updateMetadata(it) }
+                }
         }
     }
 
@@ -89,19 +108,122 @@ class MediaPlaybackService : Service() {
         mediaSession = MediaSessionCompat(this, "MediaPlaybackService", mediaButtonReceiver, null)
         
         val intent = Intent(this, MainActivity::class.java)
-        val pendingIntent = PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_IMMUTABLE)
+        val pendingIntent = PendingIntent.getActivity(
+            this, 0, intent, 
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
         mediaSession.setSessionActivity(pendingIntent)
 
+        // ========== MEDIA SESSION CALLBACKS ==========
+        // Todos os controles externos (lockscreen, Bluetooth, media chip) passam por aqui
         mediaSession.setCallback(object : MediaSessionCompat.Callback() {
-            override fun onPlay() { playerManager.resume() }
-            override fun onPause() { playerManager.pause() }
-            override fun onSkipToNext() { playerManager.next() }
-            override fun onSkipToPrevious() { playerManager.previous() }
-            override fun onStop() { stopSelf() }
-            override fun onSeekTo(pos: Long) { playerManager.seekTo(pos) }
+            
+            override fun onPlay() {
+                Log.d(TAG, "MediaSession Callback: onPlay()")
+                actionDispatcher.play()
+            }
+            
+            override fun onPause() {
+                Log.d(TAG, "MediaSession Callback: onPause()")
+                actionDispatcher.pause()
+            }
+            
+            override fun onStop() {
+                Log.d(TAG, "MediaSession Callback: onStop()")
+                actionDispatcher.pause()
+                stopSelf()
+            }
+            
+            override fun onSkipToNext() {
+                Log.d(TAG, "MediaSession Callback: onSkipToNext()")
+                actionDispatcher.next()
+            }
+            
+            override fun onSkipToPrevious() {
+                Log.d(TAG, "MediaSession Callback: onSkipToPrevious()")
+                actionDispatcher.previous()
+            }
+            
+            override fun onSeekTo(pos: Long) {
+                Log.d(TAG, "MediaSession Callback: onSeekTo($pos)")
+                actionDispatcher.seekTo(pos)
+            }
+            
+            override fun onCustomAction(action: String?, extras: android.os.Bundle?) {
+                Log.d(TAG, "MediaSession Callback: onCustomAction($action)")
+                when (action) {
+                    "TOGGLE_SHUFFLE" -> actionDispatcher.toggleShuffle()
+                    "TOGGLE_REPEAT" -> actionDispatcher.toggleRepeatMode()
+                }
+            }
         })
 
         mediaSession.isActive = true
+        Log.d(TAG, "MediaSession activated")
+    }
+
+    private fun setupAudioFocus() {
+        audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val audioAttributes = AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_MEDIA)
+                .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                .build()
+            
+            audioFocusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+                .setAudioAttributes(audioAttributes)
+                .setAcceptsDelayedFocusGain(true)
+                .setOnAudioFocusChangeListener { focusChange ->
+                    handleAudioFocusChange(focusChange)
+                }
+                .build()
+        }
+        
+        // Registrar receiver para headset events
+        val intentFilter = IntentFilter(Intent.ACTION_HEADSET_PLUG)
+        intentFilter.addAction(AudioManager.ACTION_AUDIO_BECOMING_NOISY)
+        registerReceiver(headsetReceiver, intentFilter)
+    }
+
+    private fun handleAudioFocusChange(focusChange: Int) {
+        Log.d(TAG, "Audio focus change: $focusChange")
+        when (focusChange) {
+            AudioManager.AUDIOFOCUS_GAIN -> {
+                // Recuperar volume e continuar reprodução
+                actionDispatcher.play()
+            }
+            AudioManager.AUDIOFOCUS_LOSS -> {
+                // Perder foco - pausar
+                actionDispatcher.pause()
+            }
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
+                // Perda temporária - pausar
+                actionDispatcher.pause()
+            }
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
+                // Reduzir volume temporariamente
+                // O BASS vai controlar isso automaticamente
+            }
+        }
+    }
+
+    private val headsetReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            when (intent?.action) {
+                Intent.ACTION_HEADSET_PLUG -> {
+                    val state = intent.getIntExtra("state", -1)
+                    if (state == 0) {
+                        // Fone desconectado - pausar
+                        actionDispatcher.pause()
+                    }
+                }
+                AudioManager.ACTION_AUDIO_BECOMING_NOISY -> {
+                    // Algo conectado no alto-falante externo - pausar
+                    actionDispatcher.pause()
+                }
+            }
+        }
     }
 
     private fun createNotificationChannel() {
@@ -113,6 +235,7 @@ class MediaPlaybackService : Service() {
             ).apply {
                 description = "Controles de áudio BASS"
                 setSound(null, null)
+                lockscreenVisibility = NotificationCompat.VISIBILITY_PUBLIC
             }
             val manager = getSystemService(NotificationManager::class.java)
             manager.createNotificationChannel(channel)
@@ -120,26 +243,47 @@ class MediaPlaybackService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        Log.d(TAG, "onStartCommand: action=${intent?.action}")
+        
+        // Processar intents de botões de mídia
         MediaButtonReceiver.handleIntent(mediaSession, intent)
         
+        // Processar intents de ação da notificação
         when (intent?.action) {
-            ACTION_PLAY -> playerManager.resume()
-            ACTION_PAUSE -> playerManager.pause()
-            ACTION_NEXT -> playerManager.next()
-            ACTION_PREV -> playerManager.previous()
-            ACTION_STOP -> stopSelf()
+            ACTION_PLAY -> actionDispatcher.play()
+            ACTION_PAUSE -> actionDispatcher.pause()
+            ACTION_PLAY_PAUSE -> actionDispatcher.playPause()
+            ACTION_NEXT -> actionDispatcher.next()
+            ACTION_PREVIOUS -> actionDispatcher.previous()
+            ACTION_STOP -> {
+                actionDispatcher.pause()
+                stopSelf()
+            }
+            "PLAY_NEW_PLAYLIST" -> {
+                // O MusicPlayerManager iniciou isso
+                Log.d(TAG, "Play new playlist requested")
+            }
             "UPDATE_METADATA" -> {
-                stateManager.uiState.value.currentTrack?.let { updateMetadata(it) }
+                // Atualizar metadados da notificação
+                playbackController.uiState.value.currentTrack?.let { updateMetadata(it) }
             }
         }
         
         return START_STICKY
     }
 
+    /**
+     * Atualiza o estado do MediaSession com base no PlaybackController state.
+     * Este método é chamado automaticamente quando o estado muda.
+     */
     private fun updatePlaybackState(state: PlaybackUiState) {
-        val playbackState = if (state.isPlaying) PlaybackStateCompat.STATE_PLAYING else PlaybackStateCompat.STATE_PAUSED
+        val playbackState = when {
+            state.isBuffering -> PlaybackStateCompat.STATE_BUFFERING
+            state.isPlaying -> PlaybackStateCompat.STATE_PLAYING
+            else -> PlaybackStateCompat.STATE_PAUSED
+        }
         
-        val builder = PlaybackStateCompat.Builder()
+        val stateBuilder = PlaybackStateCompat.Builder()
             .setActions(
                 PlaybackStateCompat.ACTION_PLAY or
                 PlaybackStateCompat.ACTION_PAUSE or
@@ -150,112 +294,159 @@ class MediaPlaybackService : Service() {
                 PlaybackStateCompat.ACTION_SEEK_TO
             )
             .setState(playbackState, state.positionMs, 1.0f)
-            
-        mediaSession.setPlaybackState(builder.build())
-        showNotification()
-    }
-
-    private fun updateMetadata(track: DownloadItemEntity) {
-        serviceScope.launch(Dispatchers.IO) {
-            val builder = MediaMetadataCompat.Builder()
-                .putString(MediaMetadataCompat.METADATA_KEY_TITLE, track.title)
-                .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, track.artist ?: "Unknown")
-                .putString(MediaMetadataCompat.METADATA_KEY_ALBUM, track.album ?: "Unknown")
-                .putLong(MediaMetadataCompat.METADATA_KEY_DURATION, stateManager.uiState.value.durationMs)
-
-            val imageUrl = track.albumImageUrl ?: track.thumbnailPath
-            if (!imageUrl.isNullOrBlank()) {
-                try {
-                    val bitmap = if (imageUrl.startsWith("http")) {
-                        BitmapFactory.decodeStream(URL(imageUrl).openConnection().getInputStream())
-                    } else {
-                        BitmapFactory.decodeFile(imageUrl)
-                    }
-                    bitmap?.let {
-                        builder.putBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART, it)
-                    }
-                } catch (e: Exception) {
-                    Log.e(TAG, "Erro ao carregar capa para notificação: ${e.message}")
+            .setActiveQueueItemId(state.currentTrack?.id?.hashCode()?.toLong() ?: 0)
+        
+        try {
+            mediaSession.setPlaybackState(stateBuilder.build())
+            Log.d(TAG, "PlaybackState updated: $playbackState, position=${state.positionMs}")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error setting playback state: ${e.message}")
+        }
+        
+        // Gerenciar Audio Focus
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            audioFocusRequest?.let { request ->
+                if (state.isPlaying) {
+                    audioManager?.requestAudioFocus(request)
+                } else {
+                    audioManager?.abandonAudioFocusRequest(request)
                 }
-            }
-
-            withContext(Dispatchers.Main) {
-                mediaSession.setMetadata(builder.build())
-                showNotification()
             }
         }
     }
 
-    private fun showNotification() {
-        val state = stateManager.uiState.value
-        val isPlaying = state.isPlaying
-        val track = state.currentTrack ?: return
+    /**
+     * Atualiza os metadados da MediaSession (título, artista, capa, etc).
+     */
+    private fun updateMetadata(track: DownloadItemEntity) {
+        serviceScope.launch(Dispatchers.IO) {
+            try {
+                val builder = MediaMetadataCompat.Builder()
+                    .putString(MediaMetadataCompat.METADATA_KEY_TITLE, track.title)
+                    .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, track.artist ?: "Unknown")
+                    .putString(MediaMetadataCompat.METADATA_KEY_ALBUM, track.album ?: "Unknown")
+                    .putLong(MediaMetadataCompat.METADATA_KEY_DURATION, playbackController.uiState.value.durationMs)
 
+                // REQUISITO: Apenas Album Art na MediaSession (Lockscreen/Bluetooth)
+                // NUNCA usar artistImageUrl aqui.
+                val imageUrl = track.albumImageUrl ?: track.thumbnailPath
+                
+                if (!imageUrl.isNullOrBlank()) {
+                    val bitmap = loadBitmap(imageUrl)
+                    bitmap?.let {
+                        builder.putBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART, it)
+                    }
+                }
+
+                withContext(Dispatchers.Main) {
+                    mediaSession.setMetadata(builder.build())
+                    Log.d(TAG, "Metadata updated: ${track.title}")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error updating metadata: ${e.message}")
+            }
+        }
+    }
+
+    private fun loadBitmap(url: String): Bitmap? {
+        return try {
+            if (url.startsWith("http")) {
+                BitmapFactory.decodeStream(URL(url).openConnection().getInputStream())
+            } else {
+                BitmapFactory.decodeFile(url)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error loading bitmap: ${e.message}")
+            null
+        }
+    }
+
+    /**
+     * Atualiza a notificação com controles.
+     */
+    private fun updateNotification(state: PlaybackUiState) {
+        val track = state.currentTrack ?: return
+        val isPlaying = state.isPlaying
+        
+        // Se não está tocando e não é foreground, não fazer nada
+        if (!isPlaying && !isForeground) return
+        
         val activityIntent = Intent(this, MainActivity::class.java)
         val pendingIntent = PendingIntent.getActivity(
             this, 0, activityIntent, 
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
         val builder = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_media_play)
             .setContentTitle(track.title)
-            .setContentText(track.artist)
+            .setContentText(track.artist ?: "Unknown")
             .setLargeIcon(mediaSession.controller.metadata?.getBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART))
             .setContentIntent(pendingIntent)
             .setOngoing(isPlaying)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setCategory(NotificationCompat.CATEGORY_TRANSPORT)
+            .setPriority(NotificationCompat.PRIORITY_MAX)
             .setStyle(
                 MediaStyle()
                     .setMediaSession(mediaSession.sessionToken)
-                    .setShowActionsInCompactView(1, 2, 3)
+                    .setShowActionsInCompactView(0, 1, 2)
             )
 
-        // Actions
+        // Actions da notificação
         builder.addAction(
-            android.R.drawable.ic_media_previous, "Previous",
-            createPendingIntent(ACTION_PREV)
+            android.R.drawable.ic_media_previous, 
+            "Previous",
+            createActionPendingIntent(ACTION_PREVIOUS)
         )
         
-        if (isPlaying) {
-            builder.addAction(
-                android.R.drawable.ic_media_pause, "Pause",
-                createPendingIntent(ACTION_PAUSE)
-            )
-        } else {
-            builder.addAction(
-                android.R.drawable.ic_media_play, "Play",
-                createPendingIntent(ACTION_PLAY)
-            )
-        }
-
         builder.addAction(
-            android.R.drawable.ic_media_next, "Next",
-            createPendingIntent(ACTION_NEXT)
+            if (isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play,
+            if (isPlaying) "Pause" else "Play",
+            createActionPendingIntent(if (isPlaying) ACTION_PAUSE else ACTION_PLAY)
+        )
+        
+        builder.addAction(
+            android.R.drawable.ic_media_next, 
+            "Next",
+            createActionPendingIntent(ACTION_NEXT)
         )
 
         val notification = builder.build()
         
-        if (!isForeground && isPlaying) {
+        val notificationManager = getSystemService(NotificationManager::class.java)
+        
+        if (isPlaying && !isForeground) {
             startForeground(NOTIFICATION_ID, notification)
             isForeground = true
+            Log.d(TAG, "Started foreground")
         } else {
-            val manager = getSystemService(NotificationManager::class.java)
-            manager.notify(NOTIFICATION_ID, notification)
+            notificationManager.notify(NOTIFICATION_ID, notification)
+            Log.d(TAG, "Updated notification")
         }
     }
 
-    private fun createPendingIntent(action: String): PendingIntent {
-        val intent = Intent(this, MediaPlaybackService::class.java).apply { this.action = action }
+    private fun createActionPendingIntent(action: String): PendingIntent {
+        val intent = Intent(this, MediaPlaybackService::class.java).apply {
+            this.action = action
+        }
         return PendingIntent.getService(
-            this, action.hashCode(), intent, 
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+            this, 
+            action.hashCode(), 
+            intent, 
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
+        Log.d(TAG, "onDestroy()")
+        try {
+            unregisterReceiver(headsetReceiver)
+        } catch (e: Exception) {
+            // Receiver pode não estar registrado
+        }
         serviceScope.cancel()
         mediaSession.release()
         super.onDestroy()

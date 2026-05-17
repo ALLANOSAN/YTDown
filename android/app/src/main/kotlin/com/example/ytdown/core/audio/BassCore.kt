@@ -26,8 +26,11 @@ object BassCore {
         // BASS_CONFIG_DEV_NONSTOP: Mantém o dispositivo de áudio ativo mesmo sem canais tocando (evita clicks ao iniciar)
         BASS.BASS_SetConfig(BASS.BASS_CONFIG_DEV_NONSTOP, 1)
         
+        // Habilitar AAudio para menor latência (Android 8+)
+        BASS.BASS_SetConfig(BASS.BASS_CONFIG_ANDROID_AAUDIO, 1)
+
         // 2. Inicializar o dispositivo padrão (-1)
-        // Usamos BASS_DEVICE_OPENSLES para melhor performance e menor latência no Android.
+        // Usamos BASS_DEVICE_OPENSLES como fallback/padrão para melhor performance.
         if (!BASS.BASS_Init(-1, frequency, BASS.BASS_DEVICE_OPENSLES)) {
             val error = BASS.BASS_ErrorGetCode()
             Log.e(TAG, "Falha ao inicializar BASS: ${BassErrorMapper.getErrorMessage(error)}")

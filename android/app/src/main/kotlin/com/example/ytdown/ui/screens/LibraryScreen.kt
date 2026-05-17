@@ -19,7 +19,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.ytdown.ui.DownloadViewModel
 import com.example.ytdown.ui.LibraryViewModel
-import com.example.ytdown.ui.PlayerViewModel
+import com.example.ytdown.ui.PlaybackViewModel
 import com.example.ytdown.ui.SystemViewModel
 import com.example.ytdown.core.domain.DownloadItemEntity
 import androidx.compose.ui.text.font.FontWeight
@@ -33,7 +33,7 @@ import com.example.ytdown.ui.theme.YTDownPurple
 fun LibraryScreen(
     viewModel: DownloadViewModel,
     systemViewModel: SystemViewModel,
-    playerViewModel: PlayerViewModel,
+    playbackViewModel: PlaybackViewModel,
     libraryViewModel: LibraryViewModel,
     onNavigateToPlayer: () -> Unit,
     onNavigateToDetail: (String) -> Unit,
@@ -111,7 +111,7 @@ fun LibraryScreen(
                     2 -> SongsList(
                         songs = completedSongs,
                         recentlyAdded = recentlyAdded,
-                        playerViewModel = playerViewModel,
+                        playbackViewModel = playbackViewModel,
                         libraryViewModel = libraryViewModel,
                         onNavigateToPlayer = onNavigateToPlayer,
                         onAddToPlaylist = { song -> songForPlaylist = song },
@@ -139,7 +139,7 @@ fun LibraryScreen(
                 SongsList(
                     songs = completedSongs,
                     recentlyAdded = emptyList(),
-                    playerViewModel = playerViewModel,
+                    playbackViewModel = playbackViewModel,
                     libraryViewModel = libraryViewModel,
                     onNavigateToPlayer = onNavigateToPlayer,
                     onAddToPlaylist = { song -> songForPlaylist = song },

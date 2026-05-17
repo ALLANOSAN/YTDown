@@ -6,6 +6,7 @@ import android.util.Log
 import com.example.ytdown.core.domain.DownloadItemEntity
 import com.un4seen.bass.BASS
 import dagger.hilt.android.qualifiers.ApplicationContext
+import dagger.Lazy
 import kotlinx.coroutines.*
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -15,16 +16,22 @@ import javax.inject.Singleton
 /**
  * BassPlaybackEngine - O motor de reprodução profissional baseado em BASS.
  * Gerencia o ciclo de vida dos canais, streams e sincronização de eventos.
+ * 
+ * IMPORTANTE: Atualiza o PlaybackController (Single Source of Truth) diretamente.
  */
 @Singleton
 class BassPlaybackEngine @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val stateManager: PlaybackStateManager,
-    private val fxEngineProvider: dagger.Lazy<BassFXEngine>
+    private val controllerProvider: Lazy<PlaybackController>,
+    private val fxEngineProvider: Lazy<BassFXEngine>
 ) {
-    private val TAG = "BassPlaybackEngine"
+    // Propriedade lazy para evitar dependência circular na inicialização
+    private val controller: PlaybackController by lazy { controllerProvider.get() }
+    private val fxEngine: BassFXEngine by lazy { fxEngineProvider.get() }
     
-    private val fxEngine get() = fxEngineProvider.get()
+    companion object {
+        private const val TAG = "BassPlaybackEngine"
+    }
     
     private var activeChannel = 0 // Canal principal de áudio
     private val engineScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
@@ -44,9 +51,10 @@ class BassPlaybackEngine @Inject constructor(
      * Prepara e inicia a reprodução de um item.
      */
     fun play(item: DownloadItemEntity) {
+        Log.d(TAG, "play() called for: ${item.title}")
         val path = item.exportedPath ?: item.outputPath
         if (path.isBlank()) {
-            stateManager.setError("Caminho de arquivo inválido")
+            controller.setError("Caminho de arquivo inválido")
             return
         }
 
@@ -59,7 +67,7 @@ class BassPlaybackEngine @Inject constructor(
             val error = BASS.BASS_ErrorGetCode()
             val msg = BassErrorMapper.getErrorMessage(error)
             Log.e(TAG, "Erro ao criar stream: $msg")
-            stateManager.setError(msg)
+            controller.setError(msg)
             return
         }
 
@@ -69,18 +77,20 @@ class BassPlaybackEngine @Inject constructor(
         BASS.BASS_ChannelSetSync(activeChannel, BASS.BASS_SYNC_END, 0, endSync, 0)
 
         // 3. Aplicar atributos iniciais e DSP
-        BASS.BASS_ChannelSetAttribute(activeChannel, BASS.BASS_ATTRIB_VOL, stateManager.uiState.value.volume)
+        BASS.BASS_ChannelSetAttribute(activeChannel, BASS.BASS_ATTRIB_VOL, controller.uiState.value.volume)
         fxEngine.setupEqualizer()
 
         // 4. Iniciar Playback
         if (BASS.BASS_ChannelPlay(activeChannel, false)) {
-            stateManager.updateTrack(item)
-            stateManager.updatePlaying(true)
+            controller.updateTrack(item)
+            controller.updatePlaying(true)
             updateDuration()
             startProgressTracker()
+            Log.d(TAG, "Playback started successfully")
         } else {
             val error = BASS.BASS_ErrorGetCode()
-            stateManager.setError(BassErrorMapper.getErrorMessage(error))
+            controller.setError(BassErrorMapper.getErrorMessage(error))
+            Log.e(TAG, "Failed to start playback, error: $error")
         }
     }
 
@@ -92,8 +102,6 @@ class BassPlaybackEngine @Inject constructor(
                     if (pfd != null) {
                         // Importante: BASS_SAMPLE_FLOAT para processamento 32-bit
                         val handle = BASS.BASS_StreamCreateFile(pfd, 0, pfd.statSize, BASS.BASS_SAMPLE_FLOAT)
-                        // BASS cria uma cópia interna do descritor de arquivo; podemos fechar o original seguramente.
-                        pfd.close()
                         handle
                     } else 0
                 } catch (e: Exception) {
@@ -111,11 +119,48 @@ class BassPlaybackEngine @Inject constructor(
     }
 
     fun pause() {
+        Log.d(TAG, "pause() called, activeChannel: $activeChannel")
         if (activeChannel != 0 && BASS.BASS_ChannelPause(activeChannel)) {
-            stateManager.updatePlaying(false)
+            controller.updatePlaying(false)
+            controller.updateBuffering(false)
             stopProgressTracker()
+            Log.d(TAG, "Pause successful")
+        } else {
+            Log.w(TAG, "Pause failed, channel may be inactive")
         }
     }
+
+    /**
+     * Retoma a reprodução do canal ativo (quando há uma música carregada e pausada).
+     * Este método é usado pelo dispatcher quando o usuário quer "continuar" a reprodução.
+     */
+    fun resume() {
+        Log.d(TAG, "resume() called, activeChannel: $activeChannel")
+        if (activeChannel != 0) {
+            val isActive = BASS.BASS_ChannelIsActive(activeChannel)
+            if (isActive == BASS.BASS_ACTIVE_STOPPED || isActive == BASS.BASS_ACTIVE_PAUSED) {
+                if (BASS.BASS_ChannelPlay(activeChannel, false)) {
+                    controller.updatePlaying(true)
+                    controller.updateBuffering(false)
+                    startProgressTracker()
+                    Log.d(TAG, "Resume successful")
+                } else {
+                    val error = BASS.BASS_ErrorGetCode()
+                    Log.e(TAG, "Resume failed, error: $error")
+                    controller.setError("Erro ao continuar: ${BassErrorMapper.getErrorMessage(error)}")
+                }
+            } else if (isActive == BASS.BASS_ACTIVE_PLAYING) {
+                Log.d(TAG, "Already playing")
+            }
+        } else {
+            Log.w(TAG, "Resume called but no active channel")
+        }
+    }
+
+    /**
+     * Retorna true se há uma música carregada e pronta para reprodução.
+     */
+    fun hasLoadedTrack(): Boolean = activeChannel != 0 && controller.currentTrack != null
 
     /**
      * Realiza uma transição suave (Crossfade) entre a música atual e a próxima.
@@ -132,7 +177,7 @@ class BassPlaybackEngine @Inject constructor(
             BASS.BASS_ChannelPlay(nextChannel, false)
             
             // Fade in da nova música
-            BASS.BASS_ChannelSlideAttribute(nextChannel, BASS.BASS_ATTRIB_VOL, stateManager.uiState.value.volume, durationMs)
+            BASS.BASS_ChannelSlideAttribute(nextChannel, BASS.BASS_ATTRIB_VOL, controller.uiState.value.volume, durationMs)
             
             // Agenda a parada e liberação do canal antigo após o fade out
             engineScope.launch {
@@ -148,14 +193,16 @@ class BassPlaybackEngine @Inject constructor(
     }
 
     fun stop() {
+        Log.d(TAG, "stop() called, activeChannel: $activeChannel")
         if (activeChannel != 0) {
             BASS.BASS_ChannelStop(activeChannel)
             BASS.BASS_StreamFree(activeChannel)
             activeChannel = 0
         }
-        stateManager.updatePlaying(false)
-        stateManager.updatePosition(0L)
+        controller.updatePlaying(false)
+        controller.updatePosition(0L)
         stopProgressTracker()
+        Log.d(TAG, "Stop complete")
     }
 
     fun seekTo(posMs: Long) {
@@ -163,7 +210,8 @@ class BassPlaybackEngine @Inject constructor(
             val seconds = posMs / 1000.0
             val bytes = BASS.BASS_ChannelSeconds2Bytes(activeChannel, seconds)
             if (BASS.BASS_ChannelSetPosition(activeChannel, bytes, BASS.BASS_POS_BYTE)) {
-                stateManager.updatePosition(posMs)
+                controller.updatePosition(posMs)
+                Log.d(TAG, "Seek to $posMs ms successful")
             }
         }
     }
@@ -172,7 +220,8 @@ class BassPlaybackEngine @Inject constructor(
         if (activeChannel != 0) {
             val bytes = BASS.BASS_ChannelGetLength(activeChannel, BASS.BASS_POS_BYTE)
             val seconds = BASS.BASS_ChannelBytes2Seconds(activeChannel, bytes)
-            stateManager.updateDuration((seconds * 1000).toLong())
+            controller.updateDuration((seconds * 1000).toLong())
+            Log.d(TAG, "Duration updated: ${(seconds * 1000).toLong()} ms")
         }
     }
 
@@ -182,8 +231,12 @@ class BassPlaybackEngine @Inject constructor(
             while (isActive) {
                 if (activeChannel != 0) {
                     val bytes = BASS.BASS_ChannelGetPosition(activeChannel, BASS.BASS_POS_BYTE)
+                    val status = BASS.BASS_ChannelIsActive(activeChannel)
+                    
+                    controller.updateBuffering(status == BASS.BASS_ACTIVE_STALLED)
+                    
                     val seconds = BASS.BASS_ChannelBytes2Seconds(activeChannel, bytes)
-                    stateManager.updatePosition((seconds * 1000).toLong())
+                    controller.updatePosition((seconds * 1000).toLong())
                 }
                 delay(500) // Atualização a cada 500ms
             }
@@ -208,7 +261,7 @@ class BassPlaybackEngine @Inject constructor(
         if (activeChannel != 0) {
             BASS.BASS_ChannelSetAttribute(activeChannel, BASS.BASS_ATTRIB_VOL, volume)
         }
-        stateManager.updateVolume(volume)
+        controller.updateVolume(volume)
     }
 
     fun getActiveChannel(): Int = activeChannel

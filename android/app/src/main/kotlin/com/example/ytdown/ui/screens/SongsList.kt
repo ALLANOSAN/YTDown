@@ -27,7 +27,7 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.example.ytdown.core.domain.DownloadItemEntity
 import com.example.ytdown.ui.LibraryViewModel
-import com.example.ytdown.ui.PlayerViewModel
+import com.example.ytdown.ui.PlaybackViewModel
 import com.example.ytdown.ui.components.DownloadItemRow
 import com.example.ytdown.ui.components.StaggeredVerticalEntrance
 import com.example.ytdown.ui.theme.SurfaceDark
@@ -39,7 +39,7 @@ import com.example.ytdown.ui.theme.YTDownPurple
 fun SongsList(
     songs: List<DownloadItemEntity>,
     recentlyAdded: List<DownloadItemEntity>,
-    playerViewModel: PlayerViewModel,
+    playbackViewModel: PlaybackViewModel,
     libraryViewModel: LibraryViewModel,
     onNavigateToPlayer: () -> Unit,
     onAddToPlaylist: (DownloadItemEntity) -> Unit,
@@ -70,7 +70,7 @@ fun SongsList(
                     recentlyAdded.take(10).forEach { song ->
                         RecentSongCard(song = song, onClick = {
                             libraryViewModel.triggerHapticClick()
-                            playerViewModel.playTrack(song)
+                            playbackViewModel.playTrack(song)
                             onNavigateToPlayer()
                         })
                     }
@@ -86,7 +86,7 @@ fun SongsList(
                     item = song,
                     onClick = {
                         libraryViewModel.triggerHapticClick()
-                        playerViewModel.playPlaylist(songs, index)
+                        playbackViewModel.playPlaylist(songs, index)
                         onNavigateToPlayer()
                     },
                     onLongClick = {

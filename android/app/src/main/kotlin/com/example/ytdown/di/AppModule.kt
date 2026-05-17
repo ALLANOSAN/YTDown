@@ -10,13 +10,6 @@ import com.example.ytdown.core.business.DownloadRepository
 import com.example.ytdown.core.business.MediaInfoParser
 import com.example.ytdown.core.business.YtDlpWrapper
 import com.example.ytdown.core.infrastructure.*
-import com.example.ytdown.core.infrastructure.ArchiveExtractor
-import com.example.ytdown.core.infrastructure.AssetExtractor
-import com.example.ytdown.core.infrastructure.BinaryOrchestrator
-import com.example.ytdown.core.infrastructure.MediaScanner
-import com.example.ytdown.core.infrastructure.MimeTypeResolver
-import com.example.ytdown.core.infrastructure.PythonEnvironment
-import com.example.ytdown.core.infrastructure.StorageResolver
 import com.example.ytdown.core.infrastructure.persistence.AppDatabase
 import com.example.ytdown.core.infrastructure.persistence.DownloadDao
 import com.example.ytdown.core.infrastructure.persistence.LibraryDao
@@ -26,6 +19,11 @@ import com.example.ytdown.services.CoverArtArchiveService
 import com.example.ytdown.services.MusicBrainzService
 import com.example.ytdown.services.ObservabilityService
 import com.example.ytdown.services.StorageService
+import com.example.ytdown.core.audio.PlaybackController
+import com.example.ytdown.core.audio.PlaybackActionDispatcher
+import com.example.ytdown.core.audio.PlaybackActionDispatcherImpl
+import com.google.gson.Gson
+import com.google.gson.GsonBuilder
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -161,4 +159,28 @@ object AppModule {
             musicBrainzService: MusicBrainzService,
             coverArtService: CoverArtArchiveService
     ): MetalRepository = MetalRepository(database, musicBrainzService, coverArtService)
+
+    // Player Controller
+    @Provides
+    @Singleton
+    fun providePlaybackController(
+        engineProvider: javax.inject.Provider<com.example.ytdown.core.audio.BassPlaybackEngine>
+    ): PlaybackController = PlaybackController(engineProvider)
+
+    @Provides
+    @Singleton
+    fun providePlaybackActionDispatcher(
+        controller: PlaybackController,
+        engine: com.example.ytdown.core.audio.BassPlaybackEngine
+    ): PlaybackActionDispatcher = PlaybackActionDispatcherImpl(controller, engine)
+
+    // Gson Provider
+    @Provides
+    @Singleton
+    fun provideGson(): Gson {
+        return GsonBuilder()
+            .serializeNulls()
+            .setPrettyPrinting()
+            .create()
+    }
 }

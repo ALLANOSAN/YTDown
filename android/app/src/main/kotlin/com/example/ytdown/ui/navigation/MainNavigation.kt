@@ -1,6 +1,8 @@
 package com.example.ytdown.ui.navigation
 
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavHostController
@@ -21,13 +23,15 @@ import com.example.ytdown.ui.screens.BandDetailsScreen
 @Composable
 fun MainNavigation(
     navController: NavHostController,
-    viewModel: DownloadViewModel
+    viewModel: DownloadViewModel,
+    playbackViewModel: PlaybackViewModel,
+    systemViewModel: SystemViewModel
 ) {
-    val playbackViewModel: PlaybackViewModel = hiltViewModel()
-    val systemViewModel: SystemViewModel = hiltViewModel()
-    val bassFXEngine: BassFXEngine = hiltViewModel()
-
-    NavHost(navController = navController, startDestination = Screen.Home.route) {
+    NavHost(
+        navController = navController,
+        startDestination = Screen.Home.route,
+        modifier = Modifier.fillMaxSize()
+    ) {
         composable(Screen.Home.route) {
             HomeScreen(
                 viewModel = viewModel,
@@ -38,7 +42,9 @@ fun MainNavigation(
         composable(Screen.Downloads.route) {
             DownloadListScreen(
                 viewModel = viewModel,
-                onNavigateToBrowser = { navController.navigate(Screen.Browser.route) }
+                playbackViewModel = playbackViewModel,
+                onNavigateToBrowser = { navController.navigate(Screen.Browser.route) },
+                onNavigateToPlayer = { navController.navigate(Screen.Player.route) }
             )
         }
         composable(Screen.Library.route) {
@@ -83,7 +89,8 @@ fun MainNavigation(
         composable(Screen.Player.route) {
             PlayerFullScreen(
                 viewModel = playbackViewModel,
-                onClose = { navController.popBackStack() }
+                onClose = { navController.popBackStack() },
+                onNavigateToEqualizer = { navController.navigate(Screen.Equalizer.route) }
             )
         }
         composable(Screen.PlaylistSelection.route) {
@@ -104,7 +111,8 @@ fun MainNavigation(
         composable(Screen.Equalizer.route) {
             val equalizerViewModel: com.example.ytdown.core.audio.EqualizerViewModel = hiltViewModel()
             EqualizerScreen(
-                viewModel = equalizerViewModel
+                viewModel = equalizerViewModel,
+                onBack = { navController.popBackStack() }
             )
         }
         composable(Screen.Diagnostics.route) {

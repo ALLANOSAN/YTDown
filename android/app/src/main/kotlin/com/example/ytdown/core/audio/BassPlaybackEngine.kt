@@ -25,6 +25,10 @@ class BassPlaybackEngine @Inject constructor(
     private val controllerProvider: Lazy<PlaybackController>,
     private val fxEngineProvider: Lazy<BassFXEngine>
 ) {
+    init {
+        android.util.Log.e("BassPlaybackEngine", "ENGINE CREATED")
+    }
+
     // Propriedade lazy para evitar dependência circular na inicialização
     private val controller: PlaybackController by lazy { controllerProvider.get() }
     private val fxEngine: BassFXEngine by lazy { fxEngineProvider.get() }
@@ -228,6 +232,8 @@ class BassPlaybackEngine @Inject constructor(
     private fun startProgressTracker() {
         stopProgressTracker()
         progressJob = engineScope.launch {
+            val fftBuffer = java.nio.ByteBuffer.allocateDirect(1024)
+            val fftArray = FloatArray(64)
             while (isActive) {
                 if (activeChannel != 0) {
                     val bytes = BASS.BASS_ChannelGetPosition(activeChannel, BASS.BASS_POS_BYTE)
@@ -237,8 +243,14 @@ class BassPlaybackEngine @Inject constructor(
                     
                     val seconds = BASS.BASS_ChannelBytes2Seconds(activeChannel, bytes)
                     controller.updatePosition((seconds * 1000).toLong())
+
+                    // Coleta de dados FFT para o visualizador (64 bandas)
+                    BASS.BASS_ChannelGetData(activeChannel, fftBuffer, BASS.BASS_DATA_FFT512)
+                    fftBuffer.asFloatBuffer().get(fftArray)
+                    controller.updateSpectrum(fftArray.copyOf())
+                    fftBuffer.clear()
                 }
-                delay(500) // Atualização a cada 500ms
+                delay(50) // 20 FPS para visualizador fluido
             }
         }
     }

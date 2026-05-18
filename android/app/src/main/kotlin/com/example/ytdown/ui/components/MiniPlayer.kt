@@ -25,6 +25,8 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.zIndex
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import androidx.compose.ui.unit.sp
@@ -75,7 +77,9 @@ fun MiniPlayer(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 8.dp, vertical = 4.dp)
-            .clickable { onClick() },
+            .clickable { onClick() }
+            .zIndex(3f)
+            .alpha(1f),
         color = Color.Transparent,
         shape = RoundedCornerShape(12.dp),
         tonalElevation = 8.dp
@@ -158,7 +162,7 @@ fun MiniPlayer(
                     }
 
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        IconButton(onClick = { viewModel.previous() }) {
+                        IconButton(onClick = { viewModel.playPrevious() }) {
                             Icon(Icons.Default.SkipPrevious, contentDescription = "Anterior", tint = Color.White, modifier = Modifier.size(24.dp))
                         }
 
@@ -171,7 +175,7 @@ fun MiniPlayer(
                             )
                         }
 
-                        IconButton(onClick = { viewModel.next() }) {
+                        IconButton(onClick = { viewModel.playNext() }) {
                             Icon(Icons.Default.SkipNext, contentDescription = "Próxima", tint = Color.White, modifier = Modifier.size(24.dp))
                         }
                     }

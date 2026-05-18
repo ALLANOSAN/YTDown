@@ -11,6 +11,8 @@ interface PlaybackActionDispatcher {
     fun playPause()
     fun next()
     fun previous()
+    fun rewind()
+    fun forward()
     fun seekTo(positionMs: Long)
     fun toggleShuffle()
     fun toggleRepeatMode()

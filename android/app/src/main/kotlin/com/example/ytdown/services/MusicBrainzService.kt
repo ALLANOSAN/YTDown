@@ -1,13 +1,15 @@
 package com.example.ytdown.services
 
+import com.example.ytdown.core.metadata.model.MusicBrainzRecording
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
-import org.json.JSONArray
 import org.json.JSONObject
-import java.net.HttpURLConnection
+import org.json.JSONArray
 import java.net.URL
-import java.net.URLEncoder
+import java.net.HttpURLConnection
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -30,219 +32,72 @@ import javax.inject.Singleton
 @Singleton
 class MusicBrainzService @Inject constructor() {
 
+    private val client = OkHttpClient()
+
     companion object {
+        private const val USER_AGENT = "YTDown/1.0 (Android Music Discovery)"
         private const val BASE = "https://musicbrainz.org/ws/2"
-        private const val USER_AGENT = "YTDown/1.0 (Android Music Discovery; mailto:allanosan@email.com)"
         private const val REQUEST_DELAY_MS = 1100L
-        private const val CONNECT_TIMEOUT = 12000
-        private const val READ_TIMEOUT = 12000
+        private const val CONNECT_TIMEOUT = 10000
+        private const val READ_TIMEOUT = 10000
     }
 
-    // =====================================================
-    // ARTIST SEARCH - Buscar artistas
-    // =====================================================
-    
-    /**
-     * Busca artistas por nome
-     * @param query Nome do artista
-     * @param limit Número máximo de resultados
-     * @return Lista de artistas encontrados
-     */
-    suspend fun searchArtists(query: String, limit: Int = 10): List<MBArtist> = withContext(Dispatchers.IO) {
-        try {
-            delay(REQUEST_DELAY_MS)
-            val encodedQuery = URLEncoder.encode(query, "UTF-8")
-            val url = "$BASE/artist?query=$encodedQuery&limit=$limit&fmt=json"
-            val json = fetchJson(url) ?: return@withContext emptyList()
-            
-            val artistsArray = json.optJSONArray("artists") ?: return@withContext emptyList()
-            val artists = mutableListOf<MBArtist>()
-            
-            for (i in 0 until artistsArray.length()) {
-                val artist = artistsArray.getJSONObject(i)
-                artists.add(parseArtist(artist))
-            }
-            
-            artists
-        } catch (e: Exception) {
-            emptyList()
-        }
-    }
-
-    /**
-     * Busca artistas por tag (gênero musical)
-     * @param tag Tag/gênero (ex: "power metal", "black metal")
-     * @param limit Número máximo de resultados
-     * @return Lista de artistas filtrados por tag
-     */
-    suspend fun searchArtistsByTag(tag: String, limit: Int = 20): List<MBArtist> = withContext(Dispatchers.IO) {
-        try {
-            delay(REQUEST_DELAY_MS)
-            val encodedTag = URLEncoder.encode("tag:\"$tag\"", "UTF-8")
-            val url = "$BASE/artist?query=$encodedTag&limit=$limit&fmt=json"
-            val json = fetchJson(url) ?: return@withContext emptyList()
-            
-            val artistsArray = json.optJSONArray("artists") ?: return@withContext emptyList()
-            val artists = mutableListOf<MBArtist>()
-            
-            for (i in 0 until artistsArray.length()) {
-                val artist = artistsArray.getJSONObject(i)
-                artists.add(parseArtist(artist))
-            }
-            
-            artists
-        } catch (e: Exception) {
-            emptyList()
-        }
-    }
-
-    // =====================================================
-    // ARTIST DETAILS - Detalhes do artista
-    // =====================================================
-
-    /**
-     * Obtém detalhes completos de um artista
-     * @param mbid MusicBrainz ID do artista
-     * @param inc Recursos adicionais (tags, relaciones, etc)
-     * @return Dados completos do artista ou null
-     */
-    suspend fun getArtistDetails(mbid: String, inc: String = "tags,artist-rels,url-rels,alias"): MBBandDetails? = withContext(Dispatchers.IO) {
-        try {
-            delay(REQUEST_DELAY_MS)
-            val url = "$BASE/artist/$mbid?inc=$inc&fmt=json"
-            val json = fetchJson(url) ?: return@withContext null
-            
-            parseArtistDetails(json)
-        } catch (e: Exception) {
-            null
-        }
-    }
-
-    /**
-     * Busca artista por nome e retorna MBID
-     */
     suspend fun searchArtistId(name: String): String? = withContext(Dispatchers.IO) {
         try {
             delay(REQUEST_DELAY_MS)
-            val q = URLEncoder.encode(name, "UTF-8")
-            val json = fetchJson("$BASE/artist?query=$q&limit=1&fmt=json") ?: return@withContext null
+            val query = name.replace(" ", "+")
+            val url = "$BASE/artist/?query=$query&fmt=json"
+            val json = fetchJson(url) ?: return@withContext null
             val artists = json.optJSONArray("artists") ?: return@withContext null
             if (artists.length() == 0) return@withContext null
-            artists.getJSONObject(0).optString("id").takeIf { it.isNotBlank() }
+            
+            // Retorna o MBID do primeiro resultado (melhor correspondência)
+            artists.getJSONObject(0).optString("id")
         } catch (e: Exception) {
             null
         }
     }
 
-    // =====================================================
-    // RELEASE GROUPS - Álbuns/Discos
-    // =====================================================
+    suspend fun searchRecording(
+        title: String,
+        artist: String
+    ): MusicBrainzRecording? = withContext(Dispatchers.IO) {
+        return@withContext try {
+            delay(1100L) // Rate limit
+            val query = "recording:\"$title\" AND artist:\"$artist\""
+            val url = "https://musicbrainz.org/ws/2/recording/?query=$query&fmt=json"
 
-    /**
-     * Busca release groups (álbuns) de um artista
-     * @param artistMBID MBID do artista
-     * @param type Tipo de lançamento (album, compilation, etc)
-     * @param limit Número máximo de resultados
-     * @return Lista de álbuns
-     */
-    suspend fun getArtistReleaseGroups(
-        artistMBID: String,
-        type: String = "album|studio",
-        limit: Int = 50
-    ): List<MBReleaseGroup> = withContext(Dispatchers.IO) {
-        try {
-            delay(REQUEST_DELAY_MS)
-            val url = "$BASE/release-group?artist=$artistMBID&type=$type&limit=$limit&fmt=json"
-            val json = fetchJson(url) ?: return@withContext emptyList()
-            
-            val releaseGroups = json.optJSONArray("release-groups") ?: return@withContext emptyList()
-            val groups = mutableListOf<MBReleaseGroup>()
-            
-            for (i in 0 until releaseGroups.length()) {
-                val rg = releaseGroups.getJSONObject(i)
-                groups.add(
-                    MBReleaseGroup(
-                        id = rg.optString("id"),
-                        title = rg.optString("title"),
-                        firstReleaseDate = rg.optString("first-release-date", ""),
-                        primaryType = rg.optString("primary-type", ""),
-                        secondaryTypes = rg.optJSONArray("secondary-types")?.let { arr ->
-                            (0 until arr.length()).map { arr.getString(it) }
-                        } ?: emptyList(),
-                        artistCredit = rg.optJSONArray("artist-credit")?.optJSONObject(0)?.optString("name") ?: ""
-                    )
-                )
-            }
-            
-            groups
+            val request = Request.Builder()
+                .url(url)
+                .header("User-Agent", USER_AGENT)
+                .build()
+
+            val response = client.newCall(request).execute()
+            if (!response.isSuccessful) return@withContext null
+
+            val body = response.body?.string() ?: return@withContext null
+            val json = JSONObject(body)
+            val recordings = json.optJSONArray("recordings") ?: return@withContext null
+
+            if (recordings.length() == 0) return@withContext null
+
+            val item = recordings.getJSONObject(0)
+            val releases = item.optJSONArray("releases")
+            val release = releases?.optJSONObject(0)
+            val artistCredit = item.optJSONArray("artist-credit")
+            val artistObject = artistCredit?.optJSONObject(0)
+            val artistMetadata = artistObject?.optJSONObject("artist")
+
+            MusicBrainzRecording(
+                title = item.optString("title"),
+                artist = artistObject?.optString("name") ?: artist,
+                album = release?.optString("title") ?: "",
+                releaseId = release?.optString("id"),
+                artistId = artistMetadata?.optString("id")
+            )
         } catch (e: Exception) {
-            emptyList()
-        }
-    }
-
-    // =====================================================
-    // RELEASES - Lançamentos específicos
-    // =====================================================
-
-    /**
-     * Busca releases (versões específicas) de um release group
-     * @param releaseGroupMBID MBID do release group
-     * @return Lista de releases
-     */
-    suspend fun getReleases(releaseGroupMBID: String): List<MBRelease> = withContext(Dispatchers.IO) {
-        try {
-            delay(REQUEST_DELAY_MS)
-            val url = "$BASE/release?release-group=$releaseGroupMBID&limit=10&fmt=json"
-            val json = fetchJson(url) ?: return@withContext emptyList()
-            
-            val releases = json.optJSONArray("releases") ?: return@withContext emptyList()
-            val results = mutableListOf<MBRelease>()
-            
-            for (i in 0 until releases.length()) {
-                val release = releases.getJSONObject(i)
-                results.add(
-                    MBRelease(
-                        id = release.optString("id"),
-                        title = release.optString("title"),
-                        date = release.optString("date", ""),
-                        country = release.optString("country", ""),
-                        format = release.optJSONArray("formats")?.optJSONObject(0)?.optString("name") ?: ""
-                    )
-                )
-            }
-            
-            results
-        } catch (e: Exception) {
-            emptyList()
-        }
-    }
-
-    // =====================================================
-    // TAGS - Gêneros e estilos
-    // =====================================================
-
-    /**
-     * Busca as tags de um artista
-     * @param artistName Nome do artista
-     * @return Lista de tags ordenadas por relevância
-     */
-    suspend fun getArtistTags(artistName: String): List<TagEntry> = withContext(Dispatchers.IO) {
-        try {
-            val artistId = searchArtistId(artistName) ?: return@withContext emptyList()
-            val artist = lookupArtist(artistId, inc = "tags") ?: return@withContext emptyList()
-            val tagsArray = artist.optJSONArray("tags") ?: return@withContext emptyList()
-
-            val tags = mutableListOf<TagEntry>()
-            for (i in 0 until tagsArray.length()) {
-                val tagObj = tagsArray.getJSONObject(i)
-                tags.add(TagEntry(
-                    name = tagObj.optString("name"),
-                    count = tagObj.optInt("count", 0)
-                ))
-            }
-            tags.sortedByDescending { it.count }
-        } catch (e: Exception) {
-            emptyList()
+            e.printStackTrace()
+            null
         }
     }
 
@@ -260,9 +115,93 @@ class MusicBrainzService @Inject constructor() {
         )
     }
 
-    // =====================================================
-    // SIMILAR ARTISTS - Artistas semelhantes
-    // =====================================================
+    suspend fun getArtistDetails(mbid: String): MBBandDetails? = withContext(Dispatchers.IO) {
+        val json = lookupArtist(mbid, inc = "tags,genres,aliases,url-rels") ?: return@withContext null
+        parseArtistDetails(json)
+    }
+
+    suspend fun getArtistReleaseGroups(mbid: String): List<MBReleaseGroup> = withContext(Dispatchers.IO) {
+        delay(REQUEST_DELAY_MS)
+        val url = "$BASE/release-group/?artist=$mbid&fmt=json"
+        val json = fetchJson(url) ?: return@withContext emptyList()
+        val groups = json.optJSONArray("release-groups") ?: return@withContext emptyList()
+        
+        (0 until groups.length()).map { i ->
+            val group = groups.getJSONObject(i)
+            MBReleaseGroup(
+                id = group.optString("id"),
+                title = group.optString("title"),
+                firstReleaseDate = group.optString("first-release-date", ""),
+                primaryType = group.optString("primary-type", ""),
+                secondaryTypes = group.optJSONArray("secondary-types")?.let { arr ->
+                    (0 until arr.length()).map { arr.getString(it) }
+                } ?: emptyList(),
+                artistCredit = group.optString("artist-credit", "")
+            )
+        }
+    }
+
+    /**
+     * Obtém as tags de um artista usando seu MBID.
+     * @param mbid MusicBrainz ID do artista
+     * @return Lista de tags do artista
+     */
+    suspend fun getArtistTags(mbid: String): List<String> = withContext(Dispatchers.IO) {
+        val details = getArtistDetails(mbid)
+        details?.tags ?: emptyList()
+    }
+
+    /**
+     * Obtém as tags de um artista pelo nome.
+     * Primeiro busca o MBID pelo nome, depois busca as tags.
+     * @param artistName Nome do artista
+     * @return Lista de tags do artista
+     */
+    suspend fun getArtistTagsByName(artistName: String): List<String> = withContext(Dispatchers.IO) {
+        try {
+            val mbid = searchArtistId(artistName) ?: return@withContext emptyList()
+            getArtistTags(mbid)
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    /**
+     * Busca artistas por query string.
+     * @param query Termo de busca
+     * @param limit Número máximo de resultados (padrão: 25, máximo: 100)
+     * @see <a href="https://musicbrainz.org/doc/MusicBrainz_API">MusicBrainz API</a>
+     */
+    suspend fun searchArtists(query: String, limit: Int = 25): List<MBArtist> = withContext(Dispatchers.IO) {
+        delay(REQUEST_DELAY_MS)
+        val effectiveLimit = limit.coerceIn(1, 100)
+        val url = "$BASE/artist/?query=$query&fmt=json&limit=$effectiveLimit"
+        val json = fetchJson(url) ?: return@withContext emptyList()
+        val artists = json.optJSONArray("artists") ?: return@withContext emptyList()
+
+        (0 until artists.length()).map { i ->
+            parseArtist(artists.getJSONObject(i))
+        }
+    }
+
+    /**
+     * Busca artistas por tag do MusicBrainz.
+     * @param tag Tag (gênero) para busca
+     * @param limit Número máximo de resultados (padrão: 25, máximo: 100)
+     * @see <a href="https://musicbrainz.org/doc/MusicBrainz_API/Search">MusicBrainz Search</a>
+     */
+    suspend fun searchArtistsByTag(tag: String, limit: Int = 25): List<MBArtist> = withContext(Dispatchers.IO) {
+        delay(REQUEST_DELAY_MS)
+        val effectiveLimit = limit.coerceIn(1, 100)
+        // Busca usando a sintaxe de tag do MusicBrainz
+        val url = "$BASE/artist/?query=tag:$tag&fmt=json&limit=$effectiveLimit"
+        val json = fetchJson(url) ?: return@withContext emptyList()
+        val artists = json.optJSONArray("artists") ?: return@withContext emptyList()
+
+        (0 until artists.length()).map { i ->
+            parseArtist(artists.getJSONObject(i))
+        }
+    }
 
     /**
      * Descobre artistas semelhantes usando relaciones do MusicBrainz

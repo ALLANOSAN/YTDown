@@ -2,11 +2,13 @@ package com.example.ytdown.core.infrastructure.persistence
 
 import androidx.room.Database
 import androidx.room.RoomDatabase
+import com.example.ytdown.core.domain.SongEntity
 import com.example.ytdown.core.domain.DownloadItemEntity
 import com.example.ytdown.core.infrastructure.persistence.entities.*
 
 @Database(
     entities = [
+        SongEntity::class,
         DownloadItemEntity::class,
         FavoriteEntity::class,
         PlaylistEntity::class,
@@ -19,6 +21,7 @@ import com.example.ytdown.core.infrastructure.persistence.entities.*
 abstract class AppDatabase : RoomDatabase() {
     abstract fun downloadDao(): DownloadDao
     abstract fun libraryDao(): LibraryDao
+    abstract fun songDao(): SongDao
 
     companion object {
         val ALL_MIGRATIONS = arrayOf<androidx.room.migration.Migration>()

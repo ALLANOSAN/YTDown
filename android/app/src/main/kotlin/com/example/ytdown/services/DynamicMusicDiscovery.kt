@@ -66,10 +66,11 @@ class DynamicMusicDiscovery @Inject constructor(
             
             artistsToAnalyze.forEach { artistName ->
                 try {
-                    val tags = musicBrainzService.getArtistTags(artistName)
+                    val tags = musicBrainzService.getArtistTagsByName(artistName)
                     tags.forEach { tag ->
-                        allTagsFromLibrary[tag.name.lowercase()] = 
-                            (allTagsFromLibrary[tag.name.lowercase()] ?: 0) + tag.count
+                        // Cada tag é uma string - incrementamos a contagem
+                        allTagsFromLibrary[tag.lowercase()] =
+                            (allTagsFromLibrary[tag.lowercase()] ?: 0) + 1
                     }
                     delay(REQUEST_DELAY_MS / 2)  // Delay menor para biblioteca local
                 } catch (e: Exception) {

@@ -219,6 +219,41 @@ class CoverArtArchiveService @Inject constructor() {
             ?: allCovers.firstOrNull()?.thumbnails?.medium
             ?: allCovers.firstOrNull()?.url
     }
+
+    /**
+     * Baixa a capa do álbum em bytes.
+     * @param releaseMBID MBID do release
+     * @return ByteArray da imagem ou null
+     * @see <a href="https://musicbrainz.org/doc/Cover_Art_Archive/API">Cover Art Archive API</a>
+     */
+    suspend fun downloadAlbumArt(releaseMBID: String): ByteArray? = withContext(Dispatchers.IO) {
+        try {
+            // Primeiro busca a URL da melhor capa
+            val coverUrl = getBestCover(releaseMBID) ?: return@withContext null
+
+            // Agora faz o download da imagem
+            val url = URL(coverUrl)
+            val connection = url.openConnection() as HttpURLConnection
+
+            connection.apply {
+                requestMethod = "GET"
+                setRequestProperty("User-Agent", USER_AGENT)
+                connectTimeout = CONNECT_TIMEOUT
+                readTimeout = READ_TIMEOUT
+            }
+
+            if (connection.responseCode == 200) {
+                val bytes = connection.inputStream.readBytes()
+                connection.disconnect()
+                return@withContext bytes
+            }
+
+            connection.disconnect()
+            null
+        } catch (e: Exception) {
+            null
+        }
+    }
 }
 
 /**
@@ -237,7 +272,7 @@ data class CoverArtInfo(
  */
 data class CoverArtThumbnails(
     val small: String?,     // 120px
-    val medium: String?,    // 250px  
+    val medium: String?,    // 250px
     val large: String?,     // 500px
     val original: String?   // 1200px+
 )

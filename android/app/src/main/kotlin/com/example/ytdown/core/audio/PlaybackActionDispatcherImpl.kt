@@ -57,12 +57,25 @@ class PlaybackActionDispatcherImpl @Inject constructor(
 
     override fun next() {
         Log.d(TAG, "next() called")
-        // Próximamente: implementação com playlist
+        controller.playNext()
     }
 
     override fun previous() {
         Log.d(TAG, "previous() called")
-        // Próximamente: implementação com playlist
+        controller.playPrevious()
+    }
+
+    override fun rewind() {
+        Log.d(TAG, "rewind() called")
+        val current = controller.positionMs
+        engine.seekTo((current - 10000).coerceAtLeast(0))
+    }
+
+    override fun forward() {
+        Log.d(TAG, "forward() called")
+        val current = controller.positionMs
+        val duration = controller.durationMs
+        engine.seekTo((current + 10000).coerceAtMost(duration))
     }
 
     override fun seekTo(positionMs: Long) {

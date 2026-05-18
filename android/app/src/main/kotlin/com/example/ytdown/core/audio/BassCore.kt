@@ -31,9 +31,16 @@ object BassCore {
 
         // 2. Inicializar o dispositivo padrão (-1)
         // Usamos BASS_DEVICE_OPENSLES como fallback/padrão para melhor performance.
-        if (!BASS.BASS_Init(-1, frequency, BASS.BASS_DEVICE_OPENSLES)) {
-            val error = BASS.BASS_ErrorGetCode()
-            Log.e(TAG, "Falha ao inicializar BASS: ${BassErrorMapper.getErrorMessage(error)}")
+        try {
+            val success = BASS.BASS_Init(-1, frequency, BASS.BASS_DEVICE_OPENSLES)
+            android.util.Log.e("BASS_INIT", "RESULT: $success")
+            if (!success) {
+                val error = BASS.BASS_ErrorGetCode()
+                Log.e(TAG, "Falha ao inicializar BASS: ${BassErrorMapper.getErrorMessage(error)}")
+                return
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("BASS_INIT", "FAILED", e)
             return
         }
 

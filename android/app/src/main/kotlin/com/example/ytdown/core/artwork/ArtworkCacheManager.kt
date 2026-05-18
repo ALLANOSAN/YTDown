@@ -2,7 +2,10 @@ package com.example.ytdown.core.artwork
 
 import android.content.Context
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.io.File
+import java.security.MessageDigest
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -10,29 +13,37 @@ import javax.inject.Singleton
 class ArtworkCacheManager @Inject constructor(
     @ApplicationContext private val context: Context
 ) {
-    private val albumsDir = File(context.cacheDir, "artwork/albums")
-    private val artistsDir = File(context.cacheDir, "artwork/artists")
+    private val albumCacheDir = File(context.cacheDir, "artwork/albums").apply { if (!exists()) mkdirs() }
+    private val artistCacheDir = File(context.cacheDir, "artwork/artists").apply { if (!exists()) mkdirs() }
 
-    init {
-        albumsDir.mkdirs()
-        artistsDir.mkdirs()
+    fun getCacheKey(artist: String, album: String): String = md5("$artist-$album")
+    fun getArtistCacheKey(artist: String): String = md5(artist)
+
+    fun getCachedAlbumArt(cacheKey: String): File? {
+        val file = File(albumCacheDir, "$cacheKey.jpg")
+        return if (file.exists()) file else null
     }
 
-    fun getAlbumArtworkPath(artist: String, album: String): String? {
-        val fileName = "${md5("$artist-$album")}.jpg"
-        val file = File(albumsDir, fileName)
-        return if (file.exists()) file.absolutePath else null
+    fun getCachedArtistArt(cacheKey: String): File? {
+        val file = File(artistCacheDir, "$cacheKey.jpg")
+        return if (file.exists()) file else null
     }
 
-    fun getArtistArtworkPath(artist: String): String? {
-        val fileName = "${md5(artist)}.jpg"
-        val file = File(artistsDir, fileName)
-        return if (file.exists()) file.absolutePath else null
+    suspend fun saveToAlbumCache(cacheKey: String, bytes: ByteArray): File = withContext(Dispatchers.IO) {
+        val file = File(albumCacheDir, "$cacheKey.jpg")
+        file.writeBytes(bytes)
+        file
     }
 
-    // Helper MD5
+    suspend fun saveToArtistCache(cacheKey: String, bytes: ByteArray): File = withContext(Dispatchers.IO) {
+        val file = File(artistCacheDir, "$cacheKey.jpg")
+        file.writeBytes(bytes)
+        file
+    }
+
     private fun md5(input: String): String {
-        val md = java.security.MessageDigest.getInstance("MD5")
-        return md.digest(input.toByteArray()).joinToString("") { "%02x".format(it) }
+        return MessageDigest.getInstance("MD5")
+            .digest(input.toByteArray())
+            .joinToString("") { "%02x".format(it) }
     }
 }

@@ -3,6 +3,7 @@ package com.example.ytdown.core.business
 import com.example.ytdown.DownloadMetadataManager
 import com.example.ytdown.core.infrastructure.persistence.LibraryDao
 import com.example.ytdown.core.infrastructure.persistence.DownloadDao
+import com.example.ytdown.core.infrastructure.persistence.SongDao
 import com.example.ytdown.core.infrastructure.persistence.entities.*
 import com.example.ytdown.core.domain.*
 import com.example.ytdown.core.domain.DownloadItemEntity
@@ -17,8 +18,16 @@ import javax.inject.Singleton
 class LibraryRepository @Inject constructor(
     private val libraryDao: LibraryDao,
     private val downloadDao: DownloadDao,
+    private val songDao: SongDao,
     private val metadataManager: DownloadMetadataManager
 ) {
+    // --- Biblioteca Geral ---
+    val songs: Flow<List<SongEntity>> = songDao.getAllSongs()
+
+    suspend fun saveSongs(songs: List<SongEntity>) {
+        songDao.insertAll(songs)
+    }
+
     // --- Favoritos ---
     fun getFavorites(): Flow<List<FavoriteEntity>> = libraryDao.getAllFavorites()
     

@@ -33,8 +33,8 @@ class MetadataFixWorker @AssistedInject constructor(
 
         try {
             val artistName = song.artist?.takeIf { it.isNotBlank() } ?: "Unknown"
-            val tags = musicBrainzService.getArtistTags(artistName)
-            val genre = tags.firstOrNull()?.name
+            val tags = musicBrainzService.getArtistTagsByName(artistName)
+            val genre = tags.firstOrNull()
             val artworkUrl = song.albumImageUrl ?: song.thumbnailPath
 
             val updatedSong = song.copy(artistImageUrl = artworkUrl)

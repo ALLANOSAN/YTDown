@@ -20,18 +20,22 @@ import com.example.ytdown.ui.navigation.MainNavigation
 import com.example.ytdown.ui.navigation.Screen
 import com.example.ytdown.ui.theme.TextSecondary
 import com.example.ytdown.ui.theme.YTDownPurple
-
 @Composable
 fun RootApp(viewModel: DownloadViewModel, modifier: Modifier = Modifier) {
     val navController = rememberNavController()
     val playbackViewModel: PlaybackViewModel = hiltViewModel()
+    val systemViewModel: SystemViewModel = hiltViewModel()
+
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
 
     Scaffold(
-            modifier = modifier,
+            modifier = modifier.fillMaxSize(),
             bottomBar = {
-                if (currentRoute != Screen.Player.route) {
+                // Oculta mini player e bottom nav em telas que precisam de espaço total
+                val hideNav = currentRoute == Screen.Player.route || 
+                              currentRoute == Screen.Equalizer.route
+                if (!hideNav) {
                     Column {
                         MiniPlayer(
                                 viewModel = playbackViewModel,
@@ -53,8 +57,13 @@ fun RootApp(viewModel: DownloadViewModel, modifier: Modifier = Modifier) {
             },
             containerColor = Color.Black
     ) { padding ->
-        Box(modifier = Modifier.padding(padding).background(Color.Black)) {
-            MainNavigation(navController, viewModel)
+        Box(modifier = Modifier.fillMaxSize().padding(padding)) {
+            MainNavigation(
+                navController = navController,
+                viewModel = viewModel,
+                playbackViewModel = playbackViewModel,
+                systemViewModel = systemViewModel
+            )
         }
     }
 }

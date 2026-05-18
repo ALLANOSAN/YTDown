@@ -29,7 +29,9 @@ import androidx.paging.compose.*
 import com.example.ytdown.core.domain.DownloadItemEntity
 import com.example.ytdown.ui.DownloadViewModel
 import com.example.ytdown.ui.SystemViewModel
+import com.example.ytdown.ui.PlaybackViewModel
 import com.example.ytdown.ui.components.DownloadItemRow
+import com.example.ytdown.ui.components.ShimmerItem
 import com.example.ytdown.ui.theme.SurfaceDark
 import com.example.ytdown.ui.theme.TextSecondary
 import com.example.ytdown.ui.theme.YTDownPurple
@@ -38,7 +40,9 @@ import com.example.ytdown.ui.theme.YTDownPurple
 @Composable
 fun DownloadListScreen(
         viewModel: DownloadViewModel,
+        playbackViewModel: PlaybackViewModel,
         onNavigateToBrowser: () -> Unit,
+        onNavigateToPlayer: () -> Unit,
         modifier: Modifier = Modifier
 ) {
     val haptic = LocalHapticFeedback.current
@@ -229,6 +233,12 @@ fun DownloadListScreen(
                                                     HapticFeedbackType.TextHandleMove
                                             )
                                             viewModel.toggleItemSelection(item.id)
+                                        } else if (item.status == "completed") {
+                                            haptic.performHapticFeedback(
+                                                HapticFeedbackType.TextHandleMove
+                                            )
+                                            playbackViewModel.playTrack(item)
+                                            onNavigateToPlayer()
                                         }
                                     },
                                     onExport = {

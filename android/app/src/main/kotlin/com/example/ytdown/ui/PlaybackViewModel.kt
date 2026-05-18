@@ -12,28 +12,40 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import javax.inject.Inject
 
+import com.example.ytdown.core.artwork.ArtworkRotationController
+import com.example.ytdown.core.artwork.ArtworkMode
+// ...
 @HiltViewModel
 class PlaybackViewModel @Inject constructor(
     private val controller: PlaybackController,
-    private val actionDispatcher: PlaybackActionDispatcher
+    private val actionDispatcher: PlaybackActionDispatcher,
+    private val rotationController: ArtworkRotationController
 ) : ViewModel() {
 
-    val playbackUiState: StateFlow<PlaybackUiState> = controller.uiState.map { state ->
-        PlaybackUiState(
-            currentTrack = state.currentTrack,
-            isPlaying = state.isPlaying,
-            isBuffering = state.isBuffering,
-            currentPositionMs = state.positionMs,
-            durationMs = state.durationMs,
-            isShuffleEnabled = state.isShuffleEnabled,
-            repeatMode = state.repeatMode,
-            spectrumData = FloatArray(64) // Integração FFT real virá aqui
-        )
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), PlaybackUiState())
+    init {
+        android.util.Log.e("PlaybackViewModel", "VIEWMODEL CREATED")
+    }
+
+    val playbackUiState: StateFlow<PlaybackUiState> = 
+        kotlinx.coroutines.flow.combine(controller.uiState, rotationController.artworkMode) { state, mode ->
+            PlaybackUiState(
+                currentTrack = state.currentTrack,
+                isPlaying = state.isPlaying,
+                isBuffering = state.isBuffering,
+                currentPositionMs = state.positionMs,
+                durationMs = state.durationMs,
+                isShuffleEnabled = state.isShuffleEnabled,
+                repeatMode = state.repeatMode,
+                spectrumData = state.spectrumData,
+                artworkMode = mode
+            )
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), PlaybackUiState())
 
     fun togglePlayPause() = actionDispatcher.playPause()
-    fun next() = actionDispatcher.next()
-    fun previous() = actionDispatcher.previous()
+    fun playNext() = actionDispatcher.next()
+    fun playPrevious() = actionDispatcher.previous()
+    fun rewind() = actionDispatcher.rewind()
+    fun forward() = actionDispatcher.forward()
     fun seekTo(positionMs: Long) = actionDispatcher.seekTo(positionMs)
     fun toggleShuffle() = actionDispatcher.toggleShuffle()
     fun toggleRepeat() = actionDispatcher.toggleRepeatMode()

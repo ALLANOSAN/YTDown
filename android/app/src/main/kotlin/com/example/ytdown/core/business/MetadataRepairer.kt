@@ -46,7 +46,7 @@ class MetadataRepairer @Inject constructor(
             val result = metadataManager.rewriteMetadata(
                 path = FilePath(item.outputPath),
                 metadata = MediaMetadata(MediaTitle(finalTitle), ArtistName(finalArtist), AlbumName(finalAlbum)),
-                artworkUrl = item.albumImageUrl ?: item.artistImageUrl
+                artworkUrl = item.albumArtPath ?: item.artistArtPath
             )
 
             if (result.isSuccess()) repaired++ else failed++

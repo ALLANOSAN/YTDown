@@ -58,17 +58,17 @@ fun MiniPlayer(
         showArtistArt = false // Começa sempre pelo álbum
         while (true) {
             delay(10000)
-            if (!track?.artistImageUrl.isNullOrBlank()) {
+            if (!track?.artistArtPath.isNullOrBlank()) {
                 showArtistArt = !showArtistArt
             }
         }
     }
 
     val currentArtwork = remember(showArtistArt, track) {
-        if (showArtistArt && !track?.artistImageUrl.isNullOrEmpty()) 
-            track.artistImageUrl 
+        if (showArtistArt && !track?.artistArtPath.isNullOrEmpty()) 
+            track.artistArtPath 
         else 
-            track?.albumImageUrl ?: track?.thumbnailPath
+            track?.albumArtPath ?: track?.albumArtPath
     }
 
     if (track == null) return

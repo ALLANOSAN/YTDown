@@ -146,32 +146,36 @@ class DynamicMetalDiscoveryRepository @Inject constructor(
     }
 
     /**
-     * Baixa um álbum específico
+     * Baixa um álbum específico com formato customizado
      */
     suspend fun downloadAlbum(
         bandName: String,
         albumName: String,
-        year: String? = null
+        year: String? = null,
+        downloadType: DownloadType = DownloadType.AUDIO,
+        format: String = "m4a",
+        quality: String = "192"
     ): MetalDownloadResult = withContext(Dispatchers.IO) {
         try {
             val query = when {
-                year != null && year.length == 4 -> 
+                year != null && year.length == 4 ->
                     "ytsearch1:\"$bandName $albumName $year full album\""
-                else -> 
+                else ->
                     "ytsearch1:\"$bandName $albumName full album\""
             }
-            
+
+            val isAudio = downloadType == DownloadType.AUDIO
             scheduler.schedule(
                 url = VideoUrl(query),
-                path = FilePath(storageResolver.privateDownloadsDir(isAudio = true).absolutePath),
+                path = FilePath(storageResolver.privateDownloadsDir(isAudio = isAudio).absolutePath),
                 meta = MediaMetadata(
                     MediaTitle(albumName),
                     ArtistName(bandName),
                     AlbumName(albumName)
                 ),
-                options = DownloadOptions(DownloadType.AUDIO, "m4a", "128")
+                options = DownloadOptions(downloadType, format, quality)
             )
-            
+
             MetalDownloadResult.Success("Download agendado: $bandName - $albumName")
         } catch (e: Exception) {
             MetalDownloadResult.Error("Erro: ${e.message}")

@@ -87,7 +87,7 @@ fun DownloadItemRow(
             }
 
             AsyncImage(
-                model = item.thumbnailPath,
+                model = item.albumArtPath,
                 contentDescription = null,
                 modifier = Modifier
                     .size(60.dp)

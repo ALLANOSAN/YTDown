@@ -46,9 +46,9 @@ fun GroupedList(
         itemsIndexed(items = keys, key = { _, it -> it }) { index, key ->
             StaggeredVerticalEntrance(index = index) {
                 val groupItems = groups[key] ?: emptyList()
-                var artwork = groupItems.firstOrNull { !it.albumImageUrl.isNullOrEmpty() }?.albumImageUrl
-                if (isArtistGroup) { artwork = groupItems.firstOrNull { !it.artistImageUrl.isNullOrEmpty() }?.artistImageUrl }
-                if (artwork.isNullOrEmpty()) { artwork = groupItems.firstOrNull { !it.thumbnailPath.isNullOrEmpty() }?.thumbnailPath }
+                var artwork = groupItems.firstOrNull { !it.albumArtPath.isNullOrEmpty() }?.albumArtPath
+                if (isArtistGroup) { artwork = groupItems.firstOrNull { !it.artistArtPath.isNullOrEmpty() }?.artistArtPath }
+                if (artwork.isNullOrEmpty()) { artwork = groupItems.firstOrNull { !it.albumArtPath.isNullOrEmpty() }?.albumArtPath }
 
                 Row(
                     modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).combinedClickable(

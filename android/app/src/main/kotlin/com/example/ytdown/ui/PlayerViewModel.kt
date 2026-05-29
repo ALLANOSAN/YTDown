@@ -66,7 +66,7 @@ class PlayerViewModel @Inject constructor(
     }
 
     private fun updatePalette(track: DownloadItemEntity) {
-        val imageUrl = track.albumImageUrl?.takeIf { it.isNotBlank() } ?: track.thumbnailPath
+        val imageUrl = track.albumArtPath?.takeIf { it.isNotBlank() } ?: track.albumArtPath
         if (imageUrl.isNullOrBlank()) {
             _dominantColor.value = null
             return

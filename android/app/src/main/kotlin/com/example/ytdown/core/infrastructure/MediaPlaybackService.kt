@@ -532,7 +532,7 @@ class MediaPlaybackService : Service() {
 
                 // Sempre usar capa do Álbum (nunca do artista) para MediaSession
                 // Isso é padrão do Android - a capa do artista pode ser usada no app
-                val imageUrl = track.albumImageUrl ?: track.thumbnailPath
+                val imageUrl = track.albumArtPath ?: track.albumArtPath
 
                 if (!imageUrl.isNullOrBlank()) {
                     val bitmap = loadBitmap(imageUrl)

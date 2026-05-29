@@ -90,7 +90,7 @@ class StorageService @javax.inject.Inject constructor() {
         )
 
         try {
-            val sourceFile = validateSourceFile(sourcePath) ?: return
+            val sourceFile = validateSourceFile(sourcePath) ?: return null
             diagnostics["sourceSizeBytes"] = sourceFile.length()
 
             var fileName = displayName

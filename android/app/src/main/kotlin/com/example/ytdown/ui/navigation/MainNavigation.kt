@@ -19,6 +19,7 @@ import com.example.ytdown.ui.SystemViewModel
 import com.example.ytdown.ui.screens.*
 import com.example.ytdown.ui.screens.EqualizerScreen
 import com.example.ytdown.ui.screens.BandDetailsScreen
+import com.example.ytdown.providers.browserProvider
 
 @Composable
 fun MainNavigation(
@@ -83,7 +84,12 @@ fun MainNavigation(
         ) { backStackEntry ->
             val bandName = backStackEntry.arguments?.getString("bandName") ?: ""
             BandDetailsScreen(
-                onBack = { navController.popBackStack() }
+                onBack = { navController.popBackStack() },
+                onSearchYouTube = { query ->
+                    val searchUrl = "https://m.youtube.com/results?search_query=${java.net.URLEncoder.encode(query, "UTF-8")}"
+                    browserProvider.setUrl(searchUrl)
+                    navController.navigate(Screen.Browser.route)
+                }
             )
         }
         composable(Screen.Player.route) {

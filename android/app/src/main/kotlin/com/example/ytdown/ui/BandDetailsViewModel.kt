@@ -26,7 +26,18 @@ data class BandDetailsUIState(
     val bandInfo: DynamicBandInfo? = null,
     val downloadingAlbums: Set<String> = emptySet(),
     val downloadedAlbums: Set<String> = emptySet(),
-    val downloadProgress: Map<String, Float> = emptyMap()
+    val downloadProgress: Map<String, Float> = emptyMap(),
+    // Estado do dialog de formato
+    val showFormatDialog: Boolean = false,
+    val pendingAlbumName: String = "",
+    val pendingAlbumYear: String? = null,
+    val selectedDownloadType: com.example.ytdown.core.domain.DownloadType = com.example.ytdown.core.domain.DownloadType.AUDIO,
+    val selectedFormat: String = "m4a",
+    val selectedQuality: String = "192",
+    val audioFormats: List<String> = listOf("mp3", "m4a", "flac", "opus", "ogg"),
+    val videoFormats: List<String> = listOf("mp4", "mkv"),
+    val audioBitrates: List<String> = listOf("128", "192", "256", "320", "lossless"),
+    val videoResolutions: List<String> = listOf("360p", "480p", "720p", "1080p", "best")
 )
 
 @HiltViewModel
@@ -74,49 +85,12 @@ class BandDetailsViewModel @Inject constructor(
 
     /**
      * Baixa o melhor álbum da banda (ou um álbum específico)
+     * Abre o dialog de formato primeiro
      */
     fun downloadBestAlbum(albumName: String? = null) {
-        val bandName = _uiState.value.bandName
-        if (bandName.isBlank()) return
-
-        viewModelScope.launch {
-            val targetAlbum = albumName ?: _uiState.value.bandInfo?.albums?.firstOrNull()?.title
-                ?: "Best Songs"
-
-            _uiState.update { 
-                it.copy(downloadingAlbums = it.downloadingAlbums + targetAlbum) 
-            }
-
-            try {
-                // Cria a query de busca - tenta encontrar o álbum completo
-                val query = "ytsearch1:\"$bandName $targetAlbum full album\""
-                
-                scheduler.schedule(
-                    url = VideoUrl(query),
-                    path = FilePath(storageResolver.privateDownloadsDir(isAudio = true).absolutePath),
-                    meta = MediaMetadata(
-                        MediaTitle(targetAlbum),
-                        ArtistName(bandName),
-                        AlbumName("Descoberta Metal")
-                    ),
-                    options = DownloadOptions(DownloadType.AUDIO, "m4a", "128")
-                )
-
-                _uiState.update { 
-                    it.copy(
-                        downloadingAlbums = it.downloadingAlbums - targetAlbum,
-                        downloadedAlbums = it.downloadedAlbums + targetAlbum
-                    ) 
-                }
-            } catch (e: Exception) {
-                _uiState.update { 
-                    it.copy(
-                        downloadingAlbums = it.downloadingAlbums - targetAlbum,
-                        error = "Erro ao baixar: ${e.message}"
-                    )
-                }
-            }
-        }
+        val targetAlbum = albumName ?: _uiState.value.bandInfo?.albums?.firstOrNull()?.title
+            ?: "Best Songs"
+        showFormatDialog(targetAlbum)
     }
 
     /**
@@ -137,19 +111,25 @@ class BandDetailsViewModel @Inject constructor(
     }
 
     /**
-     * Baixa um álbum específico
+     * Baixa um álbum específico com formato customizado
      */
-    fun downloadAlbumDirect(albumName: String, year: String? = null) {
+    fun downloadAlbumDirect(
+        albumName: String,
+        year: String? = null,
+        downloadType: com.example.ytdown.core.domain.DownloadType = com.example.ytdown.core.domain.DownloadType.AUDIO,
+        format: String = "m4a",
+        quality: String = "192"
+    ) {
         val bandName = _uiState.value.bandName
         if (bandName.isBlank()) return
 
         viewModelScope.launch {
-            _uiState.update { 
-                it.copy(downloadingAlbums = it.downloadingAlbums + albumName) 
+            _uiState.update {
+                it.copy(downloadingAlbums = it.downloadingAlbums + albumName)
             }
 
             try {
-                val result = discoveryRepository.downloadAlbum(bandName, albumName, year)
+                val result = discoveryRepository.downloadAlbum(bandName, albumName, year, downloadType, format, quality)
                 
                 when (result) {
                     is com.example.ytdown.core.infrastructure.MetalDownloadResult.Success -> {
@@ -178,6 +158,79 @@ class BandDetailsViewModel @Inject constructor(
                 }
             }
         }
+    }
+
+    // =====================================================
+    // DIALOG DE FORMATO
+    // =====================================================
+
+    /**
+     * Abre o dialog de escolha de formato para um álbum
+     */
+    fun showFormatDialog(albumName: String, year: String? = null) {
+        _uiState.update {
+            it.copy(
+                showFormatDialog = true,
+                pendingAlbumName = albumName,
+                pendingAlbumYear = year,
+                selectedDownloadType = com.example.ytdown.core.domain.DownloadType.AUDIO,
+                selectedFormat = "m4a",
+                selectedQuality = "192"
+            )
+        }
+    }
+
+    /**
+     * Fecha o dialog de formato
+     */
+    fun dismissFormatDialog() {
+        _uiState.update {
+            it.copy(showFormatDialog = false, pendingAlbumName = "", pendingAlbumYear = null)
+        }
+    }
+
+    /**
+     * Atualiza o tipo de download (AUDIO/VIDEO)
+     */
+    fun updateDownloadType(type: com.example.ytdown.core.domain.DownloadType) {
+        val defaultFormat = if (type == com.example.ytdown.core.domain.DownloadType.AUDIO) "m4a" else "mp4"
+        val defaultQuality = if (type == com.example.ytdown.core.domain.DownloadType.AUDIO) "192" else "720p"
+        _uiState.update {
+            it.copy(
+                selectedDownloadType = type,
+                selectedFormat = defaultFormat,
+                selectedQuality = defaultQuality
+            )
+        }
+    }
+
+    /**
+     * Atualiza o formato selecionado
+     */
+    fun updateFormat(format: String) {
+        _uiState.update { it.copy(selectedFormat = format) }
+    }
+
+    /**
+     * Atualiza a qualidade/bitrate selecionado
+     */
+    fun updateQuality(quality: String) {
+        _uiState.update { it.copy(selectedQuality = quality) }
+    }
+
+    /**
+     * Confirma o download com o formato selecionado
+     */
+    fun confirmDownload() {
+        val state = _uiState.value
+        val albumName = state.pendingAlbumName
+        val year = state.pendingAlbumYear
+        val format = state.selectedFormat
+        val quality = state.selectedQuality
+        val type = state.selectedDownloadType
+
+        dismissFormatDialog()
+        downloadAlbumDirect(albumName, year, type, format, quality)
     }
 
     fun clearError() {

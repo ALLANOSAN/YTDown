@@ -48,7 +48,7 @@ class MediaImportProcessor @Inject constructor(
             android.util.Log.d("ImportProcessor", "🔍 Buscando metadados para: $searchArtist - $searchTitle")
 
             // PASSO 2 — MUSICBRAINZ (Metadados Reais)
-            val mbResult = musicBrainzService.fetchRecordingMetadata(searchArtist, searchTitle, file.name)
+            val mbResult = musicBrainzService.searchRecording(searchTitle, searchArtist ?: "")
             
             val finalTitle = mbResult?.title ?: searchTitle
             val finalArtist = mbResult?.artist ?: searchArtist ?: "Unknown"
@@ -97,7 +97,7 @@ class MediaImportProcessor @Inject constructor(
                     title = finalTitle,
                     artist = finalArtist,
                     album = finalAlbum,
-                    year = mbResult?.year,
+                    year = null,
                     albumArt = albumArtPath
                 )
             } catch (e: Exception) {

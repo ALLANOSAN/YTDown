@@ -119,7 +119,7 @@ class SystemViewModel @Inject constructor(
             databaseService.updateDownload(updatedSong)
 
             val targetPath = updatedSong.exportedPath?.takeIf { it.isNotBlank() } ?: updatedSong.outputPath
-            val artworkUrl = updatedSong.albumImageUrl?.takeIf { it.isNotBlank() } ?: updatedSong.artistImageUrl
+            val artworkUrl = updatedSong.albumArtPath?.takeIf { it.isNotBlank() } ?: updatedSong.artistArtPath
 
             downloadMetadataManager.rewriteMetadata(
                 path = FilePath(targetPath),

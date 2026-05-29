@@ -31,10 +31,10 @@ class MetadataMergeEngine @Inject constructor(
 
     /**
      * Resolve qual imagem deve ser usada para a CAPA DO ÁLBUM.
-     * Prioridade: Capa baixada (albumImageUrl) -> Miniatura do vídeo (thumbnailPath) -> Tag do arquivo.
+     * Prioridade: Capa baixada (albumArtPath) -> Miniatura do vídeo (albumArtPath) -> Tag do arquivo.
      */
     fun getAlbumArt(item: DownloadItemEntity): String? {
-        return item.albumImageUrl ?: item.thumbnailPath
+        return item.albumArtPath ?: item.albumArtPath
     }
 
     /**
@@ -42,7 +42,7 @@ class MetadataMergeEngine @Inject constructor(
      * NUNCA deve retornar uma imagem embutida no arquivo.
      */
     fun getArtistArt(item: DownloadItemEntity): String? {
-        return item.artistImageUrl
+        return item.artistArtPath
     }
 
     /**

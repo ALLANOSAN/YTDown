@@ -185,7 +185,7 @@ private fun RecentSongCard(song: DownloadItemEntity, onClick: () -> Unit) {
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         AsyncImage(
-            model = song.thumbnailPath,
+            model = song.albumArtPath,
             contentDescription = null,
             modifier = Modifier.size(100.dp).clip(RoundedCornerShape(12.dp)),
             contentScale = ContentScale.Crop

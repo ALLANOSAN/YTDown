@@ -57,8 +57,8 @@ class ArtworkEnricher @Inject constructor(
 
             if (result.isSuccess()) {
                 val updatedItem = item.copy(
-                    artistImageUrl = resolution.artistImageUrl ?: item.artistImageUrl,
-                    albumImageUrl = resolution.albumImageUrl ?: item.albumImageUrl
+                    artistArtPath = resolution.artistArtPath ?: item.artistArtPath,
+                    albumArtPath = resolution.albumArtPath ?: item.albumArtPath
                 )
                 databaseService.updateDownload(updatedItem)
                 updated++
@@ -86,7 +86,7 @@ class ArtworkEnricher @Inject constructor(
 
     private data class ArtworkResolution(
         val artworkUrl: String?,
-        val artistImageUrl: String?,
-        val albumImageUrl: String?
+        val artistArtPath: String?,
+        val albumArtPath: String?
     )
 }

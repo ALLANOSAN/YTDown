@@ -34,9 +34,9 @@ class BatchMetadataFixWorker @AssistedInject constructor(
                 val artistName = song.artist?.takeIf { it.isNotBlank() } ?: "Unknown"
                 // Busca tags pelo nome do artista (não MBID)
                 val tags = musicBrainzService.getArtistTagsByName(artistName)
-                val artworkUrl = song.albumImageUrl ?: song.thumbnailPath
+                val artworkUrl = song.albumArtPath ?: song.albumArtPath
 
-                val updatedSong = song.copy(artistImageUrl = artworkUrl)
+                val updatedSong = song.copy(artistArtPath = artworkUrl)
                 databaseService.updateDownload(updatedSong)
 
                 val targetPath = updatedSong.exportedPath?.takeIf { it.isNotBlank() } ?: updatedSong.outputPath

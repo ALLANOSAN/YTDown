@@ -95,7 +95,7 @@ class LibraryRepository @Inject constructor(
         val artistTracks = allDownloads.filter { it.artist?.equals(oldName, ignoreCase = true) == true }
 
         artistTracks.forEach { track ->
-            val updated = track.copy(artist = newName, artistImageUrl = localPhotoPath ?: track.artistImageUrl)
+            val updated = track.copy(artist = newName, artistArtPath = localPhotoPath ?: track.artistArtPath)
             downloadDao.update(updated)
             
             // Regrava a tag física no arquivo, incluindo artwork se uma imagem da galeria foi selecionada.
@@ -130,7 +130,7 @@ class LibraryRepository @Inject constructor(
         }
 
         albumTracks.forEach { track ->
-            val updated = track.copy(album = newAlbum, albumImageUrl = localPhotoPath ?: track.albumImageUrl)
+            val updated = track.copy(album = newAlbum, albumArtPath = localPhotoPath ?: track.albumArtPath)
             downloadDao.update(updated)
             
             // Regrava a tag física no arquivo, incluindo artwork se uma imagem da galeria foi selecionada.

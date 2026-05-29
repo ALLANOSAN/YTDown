@@ -39,6 +39,7 @@ import com.example.ytdown.ui.theme.*
 @Composable
 fun BandDetailsScreen(
     onBack: () -> Unit,
+    onSearchYouTube: (String) -> Unit = {},
     viewModel: BandDetailsViewModel = hiltViewModel()
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -307,7 +308,11 @@ fun BandDetailsScreen(
                     album = album,
                     isDownloading = album.title in state.downloadingAlbums,
                     isDownloaded = album.title in state.downloadedAlbums,
-                    onDownload = { viewModel.downloadAlbumDirect(album.title, album.year) }
+                    onDownload = { viewModel.showFormatDialog(album.title, album.year) },
+                    onSearchYouTube = {
+                        val query = "${state.bandName} ${album.title}"
+                        onSearchYouTube(query)
+                    }
                 )
             }
         }
@@ -351,6 +356,26 @@ fun BandDetailsScreen(
             Spacer(modifier = Modifier.height(24.dp))
         }
     }
+
+    // Dialog de seleção de formato
+    if (state.showFormatDialog) {
+        MetalFormatDialog(
+            albumName = state.pendingAlbumName,
+            bandName = state.bandName,
+            selectedType = state.selectedDownloadType,
+            selectedFormat = state.selectedFormat,
+            selectedQuality = state.selectedQuality,
+            audioFormats = state.audioFormats,
+            videoFormats = state.videoFormats,
+            audioBitrates = state.audioBitrates,
+            videoResolutions = state.videoResolutions,
+            onTypeChange = { viewModel.updateDownloadType(it) },
+            onFormatChange = { viewModel.updateFormat(it) },
+            onQualityChange = { viewModel.updateQuality(it) },
+            onConfirm = { viewModel.confirmDownload() },
+            onDismiss = { viewModel.dismissFormatDialog() }
+        )
+    }
 }
 
 @Composable
@@ -373,7 +398,8 @@ private fun AlbumCardWithCover(
     album: DynamicAlbum,
     isDownloading: Boolean,
     isDownloaded: Boolean,
-    onDownload: () -> Unit
+    onDownload: () -> Unit,
+    onSearchYouTube: () -> Unit = {}
 ) {
     Surface(
         modifier = Modifier
@@ -448,7 +474,7 @@ private fun AlbumCardWithCover(
                 }
             }
 
-            // Botão de download
+            // Botões de ação
             when {
                 isDownloading -> {
                     CircularProgressIndicator(
@@ -466,6 +492,15 @@ private fun AlbumCardWithCover(
                     )
                 }
                 else -> {
+                    // Botão buscar no YouTube
+                    IconButton(onClick = onSearchYouTube) {
+                        Icon(
+                            Icons.Default.PlayArrow,
+                            contentDescription = "Buscar no YouTube",
+                            tint = Color.Red
+                        )
+                    }
+                    // Botão download com formato
                     IconButton(onClick = onDownload) {
                         Icon(
                             Icons.Default.Download,
@@ -477,4 +512,140 @@ private fun AlbumCardWithCover(
             }
         }
     }
+}
+
+// =====================================================
+// DIALOG DE SELEÇÃO DE FORMATO
+// =====================================================
+
+@Composable
+private fun MetalFormatDialog(
+    albumName: String,
+    bandName: String,
+    selectedType: com.example.ytdown.core.domain.DownloadType,
+    selectedFormat: String,
+    selectedQuality: String,
+    audioFormats: List<String>,
+    videoFormats: List<String>,
+    audioBitrates: List<String>,
+    videoResolutions: List<String>,
+    onTypeChange: (com.example.ytdown.core.domain.DownloadType) -> Unit,
+    onFormatChange: (String) -> Unit,
+    onQualityChange: (String) -> Unit,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val isAudio = selectedType == com.example.ytdown.core.domain.DownloadType.AUDIO
+    val formats = if (isAudio) audioFormats else videoFormats
+    val qualities = if (isAudio) audioBitrates else videoResolutions
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = SurfaceDark,
+        titleContentColor = Color.White,
+        textContentColor = Color.White,
+        title = {
+            Column {
+                Text(
+                    "Baixar Álbum",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp
+                )
+                Text(
+                    "$bandName - $albumName",
+                    color = TextSecondary,
+                    fontSize = 13.sp
+                )
+            }
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                // Tipo: Áudio ou Vídeo
+                Text("Tipo", color = YTDownPurple, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(
+                        selected = isAudio,
+                        onClick = { onTypeChange(com.example.ytdown.core.domain.DownloadType.AUDIO) },
+                        label = { Text("Áudio") },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = YTDownPurple,
+                            selectedLabelColor = Color.White
+                        )
+                    )
+                    FilterChip(
+                        selected = !isAudio,
+                        onClick = { onTypeChange(com.example.ytdown.core.domain.DownloadType.VIDEO) },
+                        label = { Text("Vídeo") },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = YTDownPurple,
+                            selectedLabelColor = Color.White
+                        )
+                    )
+                }
+
+                // Formato
+                Text("Formato", color = YTDownPurple, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    formats.forEach { format ->
+                        FilterChip(
+                            selected = format == selectedFormat,
+                            onClick = { onFormatChange(format) },
+                            label = { Text(format.uppercase(), fontSize = 12.sp) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = YTDownPurple,
+                                selectedLabelColor = Color.White
+                            )
+                        )
+                    }
+                }
+
+                // Qualidade / Bitrate
+                Text(
+                    if (isAudio) "Bitrate" else "Qualidade",
+                    color = YTDownPurple,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp
+                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    qualities.forEach { quality ->
+                        FilterChip(
+                            selected = quality == selectedQuality,
+                            onClick = { onQualityChange(quality) },
+                            label = {
+                                Text(
+                                    if (isAudio) "${quality}kbps" else quality,
+                                    fontSize = 11.sp
+                                )
+                            },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = YTDownPurple,
+                                selectedLabelColor = Color.White
+                            )
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onConfirm,
+                colors = ButtonDefaults.buttonColors(containerColor = YTDownPurple)
+            ) {
+                Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("Baixar")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancelar", color = TextSecondary)
+            }
+        }
+    )
 }

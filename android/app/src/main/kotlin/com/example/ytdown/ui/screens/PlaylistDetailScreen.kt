@@ -74,8 +74,7 @@ fun PlaylistDetailScreen(
         }
     }
 
-    val artwork = groupItems.firstOrNull { !it.albumImageUrl.isNullOrEmpty() }?.albumImageUrl
-        ?: groupItems.firstOrNull { !it.thumbnailPath.isNullOrEmpty() }?.thumbnailPath
+    val artwork = groupItems.firstOrNull { !it.albumArtPath.isNullOrEmpty() }?.albumArtPath
 
     var showTrackMenu by remember { mutableStateOf<DownloadItemEntity?>(null) }
     var trackForPlaylist by remember { mutableStateOf<DownloadItemEntity?>(null) }
@@ -158,7 +157,7 @@ fun PlaylistDetailScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         AsyncImage(
-                            model = song.thumbnailPath,
+                            model = song.albumArtPath,
                             contentDescription = null,
                             modifier = Modifier
                                 .size(56.dp)

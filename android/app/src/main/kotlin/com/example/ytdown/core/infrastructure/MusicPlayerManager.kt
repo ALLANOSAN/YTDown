@@ -225,7 +225,7 @@ constructor(
             }
 
     private fun hydrateArtworkIfMissing(item: DownloadItemEntity) {
-        if (!item.albumImageUrl.isNullOrEmpty() && !item.artistImageUrl.isNullOrEmpty()) return
+        if (!item.albumArtPath.isNullOrEmpty() && !item.artistArtPath.isNullOrEmpty()) return
 
         scope.launch(Dispatchers.IO) {
             val artwork =
@@ -234,8 +234,8 @@ constructor(
             if (artwork.isNotEmpty()) {
                 val updated =
                         item.copy(
-                                albumImageUrl = artwork["albumArt"] ?: item.albumImageUrl,
-                                artistImageUrl = artwork["artistArt"] ?: item.artistImageUrl
+                                albumArtPath = artwork["albumArt"] ?: item.albumArtPath,
+                                artistArtPath = artwork["artistArt"] ?: item.artistArtPath
                         )
                 downloadDao.upsert(updated)
 
@@ -250,7 +250,7 @@ constructor(
     }
 
     private fun resolveArtworkUri(item: DownloadItemEntity): Uri? {
-        val path = item.albumImageUrl ?: item.thumbnailPath
+        val path = item.albumArtPath ?: item.albumArtPath
         if (path.isNullOrBlank()) return null
         if (path.startsWith("http") || path.startsWith("content://")) return Uri.parse(path)
         return Uri.fromFile(File(path))

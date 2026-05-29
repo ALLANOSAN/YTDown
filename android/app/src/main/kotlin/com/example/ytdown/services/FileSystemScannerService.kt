@@ -146,18 +146,18 @@ class FileSystemScannerService @Inject constructor(
 
         var artist = MetadataUtils.guessArtistFromTitle(title) ?: "Desconhecido"
         var album = "YTDown"
-        var artistImageUrl: String? = null
-        var albumImageUrl: String? = null
+        var artistArtPath: String? = null
+        var albumArtPath: String? = null
 
         // Auto-Enrichment: Tenta buscar metadados e capas automaticamente
         if (artist != "Desconhecido") {
             try {
-                artistImageUrl = artworkManager.getArtistImage(artist)
+                artistArtPath = artworkManager.getArtistImage(artist)
                 // Tenta extrair álbum se o título tiver padrão "Artista - Álbum - Música"
                 val guessedAlbum = MetadataUtils.guessAlbumFromTitle(title)
                 if (guessedAlbum != null) {
                     album = guessedAlbum
-                    albumImageUrl = artworkManager.getAlbumCover(artist, album)
+                    albumArtPath = artworkManager.getAlbumCover(artist, album)
                 }
             } catch (e: Exception) {
                 // Falha silenciosa no enrichment para não travar o scan
@@ -177,8 +177,8 @@ class FileSystemScannerService @Inject constructor(
             createdAt = lastModified,
             artist = artist,
             album = album,
-            albumArtPath = albumImageUrl,
-            artistArtPath = artistImageUrl
+            albumArtPath = albumArtPath,
+            artistArtPath = artistArtPath
         )
         downloadDao.upsert(item)
     }

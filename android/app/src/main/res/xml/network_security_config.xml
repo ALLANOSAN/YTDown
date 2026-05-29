@@ -10,8 +10,14 @@
     <domain-config cleartextTrafficPermitted="true">
         <domain includeSubdomains="true">localhost</domain>
     </domain-config>
-    <!-- Allow Metal-Archives (may have SSL issues) -->
+    <!-- Allow cleartext and broad access for YouTube domains -->
     <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">youtube.com</domain>
+        <domain includeSubdomains="true">m.youtube.com</domain>
+        <domain includeSubdomains="true">googlevideo.com</domain>
+        <domain includeSubdomains="true">googleapis.com</domain>
+        <domain includeSubdomains="true">i.ytimg.com</domain>
         <domain includeSubdomains="true">metal-archives.com</domain>
     </domain-config>
 </network-security-config>
+

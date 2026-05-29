@@ -64,9 +64,11 @@ constructor(
         val result = try {
             val id = inputData.getString("VIDEO_ID") ?: return Result.failure()
             val url = inputData.getString("VIDEO_URL") ?: return Result.failure()
-            val path = inputData.getString("OUTPUT_PATH") ?: return Result.failure()
+            val finalDestPath = inputData.getString("OUTPUT_PATH") ?: return Result.failure()
             val title = inputData.getString("TITLE") ?: "Download"
-            android.util.Log.e("DownloadWorker", "📦 Starting download for: $title, path: $path")
+            
+            android.util.Log.d("DOWNLOAD_FLOW", "🚀 Iniciando Worker para: $title")
+            android.util.Log.d("STORAGE_DEBUG", "🎯 Destino final desejado: $finalDestPath")
 
             val metadata =
                     MediaMetadata(
@@ -94,76 +96,98 @@ constructor(
                 repository.persist(startItem.copy(status = "downloading", progress = 0.0))
             }
 
-            // FIX #4: Watchdog sets stalled flag + cancels the progress scope
-            val watchdogScope = CoroutineScope(Dispatchers.IO + Job())
-            val watchdogJob =
-                    watchdogScope.launch {
-                        while (true) {
-                            kotlinx.coroutines.delay(10_000)
-                            val now = System.currentTimeMillis()
-                            if (now - lastProgressTime.get() > 5 * 60 * 1000L) {
-                                android.util.Log.e(
-                                        "DownloadWorker",
-                                        "⚠️ Watchdog: sem progresso por 5min. Abortando."
-                                )
-                                stalled.set(true)
-                                progressScope.cancel()
-                                break
-                            }
-                        }
-                    }
+            // ✅ ESTRATÉGIA DE STORAGE DEFINITIVA:
+            // Baixamos sempre no diretório de cache privado do app para evitar Permission Denied do Python.
+            // O Python (yt-dlp) precisa de acesso direto ao sistema de arquivos via C, o que é bloqueado em pastas externas no Android 11+.
+            val tempDownloadDir = File(applicationContext.cacheDir, "downloads").apply { if (!exists()) mkdirs() }
+            
+            android.util.Log.d("STORAGE_DEBUG", "🛠️ Usando cache privado para download: ${tempDownloadDir.absolutePath}")
 
-            // FIX #4 & #7: Wrap in withTimeoutOrNull and check stalled flag
             val downloadResult =
                     withTimeoutOrNull(30 * 60 * 1000L) {
                         engine.downloadAndTag(
                                 VideoUrl(url),
-                                File(path),
+                                tempDownloadDir,
                                 metadata,
                                 downloadOptions,
                                 artworkUrl
                         ) { progress ->
-                            // FIX #4: Don't update if watchdog already triggered
-                            if (stalled.get()) return@downloadAndTag
+                            if (!progressScope.isActive) return@downloadAndTag
                             if (progress != lastProgressValue) {
                                 lastProgressValue = progress
                                 lastProgressTime.set(System.currentTimeMillis())
-                                if (!progressScope.isActive) return@downloadAndTag
                                 progressScope.launch { updateProgress(id, title, progress) }
                             }
                         }
                     }
 
-            // FIX #4: If stalled or timed out, report failure
-            if (stalled.get() || downloadResult == null) {
-                android.util.Log.e("DownloadWorker", "⚠️ Download cancelled: stalled=${stalled.get()}, timedOut=${downloadResult == null}")
+            if (downloadResult == null) {
+                android.util.Log.e("DOWNLOAD_FLOW", "⚠️ Timeout de 30 min atingido!")
                 updateFinalStatus(id, success = false)
-                watchdogJob.cancel()
-                progressScope.cancel()
                 return Result.failure()
             }
 
             val success = downloadResult.exitCode.isSuccess()
-            updateFinalStatus(
-                    id,
-                    success,
-                    downloadResult.outputPath?.takeIf { it.isNotBlank() } ?: path
-            )
-            watchdogJob.cancel()
-            progressScope.cancel()
+            val tempFilePath = downloadResult.outputPath
 
-            if (success) Result.success() else Result.failure()
+            if (success && tempFilePath != null) {
+                android.util.Log.d("DOWNLOAD_FLOW", "📦 Download no cache concluído. Iniciando exportação...")
+                
+                // Agora exportamos do cache privado para a galeria pública (/Music ou /Video)
+                val storageService = com.example.ytdown.services.StorageService.getInstance()
+                
+                val mediaType = if (downloadOptions.type == DownloadType.AUDIO) StorageMediaType("audio") else StorageMediaType("video")
+                
+                try {
+                    val exportedUri = storageService.exportToPublicCollection(
+                        context = applicationContext,
+                        sourcePath = StoragePath(tempFilePath),
+                        displayName = File(tempFilePath).name,
+                        mediaType = mediaType,
+                        mimeType = StorageMimeType(if (mediaType.isAudio()) "audio/*" else "video/*"),
+                        allowUserInteractionFallback = true
+                    )
+
+                    android.util.Log.d("DOWNLOAD_FLOW", "✨ Exportação para MediaStore concluída: $exportedUri")
+                    
+                    // Inicia processamento de metadados e capas (MusicBrainz/FanArt/Mutagen)
+                    try {
+                        val importProcessor = dagger.hilt.android.EntryPointAccessors.fromApplication(
+                            applicationContext, 
+                            com.example.ytdown.core.infrastructure.di.ImportProcessorEntryPoint::class.java
+                        ).mediaImportProcessor()
+                        importProcessor.process(tempFilePath) 
+                    } catch (e: Exception) {
+                        android.util.Log.e("STORAGE_DEBUG", "⚠️ Erro no processamento de metadados: ${e.message}")
+                    }
+
+                    // Limpar arquivo temporário
+                    File(tempFilePath).delete()
+                    
+                    updateFinalStatus(id, success = true, outputPath = finalDestPath, exportedPath = exportedUri?.toString())
+                    Result.success()
+                } catch (e: Exception) {
+                    android.util.Log.e("STORAGE_DEBUG", "❌ Falha ao exportar para MediaStore: ${e.message}")
+                    updateFinalStatus(id, success = false)
+                    Result.failure()
+                }
+            } else {
+                android.util.Log.e("DOWNLOAD_FLOW", "❌ Download falhou no engine.")
+                updateFinalStatus(id, success = false)
+                Result.failure()
+            }
         } catch (e: CancellationException) {
-            android.util.Log.e("DownloadWorker", "🛑 doWork CANCELLED")
+            android.util.Log.e("DOWNLOAD_FLOW", "🛑 Worker CANCELADO")
             Result.failure()
         } catch (e: Exception) {
-            android.util.Log.e("DownloadWorker", "❌ doWork CRASHED: ${e.message}", e)
+            android.util.Log.e("DOWNLOAD_FLOW", "❌ Erro inesperado no Worker: ${e.message}", e)
             Result.failure()
         } finally {
             progressScope.cancel()
             if (wakeLock.isHeld) wakeLock.release()
             if (wifiLock.isHeld) wifiLock.release()
         }
+
 
         return result
     }
@@ -196,14 +220,16 @@ constructor(
     private suspend fun updateFinalStatus(
             id: String,
             success: Boolean,
-            outputPath: String? = null
+            outputPath: String? = null,
+            exportedPath: String? = null
     ) {
         val item = repository.find(id) ?: return
         repository.persist(
                 item.copy(
                         status = if (success) "completed" else "failed",
                         progress = if (success) 1.0 else 0.0,
-                        outputPath = outputPath?.takeIf { it.isNotBlank() } ?: item.outputPath
+                        outputPath = outputPath?.takeIf { it.isNotBlank() } ?: item.outputPath,
+                        exportedPath = exportedPath ?: item.exportedPath
                 )
         )
     }

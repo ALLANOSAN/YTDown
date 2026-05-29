@@ -11,16 +11,17 @@ _MAX_THUMBNAIL_BYTES = 6 * 1024 * 1024
 def _failure_payload(error, stage, retryable=False, **extra):
     """
     Cria um payload de erro padronizado para retorno JSON.
+    IMPORTANTE: retorna dict — quem chama deve usar json.dumps() no resultado final.
+    Não serializar aqui evita double-encoding (JSON dentro de JSON string).
     """
-    import json
     payload = {
         "success": False,
         "error": str(error),
         "stage": stage,
-        "retryable": retryable
+        "retryable": retryable,
     }
     payload.update(extra)
-    return json.dumps(payload)
+    return payload
 
 
 import traceback
@@ -48,7 +49,8 @@ def report_error_to_firebase(error, stage=None, **extra):
     # Print para o logcat ser capturado pela ponte Kotlin
     print(f"[FIREBASE_REPORT] {error_msg}")
     
-    return _failure_payload(error, stage, **extra)
+    import json
+    return json.dumps(_failure_payload(error, stage, **extra))
 
 
 def _is_retryable_network_error(error):

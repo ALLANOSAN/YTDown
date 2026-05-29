@@ -27,9 +27,8 @@ data class DownloadItemEntity(
     val artist: String? = null,
     val album: String? = null,
     val createdAt: Long = System.currentTimeMillis(),
-    val thumbnailPath: String? = null,
-    val artistImageUrl: String? = null,
-    val albumImageUrl: String? = null,
+    val albumArtPath: String? = null,
+    val artistArtPath: String? = null,
     val format: String = "mp3",
     val quality: String = "192",
     val type: Int = 0, // 0: Audio, 1: Video

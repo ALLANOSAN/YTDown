@@ -74,11 +74,11 @@ fun PlayerFullScreen(
         return
     }
 
-    // Alterna entre albumArtwork e artistArtwork persistido no SongEntity
-    val currentArtwork = if (showArtistArt && !track.artistImageUrl.isNullOrBlank()) {
-        track.artistImageUrl // Cache do Fanart.tv
+    // Alterna entre albumArtPath e artistArtPath
+    val currentArtwork = if (showArtistArt && !track.artistArtPath.isNullOrBlank()) {
+        track.artistArtPath // Cache do Fanart.tv
     } else {
-        track.albumImageUrl ?: track.thumbnailPath // Capa do arquivo ou CAA
+        track.albumArtPath // Capa do arquivo ou CAA
     }
 
     Box(
@@ -97,7 +97,7 @@ fun PlayerFullScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 12.dp),
+                    .padding(top = 8.dp, bottom = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
@@ -118,46 +118,55 @@ fun PlayerFullScreen(
                 }
             }
 
-            // ARTWORK
+            // ARTWORK (Responsivo com weight(1f) para preencher o espaço disponível sem quebrar o layout)
             Box(
                 modifier = Modifier
-                    .padding(top = 24.dp)
-                    .size(artworkSize)
-                    .clip(RoundedCornerShape(28.dp))
-                    .background(Color.DarkGray),
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .padding(vertical = 12.dp),
                 contentAlignment = Alignment.Center
             ) {
-                Crossfade(
-                    targetState = currentArtwork,
-                    label = "ArtworkTransition"
-                ) { image ->
-                    if (!image.isNullOrEmpty()) {
-                        AsyncImage(
-                            model = image,
-                            contentDescription = null,
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .aspectRatio(1f)
-                                .clip(RoundedCornerShape(28.dp))
-                        )
-                    } else {
-                        Icon(
-                            Icons.Default.MusicNote,
-                            contentDescription = null,
-                            tint = Color.White.copy(alpha = 0.2f),
-                            modifier = Modifier.size(100.dp)
-                        )
+                Box(
+                    modifier = Modifier
+                        .fillMaxHeight()
+                        .aspectRatio(1f)
+                        .clip(RoundedCornerShape(28.dp))
+                        .background(Color.DarkGray)
+                ) {
+                    Crossfade(
+                        targetState = currentArtwork,
+                        label = "ArtworkTransition"
+                    ) { image ->
+                        if (!image.isNullOrEmpty()) {
+                            AsyncImage(
+                                model = image,
+                                contentDescription = null,
+                                contentScale = ContentScale.Crop, // Preenche a área 1:1 mantendo a proporção (sem esticar)
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        } else {
+                            Box(
+                                modifier = Modifier.fillMaxSize(),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    Icons.Default.MusicNote,
+                                    contentDescription = null,
+                                    tint = Color.White.copy(alpha = 0.2f),
+                                    modifier = Modifier.fillMaxSize(0.4f)
+                                )
+                            }
+                        }
                     }
                 }
             }
 
-            // SPECTRUM VISUALIZER
+            // SPECTRUM VISUALIZER (Mais compacto para evitar empurrar os controles)
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(90.dp)
-                    .padding(top = 20.dp),
+                    .height(60.dp)
+                    .padding(top = 8.dp),
                 contentAlignment = Alignment.Center
             ) {
                 SpectrumVisualizer(
@@ -165,7 +174,7 @@ fun PlayerFullScreen(
                     isPlaying = isPlaying,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(80.dp)
+                        .height(50.dp)
                         .alpha(0.8f),
                     barColor = YTDownPurple
                 )
@@ -175,12 +184,12 @@ fun PlayerFullScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 20.dp),
+                    .padding(top = 12.dp),
                 horizontalAlignment = Alignment.Start
             ) {
                 Text(
                     text = track.title,
-                    maxLines = 2,
+                    maxLines = 1, // Reduzido para 1 linha para economizar espaço vertical em telas pequenas
                     overflow = TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
@@ -190,7 +199,7 @@ fun PlayerFullScreen(
                     text = track.artist ?: "Desconhecido",
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 4.dp)
+                    modifier = Modifier.padding(top = 2.dp)
                 )
             }
 
@@ -198,7 +207,7 @@ fun PlayerFullScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 24.dp)
+                    .padding(top = 12.dp)
             ) {
                 Slider(
                     value = if (isDragging) sliderPosition else position.toFloat(),
@@ -227,14 +236,11 @@ fun PlayerFullScreen(
                 }
             }
 
-            // ESPAÇADOR ANTES DOS CONTROLES
-            Spacer(modifier = Modifier.height(24.dp))
-
-            // PASSO 6 — IMPLEMENTAR CONTROLES CORRETAMENTE
+            // CONTROLES (Posicionados com segurança na parte inferior)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 24.dp, bottom = 40.dp)
+                    .padding(top = 16.dp, bottom = 24.dp)
                     .zIndex(10f),
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically
@@ -270,7 +276,7 @@ fun PlayerFullScreen(
                     onClick = {
                         viewModel.togglePlayPause()
                     },
-                    modifier = Modifier.size(82.dp),
+                    modifier = Modifier.size(72.dp), // Reduzido de 82dp para 72dp para melhorar encaixe
                     containerColor = MaterialTheme.colorScheme.primary
                 ) {
 
@@ -282,10 +288,8 @@ fun PlayerFullScreen(
                                 Icons.Default.PlayArrow,
 
                         contentDescription = "PlayPause",
-
                         tint = Color.White,
-
-                        modifier = Modifier.size(42.dp)
+                        modifier = Modifier.size(36.dp) // Reduzido proporcionalmente
                     )
                 }
 
@@ -315,9 +319,6 @@ fun PlayerFullScreen(
                     )
                 }
             }
-
-            // ESPAÇADOR FINAL
-            Spacer(modifier = Modifier.height(60.dp))
         }
     }
 }

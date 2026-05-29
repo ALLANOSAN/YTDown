@@ -40,6 +40,7 @@ object AppModule {
     fun provideDatabase(@ApplicationContext context: Context): AppDatabase =
             Room.databaseBuilder(context, AppDatabase::class.java, "ytdown.db")
                     .addMigrations(*AppDatabase.ALL_MIGRATIONS)
+                    .fallbackToDestructiveMigration()
                     .build()
 
     @Provides
@@ -49,6 +50,8 @@ object AppModule {
     @Provides
     @Singleton
     fun provideLibraryDao(db: AppDatabase): LibraryDao = db.libraryDao()
+
+    // SongDao já está no DatabaseModule
 
     @Provides
     @Singleton
@@ -151,7 +154,7 @@ object AppModule {
     @Provides
     @Singleton
     fun provideCoverArtArchiveService(): CoverArtArchiveService = CoverArtArchiveService()
-    
+
     @Provides
     @Singleton
     fun provideMetalRepository(

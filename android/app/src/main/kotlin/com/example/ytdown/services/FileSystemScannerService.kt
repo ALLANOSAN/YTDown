@@ -168,7 +168,6 @@ class FileSystemScannerService @Inject constructor(
             id = "orphan_${UUID.randomUUID().toString().take(8)}",
             url = "",
             title = MetadataUtils.toTitleCase(title),
-            thumbnailPath = null,
             type = 0,
             format = extension,
             quality = "128",
@@ -178,8 +177,8 @@ class FileSystemScannerService @Inject constructor(
             createdAt = lastModified,
             artist = artist,
             album = album,
-            artistImageUrl = artistImageUrl,
-            albumImageUrl = albumImageUrl
+            albumArtPath = albumImageUrl,
+            artistArtPath = artistImageUrl
         )
         downloadDao.upsert(item)
     }
@@ -249,11 +248,74 @@ class FileSystemScannerService @Inject constructor(
     }
 
     /**
-     * Executa scan completo: registra órfãos e remove entradas obsoletas.
+     * Tenta restaurar o exportedPath de downloads antigos procurando o arquivo nas pastas monitoradas.
+     * Isso "cura" músicas que pararam de tocar após migrações ou perda de permissão.
      */
-    suspend fun fullSync(onProgress: (String) -> Unit = {}): Pair<Int, Int> {
-        val registered = scanAndRegisterOrphans(onProgress)
-        val removed = removeStaleEntries()
-        return Pair(registered, removed)
+    suspend fun repairDownloadedItems(): Int = withContext(Dispatchers.IO) {
+        val completedDownloads = downloadDao.getAllDownloadsSync().filter { 
+            it.status == "completed" && (it.exportedPath.isNullOrBlank() || !isPathAccessible(it.exportedPath))
+        }
+        
+        if (completedDownloads.isEmpty()) return@withContext 0
+        
+        val monitoredFolders = folderService.folders.value
+        var repaired = 0
+
+        completedDownloads.forEach { item ->
+            // Procurar por este título em todas as pastas monitoradas
+            for (folderUri in monitoredFolders) {
+                if (!folderUri.startsWith("content://")) continue
+                
+                val rootDoc = DocumentFile.fromTreeUri(context, Uri.parse(folderUri)) ?: continue
+                val foundFile = findFileInTree(rootDoc, item.title, item.format)
+                
+                if (foundFile != null) {
+                    downloadDao.upsert(item.copy(exportedPath = foundFile.uri.toString()))
+                    repaired++
+                    android.util.Log.d("FileSystemScanner", "✅ Item reparado: ${item.title} -> ${foundFile.uri}")
+                    break
+                }
+            }
+        }
+        repaired
     }
+
+    private fun isPathAccessible(path: String): Boolean {
+        return try {
+            if (path.startsWith("content://")) {
+                DocumentFile.fromSingleUri(context, Uri.parse(path))?.exists() == true
+            } else {
+                File(path).exists()
+            }
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    private fun findFileInTree(root: DocumentFile, title: String, extension: String): DocumentFile? {
+        val files = root.listFiles()
+        // Tenta match exato primeiro
+        val match = files.find { 
+            it.isFile && it.name?.startsWith(title, ignoreCase = true) == true && it.name?.endsWith(extension, ignoreCase = true) == true
+        }
+        if (match != null) return match
+
+        // Busca recursiva
+        for (dir in files.filter { it.isDirectory }) {
+            val found = findFileInTree(dir, title, extension)
+            if (found != null) return found
+        }
+        return null
+    }
+
+    /**
+     * Executa scan completo: registra órfãos, remove entradas obsoletas e repara links quebrados.
+     */
+    suspend fun fullSync(onProgress: (String) -> Unit = {}): Triple<Int, Int, Int> {
+        val registered = scanAndRegisterOrphans(onProgress)
+        val repaired = repairDownloadedItems()
+        val removed = removeStaleEntries()
+        return Triple(registered, repaired, removed)
+    }
+
 }

@@ -1,6 +1,7 @@
 import json
 import os
-
+import traceback
+from logger import ChaquopyLogger, log_failure
 from runtime import _get_yt_dlp_module
 from helpers import (
     _failure_payload,
@@ -11,7 +12,7 @@ from metadata import _force_metadata_with_mutagen
 
 
 def _prepare_ffmpeg_runtime(native_lib_dir, app_files_dir):
-    # Evita concatenação infinita limpando caminhos duplicados
+    ChaquopyLogger.debug(f"Preparando runtime FFmpeg. Libs: {native_lib_dir}", category="FLOW")
     def _clean_path_append(env_name, new_path):
         current = os.environ.get(env_name, "")
         parts = [p for p in current.split(":") if p]
@@ -24,12 +25,12 @@ def _prepare_ffmpeg_runtime(native_lib_dir, app_files_dir):
     if native_lib_dir and os.path.isdir(native_lib_dir):
         _clean_path_append("LD_LIBRARY_PATH", native_lib_dir)
         if _clean_path_append("PATH", native_lib_dir):
-            print(f"🚀 PATH atualizado (libs): {native_lib_dir}")
+            ChaquopyLogger.debug(f"🚀 PATH atualizado (libs): {native_lib_dir}")
 
     if app_files_dir and os.path.isdir(app_files_dir):
         _clean_path_append("LD_LIBRARY_PATH", app_files_dir)
         if _clean_path_append("PATH", app_files_dir):
-            print(f"🚀 PATH atualizado (files): {app_files_dir}")
+            ChaquopyLogger.debug(f"🚀 PATH atualizado (files): {app_files_dir}")
 
 
 def _resolve_ffmpeg_binary(native_lib_dir, app_files_dir, binary_name="ffmpeg"):
@@ -37,23 +38,24 @@ def _resolve_ffmpeg_binary(native_lib_dir, app_files_dir, binary_name="ffmpeg"):
     No Android 10+, binários só podem ser executados se estiverem no diretório de libs nativas
     e possuírem o prefixo 'lib' e extensão '.so'.
     """
+    ChaquopyLogger.debug(f"Buscando binário: {binary_name}", category="STORAGE")
     # 1. Tenta buscar no diretório de bibliotecas nativas (Obrigatório para Android 10+)
     if native_lib_dir:
-        # Se buscamos ffmpeg, tentamos libffmpeg_exe.so
-        # Se buscamos ffprobe, tentamos libffprobe_exe.so
         names = [f"lib{binary_name}_exe.so", f"lib{binary_name}.so"]
         for name in names:
             path = os.path.join(native_lib_dir, name)
             if os.path.exists(path):
-                print(f"🎯 Binário nativo encontrado: {path}")
+                ChaquopyLogger.debug(f"🎯 Binário nativo encontrado: {path}", category="STORAGE")
                 return path
 
-    # 2. Fallback para pasta de arquivos (apenas para dispositivos antigos ou testes)
+    # 2. Fallback para pasta de arquivos
     if app_files_dir:
         path = os.path.join(app_files_dir, binary_name)
         if os.path.exists(path) and os.access(path, os.X_OK):
+            ChaquopyLogger.debug(f"⚠️ Binário encontrado em app_files (fallback): {path}", category="STORAGE")
             return path
 
+    ChaquopyLogger.error(f"❌ Binário {binary_name} não encontrado!", category="STORAGE")
     return None
 
 
@@ -105,6 +107,8 @@ def _build_audio_download_options(
     desired_codec = _resolve_audio_codec(selected_format, quality)
     preferred_quality = _resolve_preferred_audio_quality(quality, desired_codec)
 
+    ChaquopyLogger.debug(f"Configurando Áudio: Codec={desired_codec}, Qualidade={preferred_quality}", category="DOWNLOAD")
+
     if has_ffmpeg:
         ydl_opts.update(
             {
@@ -123,7 +127,7 @@ def _build_audio_download_options(
     fallback_ext = _resolve_audio_fallback_extension(desired_codec)
     if fallback_ext in {"mp3", "wav", "flac", "ogg"}:
         old_ext = fallback_ext
-        print(f"⚠️ Forçando fallback de {old_ext} para m4a devido a falta de FFmpeg")
+        ChaquopyLogger.error(f"⚠️ FFmpeg ausente! Forçando fallback de {old_ext} para m4a", category="STORAGE")
         fallback_ext = "m4a"
         if output_path.lower().endswith(f".{old_ext}"):
             output_path = output_path[: -(len(old_ext) + 1)] + ".m4a"
@@ -140,6 +144,8 @@ def _build_audio_download_options(
 def _build_video_download_options(ydl_opts, selected_format, quality, has_ffmpeg):
     desired_container = _resolve_video_container(selected_format)
     height = _resolve_video_height(quality)
+
+    ChaquopyLogger.debug(f"Configurando Vídeo: Altura={height}, Container={desired_container}", category="DOWNLOAD")
 
     if has_ffmpeg:
         ydl_opts.update(
@@ -226,10 +232,10 @@ def _apply_tags_to_files(files, info_sources, artist, album, artwork_url):
             resolved_artwork_url,
         )
         if not injected:
-            print(f"⚠️ Falha ao injetar tags em {filepath}")
+            ChaquopyLogger.error(f"⚠️ Falha ao injetar tags em {filepath}", category="FLOW")
             success = False
         else:
-            print(f"✅ Tags injetadas em {filepath}")
+            ChaquopyLogger.debug(f"✅ Tags injetadas em {filepath}", category="FLOW")
     return success
 
 
@@ -246,6 +252,7 @@ def download_video(
     selected_format=None,
     progress_callback=None,
 ):
+    ChaquopyLogger.info(f"Iniciando download_video: {url}", category="FLOW")
     progress_data = {"percent": 0}
     downloaded_info = None
     final_filename = None
@@ -255,15 +262,30 @@ def download_video(
         if d["status"] == "downloading":
             total = d.get("total_bytes") or d.get("total_bytes_estimate", 0)
             downloaded = d.get("downloaded_bytes", 0)
+            
+            # Se não temos o total, tentamos pegar a porcentagem pronta do yt-dlp
             if total > 0:
                 progress_data["percent"] = int((downloaded / total) * 100)
+            elif d.get("_percent_str"):
+                try:
+                    p_str = d["_percent_str"].replace("%", "").strip()
+                    progress_data["percent"] = int(float(p_str))
+                except:
+                    pass
+            
+            # Log de progresso para o adb logcat
+            speed = d.get("_speed_str", "N/A")
+            eta = d.get("_eta_str", "N/A")
+            ChaquopyLogger.download(f"⬇️ {progress_data['percent']}% | Velocidade: {speed} | ETA: {eta}")
+
         if d["status"] == "finished":
             progress_data["percent"] = 100
+            ChaquopyLogger.info("✅ Download de arquivo concluído pelo yt-dlp", category="FLOW")
 
         if progress_callback is not None:
             try:
                 progress_callback.onProgress(progress_data["percent"])
-            except Exception:
+            except Exception as e:
                 pass
 
     ffmpeg_bin = _resolve_ffmpeg_binary(native_lib_dir, app_files_dir, "ffmpeg")
@@ -276,33 +298,35 @@ def download_video(
         "outtmpl": output_path,
         "progress_hooks": [progress_hook],
         "quiet": True,
-        "no_warnings": True,
-        "socket_timeout": 300,
-        "retries": 3,
-        # nocheckcertificate REMOVIDO — desabilitar SSL é risco de segurança em produção
-        # Se necessário por ambiente corporativo/proxy, o usuário pode configurar via settings
+        "no_warnings": False,
+        "socket_timeout": 60,
+        "retries": 5,
+        "fragment_retries": 10,
+        "logger": ChaquopyLogger,
+        "noplaylist": True,
     }
 
+    # SSL CA BUNDLE Diagnostic
+    if app_files_dir:
+        cacert_candidates = [
+            os.path.join(app_files_dir, "cacert.pem"),
+            os.path.join(app_files_dir, "python", "cacert.pem"),
+        ]
+        for cacert_path in cacert_candidates:
+            if os.path.isfile(cacert_path):
+                ydl_opts["ca_cert"] = cacert_path
+                ChaquopyLogger.network(f"🔐 CA bundle configurado: {cacert_path}")
+                break
+
     if has_ffmpeg:
-        # Fornecemos o caminho completo para o executável (que pode ser libffmpeg_exe.so)
-        # O yt-dlp executará este arquivo diretamente.
         ydl_opts["ffmpeg_location"] = ffmpeg_bin
-
-        # Tenta resolver o ffprobe separadamente
-        # Se não houver ffprobe real, definimos como None para que yt-dlp lide com isso.
         ffprobe_bin = _resolve_ffmpeg_binary(native_lib_dir, app_files_dir, "ffprobe")
-
-        # Verificação de sanidade: ffprobe não pode ter o mesmo tamanho que ffmpeg (sinal de placeholder)
-        if ffprobe_bin and os.path.exists(ffprobe_bin) and os.path.exists(ffmpeg_bin):
+        if ffprobe_bin and os.path.exists(ffprobe_bin):
             if os.path.getsize(ffprobe_bin) == os.path.getsize(ffmpeg_bin):
-                print(
-                    "⚠️ Detectado FFprobe placeholder (cópia do FFmpeg). Ignorando para evitar erros."
-                )
+                ChaquopyLogger.error("⚠️ FFprobe placeholder detectado. Ignorando.", category="STORAGE")
                 ffprobe_bin = None
-
         ydl_opts["ffprobe_location"] = ffprobe_bin
-
-        print(f"🚀 FFmpeg: {ffmpeg_bin} | FFprobe: {ydl_opts['ffprobe_location']}")
+        ChaquopyLogger.debug(f"🚀 FFmpeg ativo: {ffmpeg_bin}", category="STORAGE")
 
     selected_format = (selected_format or "").strip().lower()
     ydl_opts, output_path = _build_download_options(
@@ -315,26 +339,21 @@ def download_video(
     )
 
     try:
+        ChaquopyLogger.info(f"Preparando módulo yt-dlp...", category="FLOW")
         yt_dlp_module = _get_yt_dlp_module(app_files_dir)
         with yt_dlp_module.YoutubeDL(ydl_opts) as ydl:
+            ChaquopyLogger.info(f"Extraindo informações e iniciando download...", category="FLOW")
             downloaded_info = ydl.extract_info(url, download=True)
             is_playlist = downloaded_info.get("_type") == "playlist"
 
             if is_playlist:
+                ChaquopyLogger.info("Detectado modo Playlist.", category="FLOW")
                 entries = downloaded_info.get("entries", []) or []
                 downloaded_files = _resolve_downloaded_files(ydl, entries, format_type)
                 if not downloaded_files:
-                    return json.dumps(
-                        _failure_payload(
-                            "Nenhum arquivo de playlist encontrado após o download",
-                            stage="final_file_validation",
-                            retryable=False,
-                            progress=progress_data["percent"],
-                        )
-                    )
+                    return json.dumps(log_failure("Playlist vazia ou falha no download dos itens", stage="playlist_validation"))
+                
                 final_filename = downloaded_files[0]
-                print(f"📁 Playlist baixada com {len(downloaded_files)} arquivos")
-
                 tags_injected = _apply_tags_to_files(
                     downloaded_files,
                     entries,
@@ -342,104 +361,64 @@ def download_video(
                     album,
                     artwork_url or downloaded_info.get("thumbnail"),
                 )
-                detected_title = downloaded_info.get("title", "Playlist")
-                detected_artist = artist or downloaded_info.get("uploader") or "YTDown"
-                detected_album = (
-                    album or downloaded_info.get("playlist_title") or "YTDown"
-                )
-
-                return json.dumps(
-                    {
+                
+                return json.dumps({
                         "success": True,
                         "message": "Playlist download completed",
-                        "progress": progress_data["percent"],
+                        "progress": 100,
                         "filename": final_filename,
                         "filenames": downloaded_files,
                         "tags_injected": tags_injected,
-                        "detected_title": detected_title,
-                        "detected_artist": detected_artist,
-                        "detected_album": detected_album,
-                    }
-                )
+                        "detected_title": downloaded_info.get("title", "Playlist"),
+                })
 
             orig_filename = ydl.prepare_filename(downloaded_info)
             final_filename = _find_downloaded_file(orig_filename, format_type)
 
-            print(f"📁 Arquivo baixado: {final_filename}")
-
             if not final_filename or not os.path.exists(final_filename):
-                return json.dumps(
-                    _failure_payload(
-                        "Arquivo final não encontrado após concluir o download",
-                        stage="final_file_validation",
-                        retryable=False,
-                        progress=progress_data["percent"],
-                        filename=final_filename,
-                    )
+                return json.dumps(log_failure(f"Arquivo não encontrado: {final_filename}", stage="final_file_validation"))
+
+            ChaquopyLogger.info(f"📁 Arquivo final localizado: {final_filename}", category="STORAGE")
+
+            # Metadados e Tags - ESTÁGIO FINAL
+            try:
+                ChaquopyLogger.info("🎨 Iniciando injeção de metadados e capa...", category="FLOW")
+                resolved_title, resolved_artist, resolved_album = _resolve_metadata(
+                    downloaded_info.get("title", "Sem título"),
+                    artist,
+                    album,
+                    downloaded_info,
                 )
+                resolved_artwork_url = artwork_url or downloaded_info.get("thumbnail")
+                
+                ChaquopyLogger.debug(f"📝 Aplicando: {resolved_title} | Artista: {resolved_artist}", category="FLOW")
+                tags_injected = _force_metadata_with_mutagen(
+                    final_filename,
+                    resolved_title,
+                    resolved_artist,
+                    resolved_album,
+                    resolved_artwork_url,
+                )
+                if tags_injected:
+                    ChaquopyLogger.info("✅ Metadados injetados com sucesso.", category="FLOW")
+                else:
+                    ChaquopyLogger.error("⚠️ Mutagen falhou ao injetar metadados.", category="FLOW")
+            except Exception as e:
+                ChaquopyLogger.error(f"⚠️ Erro ao processar metadados: {str(e)}", category="FLOW")
 
-            if downloaded_info and final_filename and os.path.exists(final_filename):
-                try:
-                    resolved_title, resolved_artist, resolved_album = _resolve_metadata(
-                        downloaded_info.get("title", "Sem título"),
-                        artist,
-                        album,
-                        downloaded_info,
-                    )
+            return json.dumps({
+                "success": True,
+                "message": "Download completed",
+                "progress": 100,
+                "filename": final_filename,
+                "tags_injected": tags_injected,
+                "detected_title": resolved_title,
+                "detected_artist": resolved_artist,
+                "detected_album": resolved_album,
+            })
 
-                    resolved_artwork_url = artwork_url or downloaded_info.get(
-                        "thumbnail", None
-                    )
-
-                    tags_injected = _force_metadata_with_mutagen(
-                        final_filename,
-                        resolved_title,
-                        resolved_artist,
-                        resolved_album,
-                        resolved_artwork_url,
-                    )
-
-                    if tags_injected:
-                        print("✅ Tags ID3 injetadas:")
-                        print(f"   🎵 Título: {resolved_title}")
-                        print(f"   🎤 Artista: {resolved_artist}")
-                        print(f"   💿 Álbum: {resolved_album}")
-                        print(f"   📁 Arquivo: {final_filename}")
-                    if not tags_injected:
-                        print("⚠️ Não foi possível injetar tags")
-                except Exception as e:
-                    print(f"❌ Erro ao injetar tags: {str(e)}")
-                    import traceback
-
-                    traceback.print_exc()
-
-            return json.dumps(
-                {
-                    "success": True,
-                    "message": "Download completed",
-                    "progress": progress_data["percent"],
-                    "filename": final_filename,
-                    "tags_injected": tags_injected,
-                    "detected_title": resolved_title,
-                    "detected_artist": resolved_artist,
-                    "detected_album": resolved_album,
-                }
-            )
     except Exception as e:
-        error_msg = str(e)
-        print(f"❌ Erro no download: {error_msg}")
-        import traceback
-
-        traceback.print_exc()
-        return json.dumps(
-            _failure_payload(
-                error_msg,
-                stage="download_video",
-                retryable=_is_retryable_network_error(e),
-                progress=progress_data["percent"],
-                filename=final_filename,
-            )
-        )
+        return json.dumps(log_failure(e, stage="yt_dlp_execution", retryable=_is_retryable_network_error(e)))
 
 
 def _find_downloaded_file(orig_filename, format_type):
@@ -450,16 +429,7 @@ def _find_downloaded_file(orig_filename, format_type):
     dir_name = os.path.dirname(orig_filename)
 
     extensions = {
-        "audio": [
-            ".m4a",
-            ".webm",
-            ".mp3",
-            ".flac",
-            ".wav",
-            ".aac",
-            ".ogg",
-            ".opus",
-        ],
+        "audio": [".m4a", ".webm", ".mp3", ".flac", ".wav", ".aac", ".ogg", ".opus"],
     }.get(format_type, [".mp4", ".mkv", ".webm", ".avi"])
 
     for ext in extensions:

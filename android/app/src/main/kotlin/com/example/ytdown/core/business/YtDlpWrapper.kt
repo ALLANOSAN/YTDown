@@ -1,6 +1,7 @@
 package com.example.ytdown.core.business
 
 import com.chaquo.python.Python
+import com.example.ytdown.PythonBridge
 import com.example.ytdown.core.domain.*
 import com.example.ytdown.core.infrastructure.BinaryOrchestrator
 import com.example.ytdown.core.infrastructure.PythonEnvironment
@@ -45,12 +46,28 @@ class YtDlpWrapper(
             observabilityService.trackError("YtDlpWrapper", "Download cancelled before start", metadata = mapOf("url" to url.value))
             return DownloadResult(exitCode = ExitCode(1))
         }
+
+        android.util.Log.d("PYTHON_DOWNLOAD", "🔥 Iniciando processo de download: ${url.value}")
+        android.util.Log.d("STORAGE_DEBUG", "📂 Pasta de trabalho temporária: ${outputDir.absolutePath}")
+
         return try {
             val py = Python.getInstance()
             val module = py.getModule("ytdown")
 
             binaryOrchestrator.setupNativeBinaries()
+            
+            // outputDir é o diretório destino. Usamos o template padrão do yt-dlp para que
+            // ele nomeie o arquivo com o título real do vídeo + extensão correta.
             val outputPath = File(outputDir, "%(title)s.%(ext)s").absolutePath
+
+            // Criamos o callback que o Python irá chamar
+            val progressCallback = object : PythonBridge.PythonProgressCallback {
+                override fun onProgress(percent: Int) {
+                    onProgress?.invoke(percent)
+                }
+            }
+
+            android.util.Log.d("DOWNLOAD_FLOW", "⚙️ Chamando 'download_video' no Python...")
 
             val resultJson =
                     module.callAttr(
@@ -64,16 +81,21 @@ class YtDlpWrapper(
                                     metadata?.artist?.value,
                                     metadata?.album?.value,
                                     artworkUrl,
-                                    options.format
+                                    options.format,
+                                    progressCallback // ✅ Agora passamos o callback real
                             )
                             .toString()
 
             val result = JSONObject(resultJson)
             val success = result.optBoolean("success", false)
             val filename = result.optString("filename", "").takeIf { it.isNotBlank() }
+            val error = result.optString("error", "Unknown")
 
             if (!success) {
-                observabilityService.trackError("YtDlpWrapper", "Python download failed", metadata = mapOf("error" to result.optString("error", "Unknown"), "url" to url.value))
+                android.util.Log.e("PYTHON_DOWNLOAD", "❌ Python retornou erro: $error")
+                observabilityService.trackError("YtDlpWrapper", "Python download failed", metadata = mapOf("error" to error, "url" to url.value))
+            } else {
+                android.util.Log.d("PYTHON_DOWNLOAD", "✅ Download concluído: $filename")
             }
 
             DownloadResult(
@@ -81,18 +103,45 @@ class YtDlpWrapper(
                     outputPath = filename
             )
         } catch (e: Exception) {
+            android.util.Log.e("PYTHON_DOWNLOAD", "❌ Erro fatal no download: ${e.message}", e)
             observabilityService.trackError("YtDlpWrapper", "Fatal error during download", e, mapOf("url" to url.value))
             DownloadResult(exitCode = ExitCode(1))
         }
     }
 
+
     fun fetchVideoInfo(url: String, appFilesDir: String): JSONObject {
+        android.util.Log.e("YtDlpWrapper", "🔍 fetchVideoInfo START para: $url")
+        
+        // Timeout de 5 minutos para links complexos (Mix/Rádio)
+        val timeoutMs = 300000L
+        
         return try {
             val py = Python.getInstance()
+            android.util.Log.e("YtDlpWrapper", "🔍 Python instance obtained")
             val module = py.getModule("ytdown")
-            val resultJson = module.callAttr("fetch_video_info", url, appFilesDir).toString()
-            JSONObject(resultJson)
+            android.util.Log.e("YtDlpWrapper", "🔍 Module ytdown obtained, calling fetch_video_info...")
+            
+            // Executa com timeout usando ExecutorService
+            val executor = java.util.concurrent.Executors.newSingleThreadExecutor()
+            val future = executor.submit<String> {
+                module.callAttr("fetch_video_info", url, appFilesDir).toString()
+            }
+            
+            try {
+                val resultJson = future.get(timeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS)
+                android.util.Log.e("YtDlpWrapper", "🔍 fetch_video_info retornou!")
+                executor.shutdown()
+                JSONObject(resultJson)
+            } catch (e: java.util.concurrent.TimeoutException) {
+                android.util.Log.e("YtDlpWrapper", "🔍 fetch_video_info TIMEOUT (5 min)!")
+                future.cancel(true)
+                executor.shutdown()
+                JSONObject().put("success", false).put("error", "Timeout: o YouTube demorou demais para responder.")
+            }
+
         } catch (e: Exception) {
+            android.util.Log.e("YtDlpWrapper", "🔍 fetch_video_info EXCEPTION: ${e.message}")
             observabilityService.trackError("YtDlpWrapper", "Error fetching video info", e, mapOf("url" to url))
             JSONObject().put("success", false).put("error", e.message)
         }

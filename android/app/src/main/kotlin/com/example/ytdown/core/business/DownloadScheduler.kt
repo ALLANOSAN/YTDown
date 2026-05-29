@@ -26,15 +26,18 @@ class DownloadScheduler @Inject constructor(
         android.util.Log.e("DownloadScheduler", "🔍 Scheduling: Artist=${meta.artist.value}, Album=${meta.album.value}, Title=${meta.title.value}")
         val id = UUID.randomUUID().toString()
 
-        // Garantir que a pasta de destino exista antes de agendar o download.
-        val pathDir = File(path.value)
-        if (!pathDir.exists()) pathDir.mkdirs()
+        // ✅ NOTA: Não tentamos criar pastas externas diretamente via File API (mkdirs)
+        // porque isso falha no Android 11+ (Scoped Storage).
+        // O download agora ocorre no cache privado e é exportado via MediaStore/SAF.
+        // val pathDir = File(path.value)
+        // if (!pathDir.exists()) pathDir.mkdirs()
+
 
         // Nome do arquivo: Artista - Album - Titulo.ext
         val fileName = "${meta.artist.value} - ${meta.album.value} - ${meta.title.value}"
             .replace(Regex("[<>:\"/\\\\|?*]"), "_")
             .trim()
-        
+
         val finalPath = "${path.value}/$fileName.${options.format}"
 
         var downloadType = 1
@@ -56,11 +59,13 @@ class DownloadScheduler @Inject constructor(
             quality = options.quality
         )
         repository.persist(item)
-        
+
         val data = Data.Builder().apply {
             putString("VIDEO_ID", id)
             putString("VIDEO_URL", url.value)
-            putString("OUTPUT_PATH", path.value)  // só o diretório — YtDlpWrapper adiciona %(title)s.%(ext)s
+            // Passa o DIRETÓRIO destino. O YtDlpWrapper monta o nome do arquivo
+            // via %(title)s.%(ext)s internamente — o yt-dlp usa o título real do vídeo.
+            putString("OUTPUT_PATH", path.value)
             putString("TITLE", meta.title.value)
             putString("ARTIST", meta.artist.value)
             putString("ALBUM", meta.album.value)

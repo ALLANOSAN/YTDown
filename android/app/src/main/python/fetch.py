@@ -11,15 +11,23 @@ from helpers import (
 
 def fetch_video_info(url, app_files_dir=None):
     ydl_opts = {
-        "format": "best",
+        "format": "bestaudio/best",
         "quiet": True,
         "no_warnings": True,
-        "extract_flat": False,
-        "socket_timeout": 30,
-        # FIX 4 — retry automático do yt-dlp em erros de rede
-        # Antes só havia socket_timeout sem nenhum retry
-        "retries": 3,
+        "extract_flat": True,  # ✅ IMPORTANTE: Não extrai detalhes de cada item da playlist (evita timeout)
+        "noplaylist": True,    # ✅ Se for um vídeo com Mix, ignora o restante da rádio
+        "socket_timeout": 20,
+        "retries": 2,
         "fragment_retries": 3,
+        "http_headers": {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        },
+        # Simular navegador Chrome para evitar bloqueios do YouTube
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["android", "web"],
+            }
+        },
     }
 
     try:
@@ -29,8 +37,8 @@ def fetch_video_info(url, app_files_dir=None):
                 ydl,
                 url,
                 download=False,
-                attempts=3,       # era 2 — agora alinhado com o download.py
-                backoff_seconds=1.0,  # era 0.8
+                attempts=2,
+                backoff_seconds=1.0,
             )
 
             if info is None:
@@ -41,19 +49,23 @@ def fetch_video_info(url, app_files_dir=None):
                     }
                 )
 
+            # Tenta pegar o título do vídeo de várias formas
+            video_title = info.get("title") or info.get("display_id") or "Sem título"
+
             is_playlist = info.get("_type", "video") == "playlist"
             entries = []
             if is_playlist:
+                # Se for playlist, o título principal é o da playlist
                 for entry in info.get("entries", []) or []:
                     if not entry:
                         continue
                     entries.append(
                         {
                             "id": entry.get("id", ""),
-                            "title": entry.get("title", "Sem título"),
+                            "title": entry.get("title") or entry.get("display_id") or "Sem título",
                             "thumbnail": entry.get("thumbnail", ""),
                             "duration": entry.get("duration", 0),
-                            "url": entry.get("webpage_url") or entry.get("url") or "",
+                            "url": entry.get("webpage_url") or entry.get("url") or f"https://www.youtube.com/watch?v={entry.get('id')}",
                             "artist": entry.get("artist") or entry.get("uploader", ""),
                             "album": entry.get("album", "YTDown"),
                         }
@@ -75,7 +87,7 @@ def fetch_video_info(url, app_files_dir=None):
                 entries.append(
                     {
                         "id": info.get("id", ""),
-                        "title": info.get("title", "Sem título"),
+                        "title": video_title,
                         "thumbnail": info.get("thumbnail", ""),
                         "duration": info.get("duration", 0),
                         "url": url,
@@ -89,7 +101,7 @@ def fetch_video_info(url, app_files_dir=None):
                     "success": True,
                     "data": {
                         "id": info.get("id", ""),
-                        "title": info.get("title", "Sem título"),
+                        "title": video_title,
                         "thumbnail": info.get("thumbnail", ""),
                         "duration": info.get("duration", 0),
                         "url": url,

@@ -302,17 +302,28 @@ constructor(
     }
 
     fun fetchVideoDetails(context: Context, url: VideoUrl) {
+        android.util.Log.e("DownloadViewModel", "🔍 fetchVideoDetails INICIADO para: ${url.value}")
         viewModelScope.launch(Dispatchers.IO) {
             libraryRepository.saveSearch(url.value)
+            android.util.Log.e("DownloadViewModel", "🔍 Chamando performFetch...")
             fetchQueue.add { performFetch(context, url) }.await()
+            android.util.Log.e("DownloadViewModel", "🔍 performFetch FINALIZADO")
         }
     }
 
     private suspend fun performFetch(context: Context, url: VideoUrl) {
+        android.util.Log.e("DownloadViewModel", "🔍 performFetch started para: ${url.value}")
         _inputState.update { it.copy(isFetching = true, fetchError = null, showDialog = false) }
-        runCatching { metadataManager.fetchVideoInfo(url) }
-                .onSuccess { updateStateWithInfo(it) }
+        runCatching { 
+            android.util.Log.e("DownloadViewModel", "🔍 chamando metadataManager.fetchVideoInfo...")
+            metadataManager.fetchVideoInfo(url)
+        }
+                .onSuccess { 
+                    android.util.Log.e("DownloadViewModel", "🔍 fetchVideoInfo SUCESSO!")
+                    updateStateWithInfo(it) 
+                }
                 .onFailure { error ->
+                    android.util.Log.e("DownloadViewModel", "🔍 fetchVideoInfo FALHOU: ${error.message}")
                     observabilityService.trackError(
                             "DownloadViewModel",
                             "fetchVideoDetails failure: ${error.message}",
@@ -398,15 +409,24 @@ constructor(
     }
 
     fun startDownloadFlow(folder: FilePath) {
+        android.util.Log.d("DOWNLOAD_FLOW", "🖱️ Botão 'Iniciar Download' clicado!")
         _uiState.value = DownloadUiState.Loading
         val currentState = _inputState.value
+        
         val selectedItems =
                 currentState.fetchedItems.filter { item ->
                     if (!currentState.isPlaylist) return@filter true
                     item.isSelected
                 }
 
-        if (selectedItems.isEmpty()) return
+        android.util.Log.d("DOWNLOAD_FLOW", "📋 Itens selecionados para download: ${selectedItems.size}")
+        android.util.Log.d("STORAGE_DEBUG", "📂 Pasta informada pela UI: ${folder.value}")
+
+        if (selectedItems.isEmpty()) {
+            android.util.Log.e("DOWNLOAD_FLOW", "❌ Abortando: NENHUM item selecionado ou lista vazia!")
+            _uiState.value = DownloadUiState.Idle
+            return
+        }
 
         viewModelScope.launch {
             try {
@@ -423,6 +443,8 @@ constructor(
                                 quality = currentState.selectedQuality
                         )
 
+                android.util.Log.d("DOWNLOAD_FLOW", "⚙️ Opções: ${downloadOptions.type.value} | ${downloadOptions.format} | ${downloadOptions.quality}")
+
                 var resolvedArtworkUrl: String? = null
                 if (currentState.artistInput.isNotBlank()) {
                     resolvedArtworkUrl =
@@ -433,17 +455,23 @@ constructor(
                 }
 
                 selectedItems.forEach { item ->
+                    android.util.Log.d("DOWNLOAD_FLOW", "⏳ Agendando item: ${item.title.value}")
                     val finalMeta = baseMeta.copy(title = item.title)
                     scheduler.schedule(item.url, folder, finalMeta, downloadOptions, resolvedArtworkUrl)
                 }
+                
+                android.util.Log.d("DOWNLOAD_FLOW", "✅ Todos os itens foram enviados para o agendador.")
+                
                 _inputState.update {
                     it.copy(fetchedItems = emptyList(), urlInput = "", showDialog = false)
                 }
                 _uiState.value = DownloadUiState.Success(message = "${selectedItems.size} item(s) scheduled for download")
             } catch (e: Exception) {
+                android.util.Log.e("DOWNLOAD_FLOW", "❌ Falha crítica no fluxo de download: ${e.message}", e)
                 _uiState.value = DownloadUiState.Error(message = e.message ?: "Unknown error scheduling download", throwable = e)
                 observabilityService.trackError("DownloadViewModel", "startDownloadFlow failed", e)
             }
         }
     }
+
 }

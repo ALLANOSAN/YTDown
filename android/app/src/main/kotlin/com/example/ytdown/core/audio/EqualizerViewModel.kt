@@ -99,7 +99,7 @@ class EqualizerViewModel @Inject constructor(
     }
 
     fun applyPreset(preset: EqualizerPreset) {
-        _uiState.update { it.copy(bandGains = preset.gains.clone(), currentPresetId = preset.name.lowercase()) }
+        _uiState.update { it.copy(bandGains = preset.gains.clone(), currentPresetId = preset.id) }
         applyAllGains()
         saveSettings()
     }

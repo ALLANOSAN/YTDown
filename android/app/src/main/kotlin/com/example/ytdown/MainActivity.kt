@@ -46,16 +46,50 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Inicializa o Chaquopy e PythonBridge
+        // ✅ DIAGNÓSTICO DE INICIALIZAÇÃO (CHAQUOPY_DEBUG)
+        android.util.Log.d("CHAQUOPY_DEBUG", "--------------------------------------------------")
+        android.util.Log.d("CHAQUOPY_DEBUG", "🔍 Iniciando Diagnóstico Técnico do Sistema")
+        
         PythonBridge.initializePython(this)
+        
+        try {
+            val py = com.chaquo.python.Python.getInstance()
+            val sys = py.getModule("sys")
+            android.util.Log.d("CHAQUOPY_DEBUG", "✅ Python Version: ${sys["version"]}")
+            
+            val ytdown = py.getModule("ytdown")
+            android.util.Log.d("CHAQUOPY_DEBUG", "✅ Módulo 'ytdown' carregado com sucesso.")
+            
+            // 1. Verifica se o yt-dlp está acessível
+            try {
+                py.getModule("yt_dlp")
+                android.util.Log.d("CHAQUOPY_DEBUG", "✅ Biblioteca 'yt-dlp' encontrada.")
+            } catch (e: Exception) {
+                android.util.Log.e("CHAQUOPY_DEBUG", "⚠️ Biblioteca 'yt-dlp' não encontrada via import direto.")
+            }
+
+            // 2. Verifica conectividade básica de rede via Python
+            try {
+                val socket = py.getModule("socket")
+                android.util.Log.d("CHAQUOPY_DEBUG", "🌐 Testando resolução de DNS (google.com)...")
+                val ip = socket.callAttr("gethostbyname", "google.com").toString()
+                android.util.Log.d("CHAQUOPY_DEBUG", "✅ DNS OK: google.com -> $ip")
+            } catch (e: Exception) {
+                android.util.Log.e("CHAQUOPY_DEBUG", "❌ Falha crítica de REDE/DNS no Python: ${e.message}")
+            }
+            
+        } catch (e: Exception) {
+            android.util.Log.e("CHAQUOPY_DEBUG", "❌ Falha no diagnóstico de inicialização: ${e.message}")
+        }
+        android.util.Log.d("CHAQUOPY_DEBUG", "--------------------------------------------------")
+
         isRuntimeReady = true
 
         setContent {
             YTDownTheme {
                 if (isRuntimeReady) {
                     RootApp(viewModel = viewModel)
-                }
-                if (!isRuntimeReady) {
+                } else {
                     LoadingScreen()
                 }
             }
@@ -64,6 +98,7 @@ class MainActivity : ComponentActivity() {
         handleIntent(intent)
         checkAndRequestPermissions()
     }
+
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)

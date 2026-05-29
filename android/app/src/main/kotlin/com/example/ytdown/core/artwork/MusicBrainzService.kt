@@ -9,7 +9,11 @@ import javax.inject.Singleton
 
 data class MusicBrainzResult(
     val artistId: String?,
-    val releaseId: String?
+    val releaseId: String?,
+    val title: String,
+    val artist: String,
+    val album: String,
+    val year: String?
 )
 
 @Singleton
@@ -45,10 +49,26 @@ class MusicBrainzService @Inject constructor(
                 if (recordings != null && recordings.length() > 0) {
                     val first = recordings.getJSONObject(0)
                     val mbid = first.optString("id")
-                    val releaseList = first.optJSONArray("releases")
-                    val releaseMbid = releaseList?.optJSONObject(0)?.optString("id")
+                    val title = first.optString("title")
                     
-                    MusicBrainzResult(mbid, releaseMbid)
+                    val artistCredit = first.optJSONArray("artist-credit")
+                    val artist = artistCredit?.optJSONObject(0)?.optString("name") ?: searchArtist ?: "Unknown"
+                    
+                    val releaseList = first.optJSONArray("releases")
+                    val firstRelease = releaseList?.optJSONObject(0)
+                    val releaseMbid = firstRelease?.optString("id")
+                    val album = firstRelease?.optString("title") ?: "Unknown"
+                    val date = firstRelease?.optString("date") ?: ""
+                    val year = if (date.length >= 4) date.substring(0, 4) else null
+                    
+                    MusicBrainzResult(
+                        artistId = mbid,
+                        releaseId = releaseMbid,
+                        title = title,
+                        artist = artist,
+                        album = album,
+                        year = year
+                    )
                 } else null
             }
         } catch (e: Exception) {
@@ -57,3 +77,5 @@ class MusicBrainzService @Inject constructor(
         }
     }
 }
+
+

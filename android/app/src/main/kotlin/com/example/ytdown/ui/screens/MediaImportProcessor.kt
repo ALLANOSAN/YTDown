@@ -31,84 +31,93 @@ class MediaImportProcessor @Inject constructor(
     /**
      * Processa qualquer arquivo de áudio adicionado ao app (Download ou Local)
      */
+    /**
+     * Processa qualquer arquivo de áudio adicionado ao app (Download ou Local)
+     * Seguindo o fluxo: MusicBrainz -> Cover Art Archive -> FanArt.tv -> Mutagen (Write)
+     */
     suspend fun process(audioPath: String) {
         withContext(Dispatchers.IO) {
-        // PASSO 1 — EXTRAIR TAGS LOCAIS
-        val localMeta = metadataExtractor.extract(audioPath)
-        
-        val mbMetadata = musicBrainzService.searchRecording(
-            title = localMeta.title,
-            artist = localMeta.artist
-        )
+            val file = File(audioPath)
+            if (!file.exists()) return@withContext
 
-        val title: String = mbMetadata?.title ?: localMeta.title
-        val artist: String = mbMetadata?.artist ?: localMeta.artist
-        val album: String = mbMetadata?.album ?: localMeta.album
-        val duration = localMeta.duration
-        
-        val releaseId = mbMetadata?.releaseId
-        val artistId = mbMetadata?.artistId
+            // PASSO 1 — EXTRAIR METADADOS DO NOME DO ARQUIVO
+            val filenameMeta = pythonMetadataBridge.extractMetadataFromFilename(file.name)
+            val searchArtist = filenameMeta["artist"]
+            val searchTitle = filenameMeta["title"] ?: file.nameWithoutExtension
 
-        // PASSO 6 — CACHE INTELIGENTE
-        val albumCacheKey = artworkCacheManager.getCacheKey(artist, album)
-        val artistCacheKey = artworkCacheManager.getArtistCacheKey(artist)
+            android.util.Log.d("ImportProcessor", "🔍 Buscando metadados para: $searchArtist - $searchTitle")
 
-        // PASSO 4 — COVER ART ARCHIVE (Album Art)
-        var albumArtFile = artworkCacheManager.getCachedAlbumArt(albumCacheKey)
-        if (albumArtFile == null && releaseId != null) {
-            val bytes = coverArtService.downloadAlbumArt(releaseId)
-            if (bytes != null) {
-                albumArtFile = artworkCacheManager.saveToAlbumCache(albumCacheKey, bytes)
+            // PASSO 2 — MUSICBRAINZ (Metadados Reais)
+            val mbResult = musicBrainzService.fetchRecordingMetadata(searchArtist, searchTitle, file.name)
+            
+            val finalTitle = mbResult?.title ?: searchTitle
+            val finalArtist = mbResult?.artist ?: searchArtist ?: "Unknown"
+            val finalAlbum = mbResult?.album ?: "YTDown"
+            val duration = metadataExtractor.extract(audioPath).duration
+
+            // PASSO 3 — COVER ART ARCHIVE (Album Art)
+            var albumArtPath: String? = null
+            if (mbResult?.releaseId != null) {
+                val albumCacheKey = artworkCacheManager.getCacheKey(finalArtist, finalAlbum)
+                val cachedFile = artworkCacheManager.getCachedAlbumArt(albumCacheKey)
+                
+                if (cachedFile != null) {
+                    albumArtPath = cachedFile.absolutePath
+                } else {
+                    val bytes = coverArtService.downloadAlbumArt(mbResult.releaseId)
+                    if (bytes != null) {
+                        val savedFile = artworkCacheManager.saveToAlbumCache(albumCacheKey, bytes)
+                        albumArtPath = savedFile?.absolutePath
+                    }
+                }
             }
-        }
-        val albumArtPath: String? = albumArtFile?.absolutePath
 
-        // PASSO 5 — FANART.TV (Artist Art)
-        var artistArtFile = artworkCacheManager.getCachedArtistArt(artistCacheKey)
-        if (artistArtFile == null && artistId != null) {
-            val bytes = fanArtTvService.downloadArtistImage(artistId)
-            if (bytes != null) {
-                artistArtFile = artworkCacheManager.saveToArtistCache(artistCacheKey, bytes)
+            // PASSO 4 — FANART.TV (Artist Art - Apenas Cache)
+            var artistArtPath: String? = null
+            if (mbResult?.artistId != null) {
+                val artistCacheKey = artworkCacheManager.getArtistCacheKey(finalArtist)
+                val cachedArtistFile = artworkCacheManager.getCachedArtistArt(artistCacheKey)
+                
+                if (cachedArtistFile != null) {
+                    artistArtPath = cachedArtistFile.absolutePath
+                } else {
+                    val bytes = fanArtTvService.downloadArtistImage(mbResult.artistId)
+                    if (bytes != null) {
+                        val savedArtistFile = artworkCacheManager.saveToArtistCache(artistCacheKey, bytes)
+                        artistArtPath = savedArtistFile?.absolutePath
+                    }
+                }
             }
-        }
-        val artistArtPath: String? = artistArtFile?.absolutePath
 
-        // PASSO 7 & 8 — EMBED & WRITE METADATA (Pipeline Python Unificado)
-        try {
-            // Embed da capa do álbum dentro do arquivo físico
-            if (albumArtPath != null) {
-                pythonMetadataBridge.embedAlbumArtwork(
-                    audioPath = audioPath,
-                    coverPath = albumArtPath
+            // PASSO 5 — MUTAGEN (Gravar no arquivo)
+            try {
+                android.util.Log.d("ImportProcessor", "✍️ Gravando metadados no arquivo via Mutagen: $audioPath")
+                pythonMetadataBridge.writeFullMetadata(
+                    path = audioPath,
+                    title = finalTitle,
+                    artist = finalArtist,
+                    album = finalAlbum,
+                    year = mbResult?.year,
+                    albumArt = albumArtPath
                 )
+            } catch (e: Exception) {
+                android.util.Log.e("ImportProcessor", "❌ Erro ao gravar metadados: ${e.message}")
             }
 
-            // Escreve tags completas
-            pythonMetadataBridge.writeFullMetadata(
+            // PASSO 6 — DATABASE (SongEntity)
+            val entity = SongEntity(
                 path = audioPath,
-                title = title,
-                artist = artist,
-                album = album,
-                albumArt = albumArtPath
+                title = finalTitle,
+                artist = finalArtist,
+                album = finalAlbum,
+                duration = duration,
+                albumArtwork = albumArtPath,
+                artistArtwork = artistArtPath,
+                addedAt = System.currentTimeMillis()
             )
-        } catch (e: Exception) {
-            android.util.Log.e("ImportProcessor", "Erro no pipeline Python para: $audioPath", e)
+            songDao.insert(entity)
+            android.util.Log.d("ImportProcessor", "✅ Processamento concluído para: $finalTitle")
         }
-
-        // PASSO 9 — ROOM DATABASE (Persistência)
-        val entity = SongEntity(
-            path = audioPath,
-            title = title,
-            artist = artist,
-            album = album,
-            duration = duration,
-            albumArtwork = albumArtPath,
-            artistArtwork = artistArtPath,
-            addedAt = System.currentTimeMillis()
-        )
-        
-        songDao.insert(entity)
-    }
     }
     
     suspend fun processFolder(folderPath: String) = withContext(Dispatchers.IO) {

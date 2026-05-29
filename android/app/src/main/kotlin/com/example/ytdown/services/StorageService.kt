@@ -78,7 +78,7 @@ class StorageService @javax.inject.Inject constructor() {
         mediaType: StorageMediaType,
         mimeType: StorageMimeType,
         allowUserInteractionFallback: Boolean,
-    ) {
+    ): Uri? {
         var stage = "init"
         var strategy = "none"
         val diagnostics = buildStorageDiagnostics(
@@ -99,17 +99,16 @@ class StorageService @javax.inject.Inject constructor() {
             }
 
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
-                exportToLegacyPublicDir(
+                return exportToLegacyPublicDir(
                     sourceFile = sourceFile,
                     fileName = fileName,
                     mediaType = mediaType,
                     diagnostics = diagnostics,
                 )
-                return
             }
 
             val targets = buildExportTargets(mediaType)
-            val exported = exportToMediaStore(
+            val exportedUri = exportToMediaStore(
                 context = context,
                 sourceFile = sourceFile,
                 fileName = fileName,
@@ -118,8 +117,8 @@ class StorageService @javax.inject.Inject constructor() {
                 diagnostics = diagnostics,
             )
 
-            if (exported) {
-                return
+            if (exportedUri != null) {
+                return exportedUri
             }
 
             if (allowUserInteractionFallback) {
@@ -131,7 +130,7 @@ class StorageService @javax.inject.Inject constructor() {
                     diagnostics = diagnostics,
                     strategyErrors = listOf(diagnostics["strategyErrors"].toString()),
                 )
-                return
+                return null
             }
 
             throw IOException(
@@ -142,6 +141,7 @@ class StorageService @javax.inject.Inject constructor() {
             diagnostics["stage"] = stage
             LocalLogger.error("Erro ao exportar arquivo: ${e.message}", e)
         }
+        return null
     }
 
     suspend fun syncEditedExportedFile(
@@ -300,7 +300,7 @@ class StorageService @javax.inject.Inject constructor() {
         mimeType: String,
         targets: List<ExportTarget>,
         diagnostics: MutableMap<String, Any>,
-    ): Boolean {
+    ): Uri? {
         val resolver = context.contentResolver
         val strategyErrors = mutableListOf<String>()
 
@@ -322,7 +322,7 @@ class StorageService @javax.inject.Inject constructor() {
                     }
                     resolver.update(existingUri, publishValues, null, null)
                     diagnostics["stage"] = "duplicate_overwrite_done"
-                    return true
+                    return existingUri
                 }
 
                 val values = ContentValues().apply {
@@ -352,7 +352,7 @@ class StorageService @javax.inject.Inject constructor() {
                     diagnostics["strategy"] = strategy
                     diagnostics["stage"] = diagnostics["stage"] ?: "publish"
 
-                    return true
+                    return uri
                 } catch (e: Exception) {
                     diagnostics["stage"] = "cleanup"
                     resolver.delete(uri, null, null)
@@ -364,7 +364,7 @@ class StorageService @javax.inject.Inject constructor() {
         }
 
         diagnostics["strategyErrors"] = strategyErrors.joinToString(" | ")
-        return false
+        return null
     }
 
     @androidx.annotation.RequiresApi(Build.VERSION_CODES.Q)
@@ -392,7 +392,7 @@ class StorageService @javax.inject.Inject constructor() {
         fileName: String,
         mediaType: StorageMediaType,
         diagnostics: MutableMap<String, Any>,
-    ) {
+    ): Uri {
         diagnostics["strategy"] = "legacy_public_dir"
         diagnostics["stage"] = "legacy_copy"
 
@@ -415,6 +415,7 @@ class StorageService @javax.inject.Inject constructor() {
             LocalLogger.info("Duplicata encontrada (legacy), sobrescrevendo: $fileName")
         }
         sourceFile.copyTo(targetFile, overwrite = true)
+        return Uri.fromFile(targetFile)
     }
 
     private fun validateSourceFile(

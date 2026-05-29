@@ -9,6 +9,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
@@ -25,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ytdown.ui.theme.YTDownPurple
 import com.example.ytdown.core.audio.EqualizerViewModel
+import com.example.ytdown.core.audio.EqualizerPreset
 import kotlin.math.sin
 
 private val frequencies = listOf("31", "62", "125", "250", "500", "1K", "2K", "4K", "8K", "16K")
@@ -50,17 +52,16 @@ fun EqualizerScreen(viewModel: EqualizerViewModel, onBack: () -> Unit = {}) {
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(vertical = 24.dp)
+                .padding(top = 8.dp, bottom = 24.dp) // Reduzido padding superior de 24dp para 8dp
         ) {
-            // Header
+            // Header Compacto
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 24.dp, vertical = 16.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.Start,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Botão de voltar
                 IconButton(onClick = onBack) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.ArrowBack,
@@ -69,41 +70,36 @@ fun EqualizerScreen(viewModel: EqualizerViewModel, onBack: () -> Unit = {}) {
                     )
                 }
                 
-                Column {
+                Column(modifier = Modifier.padding(start = 8.dp)) {
                     Text(
                         text = "Equalizador",
-                        style = MaterialTheme.typography.headlineLarge,
+                        style = MaterialTheme.typography.headlineSmall, // Menor para economizar espaço
                         fontWeight = FontWeight.Bold,
                         color = Color.White
-                    )
-                    Text(
-                        text = "Personalize o som",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = Color.White.copy(alpha = 0.6f)
                     )
                 }
             }
 
-            // Spectrum Visualizer
+            // Spectrum Visualizer mais fino
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(120.dp)
+                    .height(80.dp) // Reduzido de 120dp para 80dp
                     .padding(horizontal = 20.dp)
                     .background(
-                        color = Color.Black.copy(alpha = 0.3f),
-                        shape = RoundedCornerShape(20.dp)
+                        color = Color.Black.copy(alpha = 0.2f),
+                        shape = RoundedCornerShape(16.dp)
                     )
             ) {
                 RealtimeSpectrum(
                     data = uiState.spectrumData,
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(16.dp)
+                        .padding(12.dp)
                 )
             }
 
-            Spacer(modifier = Modifier.height(32.dp))
+            Spacer(modifier = Modifier.height(16.dp)) // Reduzido de 32dp para 16dp
 
             // Equalizer Bands
             LazyRow(
@@ -129,7 +125,12 @@ fun EqualizerScreen(viewModel: EqualizerViewModel, onBack: () -> Unit = {}) {
             )
 
             // Presets Section
-            ModernPresetsSection()
+            ModernPresetsSection(
+                currentPresetId = uiState.currentPresetId,
+                onPresetSelected = { presetId, gains ->
+                    viewModel.applyPreset(EqualizerPreset(presetId, "", gains))
+                }
+            )
 
             Spacer(modifier = Modifier.height(100.dp))
         }
@@ -155,66 +156,89 @@ fun ModernVerticalSlider(label: String, gain: Float, onGainChange: (Float) -> Un
 
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.width(60.dp)
+        modifier = Modifier.width(70.dp) // Largura um pouco maior para respiro
     ) {
-        // Valor atual
-        Text(
-            text = "${animatedGain.toInt()}dB",
-            color = gainColor,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.SemiBold
-        )
+        // Valor atual com destaque maior
+        Surface(
+            color = gainColor.copy(alpha = 0.2f),
+            shape = RoundedCornerShape(8.dp),
+            modifier = Modifier.padding(bottom = 8.dp)
+        ) {
+            Text(
+                text = "${animatedGain.toInt()}dB",
+                color = gainColor,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+            )
+        }
 
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // Slider
+        // Slider Container
         Box(
             modifier = Modifier
-                .height(200.dp)
-                .width(40.dp),
+                .height(320.dp) // Aumentado de 200dp para 320dp
+                .width(50.dp),
             contentAlignment = Alignment.Center
         ) {
-            // Track de fundo
+            // Track de fundo estilizada (estilo fader profissional)
             Canvas(modifier = Modifier.fillMaxSize()) {
-                // Barra de fundo
+                val trackWidth = 12f
+                val corner = 6f
+                
+                // Barra de fundo (sulco do fader)
                 drawRoundRect(
-                    color = Color.White.copy(alpha = 0.1f),
-                    cornerRadius = CornerRadius(20f, 20f),
-                    size = Size(size.width, size.height)
+                    color = Color.Black.copy(alpha = 0.4f),
+                    topLeft = Offset((size.width - trackWidth) / 2, 0f),
+                    size = Size(trackWidth, size.height),
+                    cornerRadius = CornerRadius(corner, corner)
                 )
-                // Centro
+
+                // Linha central de referência
                 drawLine(
-                    color = Color.White.copy(alpha = 0.3f),
-                    start = Offset(size.width / 2, 0f),
-                    end = Offset(size.width / 2, size.height),
+                    color = Color.White.copy(alpha = 0.1f),
+                    start = Offset(0f, size.height / 2),
+                    end = Offset(size.width, size.height / 2),
                     strokeWidth = 2f
                 )
+                
+                // Marcas de escala
+                for (i in 0..10) {
+                    val y = (size.height / 10) * i
+                    val lineWidth = if (i == 5) 20f else 10f
+                    val alpha = if (i == 5) 0.5f else 0.2f
+                    drawLine(
+                        color = Color.White.copy(alpha = alpha),
+                        start = Offset((size.width - lineWidth) / 2, y),
+                        end = Offset((size.width + lineWidth) / 2, y),
+                        strokeWidth = 2f
+                    )
+                }
             }
 
-            // Slider
+            // Slider invisível para interação, mas com Thumb customizado via Canvas
             Slider(
                 value = animatedGain,
                 onValueChange = onGainChange,
                 valueRange = -15f..15f,
                 modifier = Modifier
                     .graphicsLayer { rotationZ = -90f }
-                    .width(200.dp),
+                    .width(320.dp), // Deve bater com a altura do Box
                 colors = SliderDefaults.colors(
                     thumbColor = gainColor,
-                    activeTrackColor = gainColor,
+                    activeTrackColor = Color.Transparent,
                     inactiveTrackColor = Color.Transparent
                 )
             )
         }
 
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(12.dp))
 
-        // Label
+        // Label da frequência
         Text(
             text = label,
-            color = Color.White.copy(alpha = 0.7f),
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Medium
+            color = Color.White,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Bold
         )
     }
 }
@@ -294,21 +318,24 @@ fun ModernPreampCard(preamp: Float, onPreampChange: (Float) -> Unit) {
 }
 
 @Composable
-fun ModernPresetsSection() {
+fun ModernPresetsSection(
+    currentPresetId: String,
+    onPresetSelected: (String, FloatArray) -> Unit
+) {
     val presets = listOf(
-        "Flat" to 0f,
-        "Rock" to listOf(4f, 3f, 0f, -1f, -2f, 0f, 2f, 3f, 4f, 3f),
-        "Pop" to listOf(-2f, -1f, 0f, 2f, 4f, 4f, 2f, 0f, -1f, -2f),
-        "Jazz" to listOf(3f, 2f, 0f, 2f, -2f, -2f, 0f, 2f, 3f, 4f),
-        "Classical" to listOf(4f, 3f, 2f, 0f, -1f, -1f, 0f, 2f, 3f, 4f),
-        "Bass Boost" to listOf(8f, 6f, 4f, 2f, 0f, 0f, 0f, 0f, 0f, 0f),
-        "Treble Boost" to listOf(0f, 0f, 0f, 0f, 0f, 2f, 4f, 6f, 8f, 10f)
+        PresetData("flat", "Flat", FloatArray(10) { 0f }),
+        PresetData("rock", "Rock", floatArrayOf(4f, 3f, 0f, -1f, -2f, 0f, 2f, 3f, 4f, 3f)),
+        PresetData("pop", "Pop", floatArrayOf(-2f, -1f, 0f, 2f, 4f, 4f, 2f, 0f, -1f, -2f)),
+        PresetData("jazz", "Jazz", floatArrayOf(3f, 2f, 0f, 2f, -2f, -2f, 0f, 2f, 3f, 4f)),
+        PresetData("classical", "Classical", floatArrayOf(4f, 3f, 2f, 0f, -1f, -1f, 0f, 2f, 3f, 4f)),
+        PresetData("bass_boost", "Bass Boost", floatArrayOf(8f, 6f, 4f, 2f, 0f, 0f, 0f, 0f, 0f, 0f)),
+        PresetData("treble_boost", "Treble Boost", floatArrayOf(0f, 0f, 0f, 0f, 0f, 2f, 4f, 6f, 8f, 10f))
     )
 
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 20.dp, vertical = 24.dp)
+            .padding(horizontal = 20.dp, vertical = 16.dp)
     ) {
         Text(
             text = "Presets",
@@ -319,39 +346,40 @@ fun ModernPresetsSection() {
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // Preset chips
-        Row(
+        // Usar LazyRow para que os presets sejam roláveis e não quebrem o layout
+        LazyRow(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            contentPadding = PaddingValues(bottom = 8.dp)
         ) {
-            presets.take(4).forEach { (name, _) ->
-                PresetChip(name = name)
-            }
-        }
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            presets.drop(4).forEach { (name, _) ->
-                PresetChip(name = name)
+            itemsIndexed(presets) { _, preset ->
+                PresetChip(
+                    name = preset.name,
+                    isSelected = currentPresetId == preset.id,
+                    onClick = { 
+                        android.util.Log.d("EQ", "Preset clicado: ${preset.id}")
+                        onPresetSelected(preset.id, preset.gains) 
+                    }
+                )
             }
         }
     }
 }
 
+data class PresetData(val id: String, val name: String, val gains: FloatArray)
+
 @Composable
-fun PresetChip(name: String) {
+fun PresetChip(name: String, isSelected: Boolean = false, onClick: () -> Unit) {
     Surface(
+        modifier = Modifier
+            .padding(end = 4.dp)
+            .clickable(onClick = onClick),
         shape = RoundedCornerShape(20.dp),
-        color = Color.White.copy(alpha = 0.1f),
-        modifier = Modifier.padding(end = 8.dp)
+        color = if (isSelected) YTDownPurple else Color.White.copy(alpha = 0.1f)
     ) {
         Text(
             text = name,
-            color = Color.White.copy(alpha = 0.8f),
+            color = if (isSelected) Color.White else Color.White.copy(alpha = 0.8f),
             fontSize = 13.sp,
             fontWeight = FontWeight.Medium,
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)

@@ -26,34 +26,70 @@ class StorageResolver @Inject constructor(private val context: Context) {
     }
 
     /**
-     * Exporta um arquivo para a coleção pública.
+     * BUG #4 FIX: antes o MIME type era sempre "audio/mpeg" (mp3) ou "video/mp4",
+     * independente do formato real. Arquivos m4a, flac, opus etc ficavam inacessíveis
+     * para players ou apareciam corrompidos na galeria.
+     * Agora resolve o MIME correto a partir da extensão real do arquivo.
      */
-    fun exportToPublicCollection(sourceFile: File, isAudio: Boolean, displayName: String): Uri? {
+    private fun resolveMimeType(format: String, isAudio: Boolean): String {
+        return when (format.lowercase().trimStart('.')) {
+            "m4a", "aac" -> "audio/mp4"
+            "flac"       -> "audio/flac"
+            "ogg"        -> "audio/ogg"
+            "opus"       -> "audio/ogg"
+            "wav"        -> "audio/wav"
+            "mp3"        -> "audio/mpeg"
+            "mp4"        -> "video/mp4"
+            "mkv"        -> "video/x-matroska"
+            "webm"       -> if (isAudio) "audio/webm" else "video/webm"
+            "avi"        -> "video/x-msvideo"
+            else         -> if (isAudio) "audio/mpeg" else "video/mp4"
+        }
+    }
+
+    /**
+     * Exporta um arquivo para a coleção pública.
+     * @param format extensão do arquivo (ex: "mp3", "m4a", "mp4"). Usado para
+     *               determinar o MIME type correto no MediaStore.
+     */
+    fun exportToPublicCollection(
+        sourceFile: File,
+        isAudio: Boolean,
+        displayName: String,
+        format: String = ""
+    ): Uri? {
         if (!sourceFile.exists()) return null
+
+        // Resolve formato a partir do parâmetro ou da extensão real do arquivo
+        val resolvedFormat = format.ifBlank {
+            sourceFile.extension.ifBlank { if (isAudio) "mp3" else "mp4" }
+        }
+        val mimeType = resolveMimeType(resolvedFormat, isAudio)
 
         val resolver = context.contentResolver
         val contentValues = ContentValues().apply {
             put(MediaStore.MediaColumns.DISPLAY_NAME, displayName)
-            var mimeType = "video/mp4"
-            if (isAudio) mimeType = "audio/mpeg"
             put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                var relativeFolder = "${Environment.DIRECTORY_MOVIES}/YTDown"
-                if (isAudio) relativeFolder = "${Environment.DIRECTORY_MUSIC}/YTDown"
+                val relativeFolder = if (isAudio)
+                    "${Environment.DIRECTORY_MUSIC}/YTDown"
+                else
+                    "${Environment.DIRECTORY_MOVIES}/YTDown"
                 put(MediaStore.MediaColumns.RELATIVE_PATH, relativeFolder)
                 put(MediaStore.MediaColumns.IS_PENDING, 1)
             }
         }
 
-        var collection = MediaStore.Video.Media.EXTERNAL_CONTENT_URI
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            collection = MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
-        }
-        if (isAudio) {
-            collection = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                collection = MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
-            }
+        var collection = if (isAudio) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
+                MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+            else
+                MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
+        } else {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
+                MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+            else
+                MediaStore.Video.Media.EXTERNAL_CONTENT_URI
         }
 
         val uri = resolver.insert(collection, contentValues) ?: return null
@@ -78,7 +114,7 @@ class StorageResolver @Inject constructor(private val context: Context) {
     }
 
     /**
-     * Deleção Real do MediaStore (Migrado do Flutter StorageService -> deleteExportedFile).
+     * Deleção Real do MediaStore.
      * Remove o arquivo da coleção pública de mídia no Android.
      */
     fun deleteFromPublicCollection(uriString: String?) {

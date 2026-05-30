@@ -19,7 +19,7 @@ import java.io.File
 
 @Singleton
 class MediaImportProcessor @Inject constructor(
-    @ApplicationContext private val context: Context,
+    @param:ApplicationContext private val context: Context,
     private val metadataExtractor: MetadataExtractor,
     private val musicBrainzService: MusicBrainzService,
     private val coverArtService: CoverArtArchiveService,
@@ -30,20 +30,23 @@ class MediaImportProcessor @Inject constructor(
 ) {
     /**
      * Processa qualquer arquivo de áudio adicionado ao app (Download ou Local)
-     */
-    /**
-     * Processa qualquer arquivo de áudio adicionado ao app (Download ou Local)
      * Seguindo o fluxo: MusicBrainz -> Cover Art Archive -> FanArt.tv -> Mutagen (Write)
+     *
+     * @param audioPath Caminho do arquivo físico
+     * @param originalTitle Título original (opcional), útil quando o arquivo tem nome genérico (ex: temp)
      */
-    suspend fun process(audioPath: String) {
+    suspend fun process(audioPath: String, originalTitle: String? = null) {
         withContext(Dispatchers.IO) {
             val file = File(audioPath)
             if (!file.exists()) return@withContext
 
-            // PASSO 1 — EXTRAIR METADADOS DO NOME DO ARQUIVO
-            val filenameMeta = pythonMetadataBridge.extractMetadataFromFilename(file.name)
-            val searchArtist = filenameMeta["artist"]
-            val searchTitle = filenameMeta["title"] ?: file.nameWithoutExtension
+            // PASSO 1 — EXTRAIR METADADOS DO NOME DO ARQUIVO OU TÍTULO ORIGINAL
+            val sourceName = originalTitle ?: file.name
+            val filenameMeta = pythonMetadataBridge.extractMetadataFromFilename(sourceName)
+            
+            // Usar o título original ou o extraído do nome
+            val searchTitle = (filenameMeta["title"] ?: originalTitle ?: file.nameWithoutExtension).trim()
+            val searchArtist = filenameMeta["artist"]?.trim()
 
             android.util.Log.d("ImportProcessor", "🔍 Buscando metadados para: $searchArtist - $searchTitle")
 
@@ -51,8 +54,8 @@ class MediaImportProcessor @Inject constructor(
             val mbResult = musicBrainzService.searchRecording(searchTitle, searchArtist ?: "")
             
             val finalTitle = mbResult?.title ?: searchTitle
-            val finalArtist = mbResult?.artist ?: searchArtist ?: "Unknown"
-            val finalAlbum = mbResult?.album ?: "YTDown"
+            val finalArtist = mbResult?.artist ?: searchArtist ?: "Artista Desconhecido"
+            val finalAlbum = mbResult?.album ?: "Arquivo Local"
             val duration = metadataExtractor.extract(audioPath).duration
 
             // PASSO 3 — COVER ART ARCHIVE (Album Art)

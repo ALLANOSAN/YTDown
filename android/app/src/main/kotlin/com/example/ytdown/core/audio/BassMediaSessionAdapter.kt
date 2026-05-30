@@ -55,8 +55,12 @@ class BassMediaSessionAdapter @Inject constructor(
                         track != null -> Player.STATE_READY
                         else -> Player.STATE_IDLE
                     }
-                    listeners.forEach { it.onPlaybackStateChanged(state) }
-                    listeners.forEach { it.onIsPlayingChanged(playing) }
+                    
+                    listeners.forEach {
+                        it.onPlaybackStateChanged(state)
+                        it.onPlayWhenReadyChanged(playing, Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST)
+                        it.onIsPlayingChanged(playing)
+                    }
                 }
         }
 
@@ -69,15 +73,50 @@ class BassMediaSessionAdapter @Inject constructor(
                     if (track != null) {
                         val idx = mediaItems.indexOfFirst { it.mediaId == track.id }
                         if (idx >= 0) currentIndex = idx
+                        
+                        val currentMediaItem = track.toMedia3Item()
+                        // Atualizar na lista se necessário
+                        if (currentIndex >= 0 && currentIndex < mediaItems.size) {
+                            mediaItems[currentIndex] = currentMediaItem
+                        }
+
                         listeners.forEach {
                             it.onMediaItemTransition(
-                                mediaItems.getOrNull(currentIndex),
+                                currentMediaItem,
                                 Player.MEDIA_ITEM_TRANSITION_REASON_AUTO
                             )
+                            it.onMediaMetadataChanged(currentMediaItem.mediaMetadata)
                         }
                     }
                 }
         }
+    }
+
+    private fun DownloadItemEntity.toMedia3Item(): MediaItem {
+        val metadataBuilder = MediaMetadata.Builder()
+            .setTitle(title)
+            .setArtist(artist)
+            .setAlbumTitle(album)
+        
+        // Adicionar artwork se disponível
+        albumArtPath?.let { path ->
+            try {
+                val uri = if (path.startsWith("http") || path.startsWith("content://")) {
+                    android.net.Uri.parse(path)
+                } else {
+                    android.net.Uri.fromFile(java.io.File(path))
+                }
+                metadataBuilder.setArtworkUri(uri)
+            } catch (e: Exception) {
+                android.util.Log.w("BassAdapter", "Failed to set artwork URI: ${e.message}")
+            }
+        }
+
+        return MediaItem.Builder()
+            .setMediaId(id)
+            .setUri(outputPath)
+            .setMediaMetadata(metadataBuilder.build())
+            .build()
     }
 
     // ========== O ÚNICO método abstrato do BasePlayer ==========
@@ -91,13 +130,75 @@ class BassMediaSessionAdapter @Inject constructor(
      * e delegar para o BASS engine.
      */
     override fun seekTo(mediaItemIndex: Int, positionMs: Long, seekCommand: Int, isRepeatingCurrentItem: Boolean) {
+        val oldIndex = currentIndex
+        val oldPosition = getCurrentPosition()
+        val oldMediaItem = mediaItems.getOrNull(oldIndex)
+        
         if (mediaItemIndex in mediaItems.indices && mediaItemIndex != currentIndex) {
             // Mudança de track (next/previous via Media3)
             currentIndex = mediaItemIndex
+            val newMediaItem = mediaItems.getOrNull(currentIndex)
             actionDispatcher.next() // BASS vai tocar a track em currentIndex
+            
+            listeners.forEach {
+                it.onPositionDiscontinuity(
+                    Player.PositionInfo(
+                        /* windowUid= */ null,
+                        /* mediaItemIndex= */ oldIndex,
+                        /* mediaItem= */ oldMediaItem,
+                        /* periodUid= */ null,
+                        /* periodIndex= */ oldIndex,
+                        /* positionMs= */ oldPosition,
+                        /* contentPositionMs= */ oldPosition,
+                        /* adGroupIndex= */ -1,
+                        /* adIndexInAdGroup= */ -1
+                    ),
+                    Player.PositionInfo(
+                        /* windowUid= */ null,
+                        /* mediaItemIndex= */ currentIndex,
+                        /* mediaItem= */ newMediaItem,
+                        /* periodUid= */ null,
+                        /* periodIndex= */ currentIndex,
+                        /* positionMs= */ positionMs,
+                        /* contentPositionMs= */ positionMs,
+                        /* adGroupIndex= */ -1,
+                        /* adIndexInAdGroup= */ -1
+                    ),
+                    Player.DISCONTINUITY_REASON_AUTO_TRANSITION
+                )
+            }
         } else {
             // Seek dentro da track atual
+            val currentMediaItem = mediaItems.getOrNull(currentIndex)
             actionDispatcher.seekTo(positionMs.coerceAtLeast(0L))
+            
+            listeners.forEach {
+                it.onPositionDiscontinuity(
+                    Player.PositionInfo(
+                        /* windowUid= */ null,
+                        /* mediaItemIndex= */ currentIndex,
+                        /* mediaItem= */ currentMediaItem,
+                        /* periodUid= */ null,
+                        /* periodIndex= */ currentIndex,
+                        /* positionMs= */ oldPosition,
+                        /* contentPositionMs= */ oldPosition,
+                        /* adGroupIndex= */ -1,
+                        /* adIndexInAdGroup= */ -1
+                    ),
+                    Player.PositionInfo(
+                        /* windowUid= */ null,
+                        /* mediaItemIndex= */ currentIndex,
+                        /* mediaItem= */ currentMediaItem,
+                        /* periodUid= */ null,
+                        /* periodIndex= */ currentIndex,
+                        /* positionMs= */ positionMs,
+                        /* contentPositionMs= */ positionMs,
+                        /* adGroupIndex= */ -1,
+                        /* adIndexInAdGroup= */ -1
+                    ),
+                    Player.DISCONTINUITY_REASON_SEEK
+                )
+            }
         }
     }
 
@@ -172,7 +273,7 @@ class BassMediaSessionAdapter @Inject constructor(
     override fun setTrackSelectionParameters(parameters: TrackSelectionParameters) {}
 
     override fun getMediaMetadata(): MediaMetadata {
-        return playbackController.uiState.value.currentTrack?.toMediaMetadata() ?: MediaMetadata.EMPTY
+        return playbackController.uiState.value.currentTrack?.let { it.toMedia3Item().mediaMetadata } ?: MediaMetadata.EMPTY
     }
 
     override fun getPlaylistMetadata(): MediaMetadata = MediaMetadata.EMPTY
@@ -186,40 +287,30 @@ class BassMediaSessionAdapter @Inject constructor(
     override fun getCurrentMediaItemIndex(): Int = currentIndex
 
     override fun getAvailableCommands(): Player.Commands {
-        return Player.Commands.Builder()
-            .addAll(
-                Player.COMMAND_PLAY_PAUSE,
-                Player.COMMAND_SEEK_BACK,
-                Player.COMMAND_SEEK_FORWARD,
-                Player.COMMAND_SEEK_TO_NEXT,
-                Player.COMMAND_SEEK_TO_PREVIOUS,
-                Player.COMMAND_SEEK_TO_DEFAULT_POSITION,
-                Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM,
-                Player.COMMAND_SET_REPEAT_MODE,
-                Player.COMMAND_SET_SHUFFLE_MODE
-            )
-            .build()
+        return Player.Commands.Builder().addAllCommands().build()
     }
 
-    override fun setMediaItems(mediaItems: MutableList<MediaItem>, startIndex: Int, startPositionMs: Long) {
+    override fun setMediaItems(mediaItems: List<MediaItem>, startIndex: Int, startPositionMs: Long) {
         this.mediaItems.clear()
         this.mediaItems.addAll(mediaItems)
         this.currentIndex = startIndex
+        notifyTimelineChanged()
     }
 
-    override fun replaceMediaItems(fromIndex: Int, toIndex: Int, mediaItems: MutableList<MediaItem>) {
+    override fun replaceMediaItems(fromIndex: Int, toIndex: Int, mediaItems: List<MediaItem>) {
         for (i in (toIndex - 1) downTo fromIndex) {
             if (i in this.mediaItems.indices) this.mediaItems.removeAt(i)
         }
         this.mediaItems.addAll(fromIndex.coerceIn(0, this.mediaItems.size), mediaItems)
     }
 
-    override fun setMediaItems(mediaItems: MutableList<MediaItem>, resetPosition: Boolean) {
+    override fun setMediaItems(mediaItems: List<MediaItem>, resetPosition: Boolean) {
         this.mediaItems.clear()
         this.mediaItems.addAll(mediaItems)
+        notifyTimelineChanged()
     }
 
-    override fun addMediaItems(index: Int, mediaItems: MutableList<MediaItem>) {
+    override fun addMediaItems(index: Int, mediaItems: List<MediaItem>) {
         this.mediaItems.addAll(index, mediaItems)
     }
 
@@ -254,36 +345,54 @@ class BassMediaSessionAdapter @Inject constructor(
     override fun getDeviceInfo(): androidx.media3.common.DeviceInfo = androidx.media3.common.DeviceInfo.UNKNOWN
     override fun getDeviceVolume(): Int = (playbackController.uiState.value.volume * 15).toInt()
     override fun isDeviceMuted(): Boolean = false
-    override fun setDeviceVolume(volume: Int) {}
-    override fun setDeviceVolume(volume: Int, flags: Int) {}
-    override fun increaseDeviceVolume() {}
+    
+    @Suppress("DEPRECATION")
+    @Deprecated("Use setDeviceVolume(Int, Int) instead")
+    override fun setDeviceVolume(volume: Int) {
+        setDeviceVolume(volume, 0)
+    }
+    
+    override fun setDeviceVolume(volume: Int, flags: Int) {
+        // Implementação real se necessário, ou manter vazio se não suportado pelo BASS
+    }
+    
+    @Suppress("DEPRECATION")
+    @Deprecated("Use increaseDeviceVolume(Int) instead")
+    override fun increaseDeviceVolume() {
+        increaseDeviceVolume(0)
+    }
+    
     override fun increaseDeviceVolume(flags: Int) {}
-    override fun decreaseDeviceVolume() {}
+    
+    @Suppress("DEPRECATION")
+    @Deprecated("Use decreaseDeviceVolume(Int) instead")
+    override fun decreaseDeviceVolume() {
+        decreaseDeviceVolume(0)
+    }
+    
     override fun decreaseDeviceVolume(flags: Int) {}
-    override fun setDeviceMuted(muted: Boolean) {}
+    
+    @Suppress("DEPRECATION")
+    @Deprecated("Use setDeviceMuted(Boolean, Int) instead")
+    override fun setDeviceMuted(muted: Boolean) {
+        setDeviceMuted(muted, 0)
+    }
+    
     override fun setDeviceMuted(muted: Boolean, flags: Int) {}
 
     // ========== Helpers ==========
 
     fun setPlaylistFromEntities(tracks: List<DownloadItemEntity>) {
         mediaItems.clear()
-        mediaItems.addAll(tracks.map { it.toMediaItem() })
+        mediaItems.addAll(tracks.map { it.toMedia3Item() })
+        notifyTimelineChanged()
     }
 
-    private fun DownloadItemEntity.toMediaItem(): MediaItem {
-        return MediaItem.Builder()
-            .setMediaId(id)
-            .setUri(outputPath)
-            .setMediaMetadata(toMediaMetadata())
-            .build()
-    }
-
-    private fun DownloadItemEntity.toMediaMetadata(): MediaMetadata {
-        return MediaMetadata.Builder()
-            .setTitle(title)
-            .setArtist(artist)
-            .setAlbumTitle(album)
-            .build()
+    private fun notifyTimelineChanged() {
+        val timeline = getCurrentTimeline()
+        listeners.forEach {
+            it.onTimelineChanged(timeline, Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED)
+        }
     }
 
     private class BassTimeline(private val items: List<MediaItem>) : Timeline() {

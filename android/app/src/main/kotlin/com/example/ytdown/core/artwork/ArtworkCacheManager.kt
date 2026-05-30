@@ -11,7 +11,7 @@ import javax.inject.Singleton
 
 @Singleton
 class ArtworkCacheManager @Inject constructor(
-    @ApplicationContext private val context: Context
+    @param:ApplicationContext private val context: Context
 ) {
     private val albumCacheDir = File(context.cacheDir, "artwork/albums").apply { if (!exists()) mkdirs() }
     private val artistCacheDir = File(context.cacheDir, "artwork/artists").apply { if (!exists()) mkdirs() }

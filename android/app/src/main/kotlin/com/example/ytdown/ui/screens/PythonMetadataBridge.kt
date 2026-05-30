@@ -13,7 +13,7 @@ import javax.inject.Singleton
  */
 @Singleton
 class PythonMetadataBridge @Inject constructor(
-    @ApplicationContext private val context: Context
+    @param:ApplicationContext private val context: Context
 ) {
     private val TAG = "PythonMetadataBridge"
 
@@ -48,20 +48,25 @@ class PythonMetadataBridge @Inject constructor(
     /**
      * Extrai metadados do nome do arquivo.
      */
-    fun extractMetadataFromFilename(filename: String): Map<String, String> {
+    fun extractMetadataFromFilename(filename: String): Map<String, String?> {
         return try {
             val py = Python.getInstance()
             val module = py.getModule("metadata_pipeline")
             val resultJson = module.callAttr("extract_metadata_from_filename", filename).toString()
             val json = JSONObject(resultJson)
+            
+            val artist = json.optString("artist").takeIf { it != "Unknown" && it.isNotBlank() }
+            val title = json.optString("title").takeIf { it != "Unknown" && it.isNotBlank() }
+            val album = json.optString("album").takeIf { it != "Unknown" && it.isNotBlank() }
+            
             mapOf(
-                "artist" to json.optString("artist", "Unknown"),
-                "title" to json.optString("title", "Unknown"),
-                "album" to json.optString("album", "Unknown")
+                "artist" to artist,
+                "title" to title,
+                "album" to album
             )
         } catch (e: Exception) {
             Log.e(TAG, "Erro ao extrair metadados: ${e.message}")
-            mapOf("artist" to "Unknown", "title" to filename, "album" to "Unknown")
+            mapOf("artist" to null, "title" to filename, "album" to null)
         }
     }
 }

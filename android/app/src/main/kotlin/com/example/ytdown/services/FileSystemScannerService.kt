@@ -173,7 +173,7 @@ class FileSystemScannerService @Inject constructor(
                 // Arquivo físico: processar direto
                 if (File(path).exists()) {
                     android.util.Log.d("FileSystemScanner", "🔄 Enrichment completo para: $title")
-                    importProcessor.process(path)
+                    importProcessor.process(path, title)
                 }
             }
 
@@ -242,7 +242,7 @@ class FileSystemScannerService @Inject constructor(
         android.util.Log.d("FileSystemScanner", "📎 SAF copiado para temp: ${tempFile.name}")
 
         // 2. Processar temp com pipeline completo (MusicBrainz → Cover Art → FanArt → Mutagen)
-        importProcessor.process(tempFile.absolutePath)
+        importProcessor.process(tempFile.absolutePath, title)
         android.util.Log.d("FileSystemScanner", "✅ Enrichment SAF concluído para: $title")
 
         // 3. Sincronizar metadados do SongEntity (temp path) para DownloadItemEntity (SAF URI)

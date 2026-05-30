@@ -273,41 +273,14 @@ class MediaPlaybackService : MediaSessionService() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         Log.d(TAG, "onStartCommand: action=${intent?.action}")
 
-        // CRÍTICO: Chamar startForeground() IMEDIATAMENTE para evitar
-        // ForegroundServiceDidNotStartInTimeException no Android 12+
-        // Usar notificação com MediaSession token para controles na tela de bloqueio
-        try {
-            val sessionToken = mediaSession?.sessionCompatToken
-            val notificationBuilder = NotificationCompat.Builder(this, CHANNEL_ID)
-                .setContentTitle("YTDown")
-                .setContentText("Preparando reprodução...")
-                .setSmallIcon(android.R.drawable.ic_media_play)
-                .setPriority(NotificationCompat.PRIORITY_LOW)
-                .setCategory(NotificationCompat.CATEGORY_TRANSPORT)
-                .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-                .setOngoing(true)
-
-            // Adicionar MediaSession token para controles na tela de bloqueio
-            if (sessionToken != null) {
-                notificationBuilder.setStyle(
-                    androidx.media.app.NotificationCompat.MediaStyle()
-                        .setMediaSession(sessionToken)
-                        .setShowActionsInCompactView(0, 1, 2)
-                )
-            }
-
-            startForeground(NOTIFICATION_ID, notificationBuilder.build())
-            Log.d(TAG, "startForeground() com MediaSession token executado")
-        } catch (e: Exception) {
-            Log.e(TAG, "Erro ao chamar startForeground: ${e.message}")
-        }
-
         // Handle wake lock based on playback state
         if (playbackController.uiState.value.isPlaying) {
             acquireWakeLock()
         }
 
         // Deixar o Media3 processar o intent (media buttons, etc.)
+        // O Media3 MediaSessionService gerencia o startForeground() automaticamente
+        // quando o player entra em estado de reprodução, usando o notificationProvider configurado.
         return super.onStartCommand(intent, flags, startId)
     }
 

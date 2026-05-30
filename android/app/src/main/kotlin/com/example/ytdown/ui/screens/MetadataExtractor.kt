@@ -7,7 +7,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 
 class MetadataExtractor @Inject constructor(
-    @ApplicationContext
+    @param:ApplicationContext
     private val context: Context
 ) {
 

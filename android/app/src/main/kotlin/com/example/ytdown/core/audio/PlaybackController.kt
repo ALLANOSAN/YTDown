@@ -73,7 +73,7 @@ data class PlaybackUiState(
 @Singleton
 class PlaybackController @Inject constructor(
     private val engineProvider: javax.inject.Provider<BassPlaybackEngine>,
-    private val bassAdapter: BassMediaSessionAdapter,
+    private val bassAdapterProvider: dagger.Lazy<BassMediaSessionAdapter>,
     @param:ApplicationContext private val context: Context
 ) {
 
@@ -151,7 +151,7 @@ class PlaybackController @Inject constructor(
             this.currentIndex = startIndex
 
             // Alimentar Media3 com a playlist (para notificação, Bluetooth, Now Bar)
-            bassAdapter.setPlaylistFromEntities(tracks)
+            bassAdapterProvider.get().setPlaylistFromEntities(tracks)
 
             ensureMediaServiceRunning()
             engineProvider.get().play(tracks[startIndex])

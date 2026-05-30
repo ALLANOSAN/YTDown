@@ -167,8 +167,10 @@ object AppModule {
     @Provides
     @Singleton
     fun providePlaybackController(
-        engineProvider: javax.inject.Provider<com.example.ytdown.core.audio.BassPlaybackEngine>
-    ): PlaybackController = PlaybackController(engineProvider)
+        engineProvider: javax.inject.Provider<com.example.ytdown.core.audio.BassPlaybackEngine>,
+        bassAdapterProvider: dagger.Lazy<com.example.ytdown.core.audio.BassMediaSessionAdapter>,
+        @dagger.hilt.android.qualifiers.ApplicationContext context: android.content.Context
+    ): PlaybackController = PlaybackController(engineProvider, bassAdapterProvider, context)
 
     @Provides
     @Singleton

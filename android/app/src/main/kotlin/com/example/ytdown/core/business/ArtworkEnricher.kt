@@ -1,21 +1,31 @@
 package com.example.ytdown.core.business
 
-import com.example.ytdown.DownloadMetadataManager
-import com.example.ytdown.core.domain.*
+import com.example.ytdown.core.artwork.ArtworkCacheManager
+import com.example.ytdown.core.artwork.FanArtTvService
+import com.example.ytdown.core.metadata.PythonMetadataBridge
 import com.example.ytdown.services.ArtworkManager
 import com.example.ytdown.services.DatabaseService
+import com.example.ytdown.services.MusicBrainzService
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/**
+ * Botão "Capas" — Baixa capa do álbum e foto do artista.
+ *
+ * - Capa do álbum: grava no arquivo (Mutagen) + salva no cache
+ * - Foto do artista: salva apenas no cache (NÃO grava no arquivo)
+ */
 @Singleton
 class ArtworkEnricher @Inject constructor(
     private val databaseService: DatabaseService,
     private val artworkManager: ArtworkManager,
-    private val metadataManager: DownloadMetadataManager
+    private val musicBrainzService: MusicBrainzService,
+    private val fanArtTvService: FanArtTvService,
+    private val artworkCacheManager: ArtworkCacheManager,
+    private val pythonMetadataBridge: PythonMetadataBridge
 ) {
     suspend fun getArtistImageFor(artist: String): String? = artworkManager.getArtistImage(artist)
-
     suspend fun getAlbumCoverFor(artist: String, album: String): String? = artworkManager.getAlbumCover(artist, album)
 
     suspend fun enrichAll(
@@ -31,62 +41,88 @@ class ArtworkEnricher @Inject constructor(
 
         for (item in items) {
             processed++
-            onProgress(processed / items.size.toFloat(), "Enriquecendo: ${item.title}")
+            onProgress(processed / items.size.toFloat(), "Capas: ${item.title}")
 
-            if (item.outputPath.isBlank() || !File(item.outputPath).exists()) {
+            val targetPath = item.exportedPath?.takeIf { it.isNotBlank() } ?: item.outputPath
+            if (targetPath.isBlank() || !File(targetPath).exists()) {
                 failed++
                 continue
             }
 
-            val resolution = resolveArtworkForItem(item)
-            val artworkUrl = resolution.artworkUrl
-            if (artworkUrl.isNullOrBlank()) {
+            val artist = item.artist?.trim() ?: ""
+            val album = item.album?.trim() ?: ""
+            if (artist.isBlank()) {
                 skipped++
                 continue
             }
 
-            val result = metadataManager.rewriteMetadata(
-                path = FilePath(item.outputPath),
-                metadata = MediaMetadata(
-                    MediaTitle(item.title.trim()),
-                    ArtistName(item.artist?.trim().orEmpty()),
-                    AlbumName(item.album?.trim().orEmpty())
-                ),
-                artworkUrl = artworkUrl
-            )
+            try {
+                // 1. Buscar MusicBrainz para pegar releaseId e artistId
+                val mbResult = musicBrainzService.searchRecording(item.title.trim(), artist)
 
-            if (result.isSuccess()) {
+                var albumArtPath: String? = null
+                var artistArtPath: String? = null
+
+                // 2. Capa do álbum → arquivo + cache
+                val releaseId = mbResult?.releaseId
+                if (releaseId != null) {
+                    val albumCacheKey = artworkCacheManager.getCacheKey(artist, album.ifBlank { "YTDown" })
+                    val cached = artworkCacheManager.getCachedAlbumArt(albumCacheKey)
+                    if (cached != null) {
+                        albumArtPath = cached.absolutePath
+                    } else {
+                        val bytes = com.example.ytdown.core.artwork.CoverArtArchiveService().downloadAlbumArt(releaseId)
+                        if (bytes != null) {
+                            val saved = artworkCacheManager.saveToAlbumCache(albumCacheKey, bytes)
+                            albumArtPath = saved?.absolutePath
+                        }
+                    }
+                }
+
+                // 3. Foto do artista → APENAS cache (não grava no arquivo)
+                val artistId = mbResult?.artistId
+                if (artistId != null) {
+                    val artistCacheKey = artworkCacheManager.getArtistCacheKey(artist)
+                    val cachedArtist = artworkCacheManager.getCachedArtistArt(artistCacheKey)
+                    if (cachedArtist != null) {
+                        artistArtPath = cachedArtist.absolutePath
+                    } else {
+                        val bytes = fanArtTvService.downloadArtistImage(artistId)
+                        if (bytes != null) {
+                            val saved = artworkCacheManager.saveToArtistCache(artistCacheKey, bytes)
+                            artistArtPath = saved?.absolutePath
+                        }
+                    }
+                }
+
+                // 4. Gravar capa do álbum no arquivo via Mutagen (NÃO a foto do artista)
+                if (albumArtPath != null) {
+                    pythonMetadataBridge.writeFullMetadata(
+                        path = targetPath,
+                        title = item.title.trim(),
+                        artist = artist,
+                        album = album.ifBlank { "Álbum Desconhecido" },
+                        year = mbResult?.year,
+                        albumArt = albumArtPath,
+                        trackNumber = mbResult?.trackNumber
+                    )
+                }
+
+                // 5. Atualizar banco de dados
                 val updatedItem = item.copy(
-                    artistArtPath = resolution.artistArtPath ?: item.artistArtPath,
-                    albumArtPath = resolution.albumArtPath ?: item.albumArtPath
+                    albumArtPath = albumArtPath ?: item.albumArtPath,
+                    artistArtPath = artistArtPath ?: item.artistArtPath
                 )
                 databaseService.updateDownload(updatedItem)
                 updated++
-            } else {
+
+                android.util.Log.d("ArtworkEnricher", "✅ Capas: ${item.title} (album=${albumArtPath != null}, artist=${artistArtPath != null})")
+            } catch (e: Exception) {
+                android.util.Log.e("ArtworkEnricher", "❌ Erro: ${item.title}: ${e.message}")
                 failed++
             }
         }
         return Triple(updated, failed, skipped)
     }
-
-    private suspend fun resolveArtworkForItem(item: DownloadItemEntity): ArtworkResolution {
-        val artist = item.artist?.trim().orEmpty()
-        val album = item.album?.trim().takeIf { !it.isNullOrBlank() } ?: "YTDown"
-        val title = item.title.trim()
-
-        val artistImage = if (artist.isNotBlank()) artworkManager.getArtistImage(artist) else null
-        val albumImage = if (artist.isNotBlank() && album != "YTDown") artworkManager.getAlbumCover(artist, album) else null
-        val trackImage = if (artist.isNotBlank() && title.isNotBlank()) artworkManager.getTrackCover(artist, title) else null
-
-        // ✅ FIX: prioridade correta para arte embarcada no arquivo.
-        // Arte de álbum é mais adequada que foto do artista para tags ID3/MP4.
-        val finalArtwork = albumImage ?: trackImage ?: artistImage
-        return ArtworkResolution(finalArtwork, artistImage, albumImage ?: trackImage)
-    }
-
-    private data class ArtworkResolution(
-        val artworkUrl: String?,
-        val artistArtPath: String?,
-        val albumArtPath: String?
-    )
 }
+

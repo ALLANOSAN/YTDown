@@ -34,6 +34,7 @@ data class SystemScreenState(
 
 @HiltViewModel
 class SystemViewModel @Inject constructor(
+    @dagger.hilt.android.qualifiers.ApplicationContext private val context: android.content.Context,
     private val libraryRepository: LibraryRepository,
     private val folderService: MusicFolderService,
     private val scannerService: FileSystemScannerService,
@@ -141,9 +142,71 @@ class SystemViewModel @Inject constructor(
         }
     }
     
-    fun refreshYtDlpVersion(forceNetwork: Boolean) {}
+    fun refreshYtDlpVersion(forceNetwork: Boolean) {
+        viewModelScope.launch {
+            _state.update { it.copy(isCheckingUpdate = true) }
+            try {
+                val result = ytDlp.checkUpdate(
+                    appFilesDir = context.filesDir.absolutePath,
+                    forceRemote = forceNetwork
+                )
+                // Python retorna JSON: {"success": true, "current_version": "...", "latest_version": "...", "update_available": true}
+                val json = org.json.JSONObject(result)
+                val success = json.optBoolean("success", false)
+                if (success) {
+                    val current = json.optString("current_version", "?")
+                    val latest = json.optString("latest_version", "?")
+                    val updateAvailable = json.optBoolean("update_available", false)
+                    _state.update {
+                        it.copy(
+                            ytDlpVersion = current,
+                            latestVersion = latest,
+                            isCheckingUpdate = false,
+                            lastMessage = if (updateAvailable)
+                                "Nova versão disponível: $latest" else "yt-dlp está atualizado ($current)"
+                        )
+                    }
+                } else {
+                    val error = json.optString("error", "Erro desconhecido")
+                    _state.update {
+                        it.copy(isCheckingUpdate = false, lastMessage = "Erro: $error")
+                    }
+                }
+            } catch (e: Exception) {
+                _state.update {
+                    it.copy(isCheckingUpdate = false, lastMessage = "Erro ao verificar: ${e.message}")
+                }
+            }
+        }
+    }
 
-    fun updateYtDlp() {}
+    fun updateYtDlp() {
+        viewModelScope.launch {
+            _state.update { it.copy(isUpdating = true) }
+            try {
+                val result = ytDlp.performUpdate(context.filesDir.absolutePath)
+                // Python retorna JSON: {"success": true, "updated": true, "current_version": "...", "message": "..."}
+                val json = org.json.JSONObject(result)
+                val success = json.optBoolean("success", false)
+                val updated = json.optBoolean("updated", false)
+                val message = json.optString("message", "")
+                val newVersion = json.optString("current_version", _state.value.ytDlpVersion)
+                _state.update {
+                    it.copy(
+                        isUpdating = false,
+                        ytDlpVersion = newVersion,
+                        lastMessage = if (success && updated) "yt-dlp atualizado para $newVersion!"
+                            else if (success && !updated) "yt-dlp já está atualizado"
+                            else "Erro: $message"
+                    )
+                }
+            } catch (e: Exception) {
+                _state.update {
+                    it.copy(isUpdating = false, lastMessage = "Erro ao atualizar: ${e.message}")
+                }
+            }
+        }
+    }
 
     fun repairAllMetadata() {
         viewModelScope.launch {

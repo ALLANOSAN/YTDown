@@ -107,7 +107,9 @@ class MainActivity : ComponentActivity() {
 
     private fun handleIntent(intent: Intent) {
         sharingIntentService.handleIntent(intent)?.let { cleanedUrl ->
+            // Coloca a URL no campo E busca automaticamente
             viewModel.onUrlInputChanged(cleanedUrl)
+            viewModel.fetchVideoDetails(this, com.example.ytdown.core.domain.VideoUrl(cleanedUrl))
         }
     }
 

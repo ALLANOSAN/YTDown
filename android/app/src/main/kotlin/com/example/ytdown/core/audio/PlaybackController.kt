@@ -1,7 +1,12 @@
 package com.example.ytdown.core.audio
 
+import android.content.Context
+import android.content.Intent
+import android.os.Build
 import android.util.Log
 import com.example.ytdown.core.domain.DownloadItemEntity
+import com.example.ytdown.core.infrastructure.MediaPlaybackService
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -67,7 +72,9 @@ data class PlaybackUiState(
  */
 @Singleton
 class PlaybackController @Inject constructor(
-    private val engineProvider: javax.inject.Provider<BassPlaybackEngine>
+    private val engineProvider: javax.inject.Provider<BassPlaybackEngine>,
+    private val bassAdapter: BassMediaSessionAdapter,
+    @param:ApplicationContext private val context: Context
 ) {
 
     init {
@@ -134,6 +141,7 @@ class PlaybackController @Inject constructor(
     }
     
     fun playTrack(track: DownloadItemEntity) {
+        ensureMediaServiceRunning()
         engineProvider.get().play(track)
     }
 
@@ -141,7 +149,29 @@ class PlaybackController @Inject constructor(
         if (tracks.isNotEmpty()) {
             this.playlist = tracks
             this.currentIndex = startIndex
+
+            // Alimentar Media3 com a playlist (para notificação, Bluetooth, Now Bar)
+            bassAdapter.setPlaylistFromEntities(tracks)
+
+            ensureMediaServiceRunning()
             engineProvider.get().play(tracks[startIndex])
+        }
+    }
+
+    /**
+     * Garante que o MediaPlaybackService está rodando.
+     * Necessário para notificação, controles de mídia e Android 16 Now Bar.
+     */
+    private fun ensureMediaServiceRunning() {
+        try {
+            val intent = Intent(context, MediaPlaybackService::class.java)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(intent)
+            } else {
+                context.startService(intent)
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Falha ao iniciar MediaPlaybackService: ${e.message}")
         }
     }
 

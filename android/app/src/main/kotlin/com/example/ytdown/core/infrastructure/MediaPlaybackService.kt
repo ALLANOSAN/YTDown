@@ -75,10 +75,9 @@ class MediaPlaybackService : MediaSessionService() {
 
         createNotificationChannel()
 
-        // Configurar o provider de notificação do Media3
-        setMediaNotificationProvider(
-            DefaultMediaNotificationProvider(this)
-        )
+        // Configurar o provider de notificação do Media3 com channelId customizado
+        val notificationProvider = DefaultMediaNotificationProvider(this)
+        setMediaNotificationProvider(notificationProvider)
 
         setupMediaSession()
         setupXiaomiProtection()

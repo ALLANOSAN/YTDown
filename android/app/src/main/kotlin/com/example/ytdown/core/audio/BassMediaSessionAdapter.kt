@@ -84,15 +84,21 @@ class BassMediaSessionAdapter @Inject constructor(
 
     /**
      * BasePlayer delega TODOS os seeks para este método.
-     * play() e pause() são controlados via setPlayWhenReady().
+     * Parâmetros: seekCommand (COMMAND_SEEK_*) e isRepeatingCurrentItem.
+     *
+     * Quando o Media3 envia seekToNext/seekToPrevious, ele chama este método
+     * com mediaItemIndex ajustado. Precisamos sincronizar o currentIndex
+     * e delegar para o BASS engine.
      */
-    override fun seekTo(mediaItemIndex: Int, positionMs: Long, repeatMode: Int, shuffleModeEnabled: Boolean) {
-        if (mediaItemIndex in mediaItems.indices) {
+    override fun seekTo(mediaItemIndex: Int, positionMs: Long, seekCommand: Int, isRepeatingCurrentItem: Boolean) {
+        if (mediaItemIndex in mediaItems.indices && mediaItemIndex != currentIndex) {
+            // Mudança de track (next/previous via Media3)
             currentIndex = mediaItemIndex
+            actionDispatcher.next() // BASS vai tocar a track em currentIndex
+        } else {
+            // Seek dentro da track atual
+            actionDispatcher.seekTo(positionMs.coerceAtLeast(0L))
         }
-        this.repeatModeValue = repeatMode
-        this.shuffleEnabled = shuffleModeEnabled
-        actionDispatcher.seekTo(positionMs)
     }
 
     // ========== Métodos NÃO-finais do BasePlayer ==========

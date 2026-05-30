@@ -206,6 +206,23 @@ class FileSystemScannerService @Inject constructor(
     }
 
     /**
+     * Compara se uma URI de arquivo SAF pertence a uma pasta SAF monitorada.
+     * Exemplo:
+     *   folder: content://com.android.externalstorage.documents/tree/primary%3AMusic
+     *   file:   content://com.android.externalstorage.documents/tree/primary%3AMusic/document/primary%3AMusic%2Fsong.mp3
+     *   → true (pois a tree ID "primary%3AMusic" é a mesma)
+     */
+    private fun safTreeMatches(folderUri: String, fileUri: String): Boolean {
+        return try {
+            val folderTree = Uri.parse(folderUri).path?.substringAfter("/tree/")?.substringBefore("/")
+            val fileTree = Uri.parse(fileUri).path?.substringAfter("/tree/")?.substringBefore("/")
+            folderTree != null && fileTree != null && folderTree == fileTree
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    /**
      * Processa arquivo SAF (content://): copia para temp → Mutagen grava metadados → copia de volta.
      */
     private suspend fun processSafFile(safUri: String, title: String) = withContext(Dispatchers.IO) {
@@ -295,8 +312,9 @@ class FileSystemScannerService @Inject constructor(
 
             // Verifica se o arquivo pertence a alguma pasta monitorada
             val isMonitored = monitoredFolders.any { folder ->
-                if (folder.startsWith("content://")) {
-                    outputPath.startsWith(folder)
+                if (folder.startsWith("content://") && outputPath.startsWith("content://")) {
+                    // SAF: comparar tree IDs (ignorar /document/... que aparece na URI do arquivo)
+                    safTreeMatches(folder, outputPath)
                 } else {
                     outputPath.startsWith(folder)
                 }

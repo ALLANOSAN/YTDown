@@ -170,12 +170,6 @@ constructor(
     fun playPlaylist(items: List<DownloadItemEntity>, startIndex: Int = 0) {
         scope.launch {
             Log.d(TAG, "playPlaylist() called with ${items.size} items, startIndex=$startIndex")
-            
-            // Iniciar o serviço de mídia
-            val intent = Intent(context, MediaPlaybackService::class.java).apply {
-                action = "PLAY_NEW_PLAYLIST"
-            }
-            context.startService(intent)
 
             val validItems = items.mapNotNull { resolvePlayableItem(it) }
             if (validItems.isEmpty()) {
@@ -185,12 +179,14 @@ constructor(
 
             playlist = validItems.toMutableList()
             currentIndex = startIndex.coerceIn(0, playlist.size - 1)
-            
-            val item = playlist[currentIndex]
-            Log.d(TAG, "Playing item: ${item.title}")
-            player.play(item)
 
-            hydrateArtworkIfMissing(item)
+            // Usar PlaybackController (single source of truth) que:
+            // 1. Alimenta o BassMediaSessionAdapter com a playlist
+            // 2. Inicia o MediaPlaybackService (notificação, Bluetooth, Now Bar)
+            // 3. Inicia o BASS engine
+            controller.playPlaylist(playlist, currentIndex)
+
+            hydrateArtworkIfMissing(playlist[currentIndex])
         }
     }
 

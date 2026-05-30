@@ -1,11 +1,15 @@
 package com.example.ytdown.core.audio
 
+import android.content.ComponentName
 import android.content.Context
-import android.content.Intent
-import android.os.Build
 import android.util.Log
+import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
+import androidx.media3.session.MediaController
+import androidx.media3.session.SessionToken
 import com.example.ytdown.core.domain.DownloadItemEntity
 import com.example.ytdown.core.infrastructure.MediaPlaybackService
+import com.google.common.util.concurrent.MoreExecutors
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -13,10 +17,11 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlin.apply
+import kotlin.collections.map
 
 /**
  * PlaybackUiState - ÚNICA fonte de verdade para o estado do player.
- * Todos os componentes (UI, MediaSession, Notification, Lockscreen) devem usar este estado.
  */
 data class PlaybackUiState(
     val isPlaying: Boolean = false,
@@ -25,7 +30,7 @@ data class PlaybackUiState(
     val positionMs: Long = 0L,
     val durationMs: Long = 0L,
     val volume: Float = 1.0f,
-    val repeatMode: Int = 0, // 0: OFF, 1: ALL, 2: ONE
+    val repeatMode: Int = 0,
     val isShuffleEnabled: Boolean = false,
     val errorMessage: String? = null,
     val spectrumData: FloatArray = FloatArray(64)
@@ -33,17 +38,11 @@ data class PlaybackUiState(
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
         if (other !is PlaybackUiState) return false
-        if (isPlaying != other.isPlaying) return false
-        if (isBuffering != other.isBuffering) return false
-        if (currentTrack != other.currentTrack) return false
-        if (positionMs != other.positionMs) return false
-        if (durationMs != other.durationMs) return false
-        if (volume != other.volume) return false
-        if (repeatMode != other.repeatMode) return false
-        if (isShuffleEnabled != other.isShuffleEnabled) return false
-        if (errorMessage != other.errorMessage) return false
-        if (!spectrumData.contentEquals(other.spectrumData)) return false
-        return true
+        return isPlaying == other.isPlaying && isBuffering == other.isBuffering &&
+                currentTrack == other.currentTrack && positionMs == other.positionMs &&
+                durationMs == other.durationMs && volume == other.volume &&
+                repeatMode == other.repeatMode && isShuffleEnabled == other.isShuffleEnabled &&
+                errorMessage == other.errorMessage && spectrumData.contentEquals(other.spectrumData)
     }
 
     override fun hashCode(): Int {
@@ -63,12 +62,15 @@ data class PlaybackUiState(
 
 /**
  * PlaybackController - SINGLE SOURCE OF TRUTH para todo o estado de reprodução.
- * Substitui COMPLETAMENTE o PlaybackStateManager.
- * 
- * Responsabilidades:
- * - Estado centralizado para UI, MediaSession, Notification, Lockscreen
- * - Sincronização entre todos os pontos de controle
- * - Integração com BASS Engine
+ *
+ * FLUXO CORRETO DO MEDIA3:
+ * 1. MediaPlaybackService.onCreate() cria MediaSession com BassMediaSessionAdapter
+ * 2. PlaybackController.connectMediaController() cria MediaController que se conecta ao serviço
+ * 3. playPlaylist() alimenta o adapter e usa MediaController.play()
+ * 4. Media3 inicia o serviço e mostra notificação AUTOMATICAMENTE
+ * 5. BassMediaSessionAdapter.play() → actionDispatcher → BASS engine
+ *
+ * NÃO usar startService() ou startForegroundService() manualmente!
  */
 @Singleton
 class PlaybackController @Inject constructor(
@@ -76,10 +78,6 @@ class PlaybackController @Inject constructor(
     private val bassAdapterProvider: dagger.Lazy<BassMediaSessionAdapter>,
     @param:ApplicationContext private val context: Context
 ) {
-
-    init {
-        android.util.Log.e("PlaybackController", "CONTROLLER CREATED")
-    }
 
     companion object {
         private const val TAG = "PlaybackController"
@@ -91,100 +89,138 @@ class PlaybackController @Inject constructor(
     private var playlist: List<DownloadItemEntity> = emptyList()
     private var currentIndex: Int = -1
 
+    // MediaController - conecta ao MediaPlaybackService via Media3
+    private var mediaController: MediaController? = null
+    private var controllerConnected = false
+
+    init {
+        Log.e(TAG, "CONTROLLER CREATED - connecting MediaController")
+        connectMediaController()
+    }
+
     /**
-     * Atualiza o estado de forma atômica
+     * Conecta ao MediaPlaybackService via MediaController (modo correto do Media3).
+     * Quando o MediaController se conecta, o Media3 inicia o serviço automaticamente.
      */
+    private fun connectMediaController() {
+        try {
+            val sessionToken = SessionToken(
+                context,
+                ComponentName(context, MediaPlaybackService::class.java)
+            )
+            val controllerFuture = MediaController.Builder(context, sessionToken).buildAsync()
+            controllerFuture.addListener({
+                mediaController = controllerFuture.get()
+                controllerConnected = true
+                Log.d(TAG, "✅ MediaController conectado ao MediaPlaybackService")
+            }, MoreExecutors.directExecutor())
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Erro ao conectar MediaController: ${e.message}")
+        }
+    }
+
     fun updateState(transform: (PlaybackUiState) -> PlaybackUiState) {
         _uiState.update(transform)
     }
 
     // ========== Métodos de Atualização ==========
 
-    fun updatePlaying(isPlaying: Boolean) = updateState { 
-        it.copy(isPlaying = isPlaying)
-    }
+    fun updatePlaying(isPlaying: Boolean) = updateState { it.copy(isPlaying = isPlaying) }
+    fun updateTrack(track: DownloadItemEntity?) = updateState { it.copy(currentTrack = track) }
+    fun updatePosition(posMs: Long) = updateState { it.copy(positionMs = posMs) }
+    fun updateDuration(durMs: Long) = updateState { it.copy(durationMs = durMs) }
+    fun updateBuffering(isBuffering: Boolean) = updateState { it.copy(isBuffering = isBuffering) }
+    fun updateVolume(volume: Float) = updateState { it.copy(volume = volume) }
+    fun updateRepeatMode(mode: Int) = updateState { it.copy(repeatMode = mode) }
+    fun updateShuffle(enabled: Boolean) = updateState { it.copy(isShuffleEnabled = enabled) }
+    fun updateSpectrum(data: FloatArray) = updateState { it.copy(spectrumData = data) }
+    fun setError(message: String?) = updateState { it.copy(errorMessage = message) }
 
-    fun updateTrack(track: DownloadItemEntity?) = updateState { 
-        it.copy(currentTrack = track)
-    }
+    // ========== Playback Commands (via MediaController) ==========
 
-    fun updatePosition(posMs: Long) = updateState { 
-        it.copy(positionMs = posMs) 
-    }
-
-    fun updateDuration(durMs: Long) = updateState { 
-        it.copy(durationMs = durMs)
-    }
-
-    fun updateBuffering(isBuffering: Boolean) = updateState { 
-        it.copy(isBuffering = isBuffering)
-    }
-
-    fun updateVolume(volume: Float) = updateState { 
-        it.copy(volume = volume) 
-    }
-
-    fun updateRepeatMode(mode: Int) = updateState { 
-        it.copy(repeatMode = mode)
-    }
-
-    fun updateShuffle(enabled: Boolean) = updateState { 
-        it.copy(isShuffleEnabled = enabled)
-    }
-
-    fun updateSpectrum(data: FloatArray) = updateState {
-        it.copy(spectrumData = data)
-    }
-
-    fun setError(message: String?) = updateState { 
-        it.copy(errorMessage = message)
-    }
-    
     fun playTrack(track: DownloadItemEntity) {
-        ensureMediaServiceRunning()
-        engineProvider.get().play(track)
+        playPlaylist(listOf(track), 0)
     }
 
     fun playPlaylist(tracks: List<DownloadItemEntity>, startIndex: Int = 0) {
-        if (tracks.isNotEmpty()) {
-            this.playlist = tracks
-            this.currentIndex = startIndex
+        if (tracks.isEmpty()) return
 
-            // Alimentar Media3 com a playlist (para notificação, Bluetooth, Now Bar)
-            bassAdapterProvider.get().setPlaylistFromEntities(tracks)
+        this.playlist = tracks
+        this.currentIndex = startIndex
 
-            ensureMediaServiceRunning()
-            engineProvider.get().play(tracks[startIndex])
-        }
-    }
+        val adapter = bassAdapterProvider.get()
 
-    /**
-     * Garante que o MediaPlaybackService está rodando.
-     * Necessário para notificação, controles de mídia e Android 16 Now Bar.
-     */
-    private fun ensureMediaServiceRunning() {
-        try {
-            val intent = Intent(context, MediaPlaybackService::class.java)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(intent)
-            } else {
-                context.startService(intent)
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "Falha ao iniciar MediaPlaybackService: ${e.message}")
+        // 1. Alimentar Media3 com a playlist (para notificação, metadata, etc.)
+        adapter.setPlaylistFromEntities(tracks)
+
+        // 2. Carregar e tocar no BASS engine
+        engineProvider.get().play(tracks[startIndex])
+        Log.d(TAG, "▶️ playPlaylist: ${tracks[startIndex].title}")
+
+        // 3. Notificar Media3 via MediaController (para que a notificação apareça)
+        val controller = mediaController
+        if (controller != null && controllerConnected) {
+            val mediaItems = tracks.map { it.toMedia3Item() }
+            controller.setMediaItems(mediaItems, startIndex, 0L)
+            controller.prepare()
+            controller.play()
         }
     }
 
     fun playNext() {
         if (playlist.isEmpty()) return
         currentIndex = (currentIndex + 1) % playlist.size
-        playTrack(playlist[currentIndex])
+        val controller = mediaController
+        if (controller != null && controllerConnected) {
+            controller.seekToNext()
+        } else {
+            engineProvider.get().play(playlist[currentIndex])
+        }
     }
 
     fun playPrevious() {
         if (playlist.isEmpty()) return
         currentIndex = if (currentIndex > 0) currentIndex - 1 else playlist.size - 1
-        playTrack(playlist[currentIndex])
+        val controller = mediaController
+        if (controller != null && controllerConnected) {
+            controller.seekToPrevious()
+        } else {
+            engineProvider.get().play(playlist[currentIndex])
+        }
+    }
+
+    fun togglePlayPause() {
+        val controller = mediaController
+        if (controller != null && controllerConnected) {
+            if (_uiState.value.isPlaying) controller.pause() else controller.play()
+        } else {
+            if (_uiState.value.isPlaying) engineProvider.get().pause() else engineProvider.get().resume()
+        }
+    }
+
+    fun seekTo(positionMs: Long) {
+        val controller = mediaController
+        if (controller != null && controllerConnected) {
+            controller.seekTo(positionMs)
+        } else {
+            engineProvider.get().seekTo(positionMs)
+        }
+    }
+
+    // ========== Conversão para MediaItem do Media3 ==========
+
+    private fun DownloadItemEntity.toMedia3Item(): MediaItem {
+        return MediaItem.Builder()
+            .setMediaId(id)
+            .setUri(outputPath)
+            .setMediaMetadata(
+                MediaMetadata.Builder()
+                    .setTitle(title)
+                    .setArtist(artist)
+                    .setAlbumTitle(album)
+                    .build()
+            )
+            .build()
     }
 
     // ========== Métodos de Acesso ==========

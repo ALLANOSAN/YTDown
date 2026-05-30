@@ -3,7 +3,6 @@ package com.example.ytdown.ui
 import com.example.ytdown.core.domain.DownloadItemEntity
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.ytdown.core.audio.PlaybackActionDispatcher
 import com.example.ytdown.core.audio.PlaybackController
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
@@ -18,7 +17,6 @@ import com.example.ytdown.core.artwork.ArtworkMode
 @HiltViewModel
 class PlaybackViewModel @Inject constructor(
     private val controller: PlaybackController,
-    private val actionDispatcher: PlaybackActionDispatcher,
     private val rotationController: ArtworkRotationController
 ) : ViewModel() {
 
@@ -41,14 +39,21 @@ class PlaybackViewModel @Inject constructor(
             )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), PlaybackUiState())
 
-    fun togglePlayPause() = actionDispatcher.playPause()
-    fun playNext() = actionDispatcher.next()
-    fun playPrevious() = actionDispatcher.previous()
-    fun rewind() = actionDispatcher.rewind()
-    fun forward() = actionDispatcher.forward()
-    fun seekTo(positionMs: Long) = actionDispatcher.seekTo(positionMs)
-    fun toggleShuffle() = actionDispatcher.toggleShuffle()
-    fun toggleRepeat() = actionDispatcher.toggleRepeatMode()
+    // Todos os comandos passam pelo PlaybackController que usa MediaController
+    // Isso garante que o Media3 gerencie o serviço e a notificação corretamente
+    fun togglePlayPause() = controller.togglePlayPause()
+    fun playNext() = controller.playNext()
+    fun playPrevious() = controller.playPrevious()
+    fun rewind() { controller.seekTo(maxOf(0, controller.positionMs - 10_000L)) }
+    fun forward() { controller.seekTo(controller.positionMs + 10_000L) }
+    fun seekTo(positionMs: Long) = controller.seekTo(positionMs)
+    fun toggleShuffle() { controller.updateShuffle(!controller.uiState.value.isShuffleEnabled) }
+    fun toggleRepeat() {
+        val nextMode = when (controller.uiState.value.repeatMode) {
+            0 -> 1; 1 -> 2; else -> 0
+        }
+        controller.updateRepeatMode(nextMode)
+    }
 
     fun updateArtworkPaths(albumPath: String?, artistPath: String?) {
         rotationController.updateArtworkPaths(albumPath, artistPath)

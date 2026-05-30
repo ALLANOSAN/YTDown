@@ -75,9 +75,11 @@ class MediaPlaybackService : MediaSessionService() {
 
         createNotificationChannel()
 
-        // Configurar o provider de notificação do Media3 com channelId customizado
-        val notificationProvider = DefaultMediaNotificationProvider(this)
-        setMediaNotificationProvider(notificationProvider)
+        // Configurar o provider de notificação do Media3
+        // DefaultMediaNotificationProvider usa "default_media_notification_channel_id" por padrão
+        // Precisamos criar esse canal também
+        createDefaultMediaChannel()
+        setMediaNotificationProvider(DefaultMediaNotificationProvider(this))
 
         setupMediaSession()
         setupXiaomiProtection()
@@ -118,7 +120,7 @@ class MediaPlaybackService : MediaSessionService() {
             )
             .build()
 
-        Log.d(TAG, "Media3 MediaSession created with BASS adapter")
+        Log.d(TAG, "Media3 MediaSession created with BASS adapter (auto-active)")
     }
 
     // ========== Xiaomi/HyperOS Protection ==========
@@ -207,7 +209,30 @@ class MediaPlaybackService : MediaSessionService() {
             ).apply {
                 description = "Controles de reprodução de áudio"
                 setSound(null, null)
-                lockscreenVisibility = NotificationCompat.VISIBILITY_PUBLIC
+                lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+                setShowBadge(false)
+                enableLights(false)
+                enableVibration(false)
+            }
+            val manager = getSystemService(NotificationManager::class.java)
+            manager.createNotificationChannel(channel)
+        }
+    }
+
+    /**
+     * Cria o canal que o DefaultMediaNotificationProvider usa por padrão.
+     * O channelId padrão é "default_media_notification_channel_id".
+     */
+    private fun createDefaultMediaChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                DefaultMediaNotificationProvider.DEFAULT_CHANNEL_ID,
+                "YTDown Mídia",
+                NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                description = "Controles de mídia"
+                setSound(null, null)
+                lockscreenVisibility = Notification.VISIBILITY_PUBLIC
                 setShowBadge(false)
             }
             val manager = getSystemService(NotificationManager::class.java)
@@ -250,18 +275,29 @@ class MediaPlaybackService : MediaSessionService() {
 
         // CRÍTICO: Chamar startForeground() IMEDIATAMENTE para evitar
         // ForegroundServiceDidNotStartInTimeException no Android 12+
-        // A notificação será substituída pela do Media3 quando o player iniciar
+        // Usar notificação com MediaSession token para controles na tela de bloqueio
         try {
-            val notification = NotificationCompat.Builder(this, CHANNEL_ID)
+            val sessionToken = mediaSession?.sessionCompatToken
+            val notificationBuilder = NotificationCompat.Builder(this, CHANNEL_ID)
                 .setContentTitle("YTDown")
                 .setContentText("Preparando reprodução...")
                 .setSmallIcon(android.R.drawable.ic_media_play)
                 .setPriority(NotificationCompat.PRIORITY_LOW)
-                .setCategory(NotificationCompat.CATEGORY_SERVICE)
+                .setCategory(NotificationCompat.CATEGORY_TRANSPORT)
+                .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
                 .setOngoing(true)
-                .build()
-            startForeground(NOTIFICATION_ID, notification)
-            Log.d(TAG, "startForeground() chamado com sucesso")
+
+            // Adicionar MediaSession token para controles na tela de bloqueio
+            if (sessionToken != null) {
+                notificationBuilder.setStyle(
+                    androidx.media.app.NotificationCompat.MediaStyle()
+                        .setMediaSession(sessionToken)
+                        .setShowActionsInCompactView(0, 1, 2)
+                )
+            }
+
+            startForeground(NOTIFICATION_ID, notificationBuilder.build())
+            Log.d(TAG, "startForeground() com MediaSession token executado")
         } catch (e: Exception) {
             Log.e(TAG, "Erro ao chamar startForeground: ${e.message}")
         }
@@ -271,7 +307,7 @@ class MediaPlaybackService : MediaSessionService() {
             acquireWakeLock()
         }
 
-        // Let Media3 handle media buttons and session commands
+        // Deixar o Media3 processar o intent (media buttons, etc.)
         return super.onStartCommand(intent, flags, startId)
     }
 

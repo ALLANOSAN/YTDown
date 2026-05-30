@@ -18,14 +18,19 @@ class PythonMetadataBridge @Inject constructor() {
         title: String,
         artist: String,
         album: String,
-        coverPath: String? = null
+        coverPath: String? = null,
+        year: String? = null,
+        trackNumber: String? = null
     ): Boolean = withContext(Dispatchers.IO) {
         val py = Python.getInstance()
         val module = py.getModule("metadata")
-        
-        // Chama a função rewrite_file_metadata existente para tags e capa (se fornecida)
-        val result = module.callAttr("rewrite_file_metadata", audioPath, title, artist, album, coverPath)
-        
+
+        // Chama a função rewrite_file_metadata com todos os campos
+        val result = module.callAttr(
+            "rewrite_file_metadata",
+            audioPath, title, artist, album, coverPath, null, year, trackNumber
+        )
+
         val json = JSONObject(result.toString())
         json.optBoolean("success", false)
     }

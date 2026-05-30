@@ -5,5 +5,7 @@ data class MusicBrainzRecording(
     val artist: String,
     val album: String,
     val releaseId: String?,
-    val artistId: String?
+    val artistId: String?,
+    val year: String? = null,
+    val trackNumber: String? = null
 )

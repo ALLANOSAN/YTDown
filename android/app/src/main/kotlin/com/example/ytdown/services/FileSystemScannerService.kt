@@ -168,7 +168,7 @@ class FileSystemScannerService @Inject constructor(
         try {
             if (path.startsWith("content://")) {
                 // SAF: copiar → processar com Mutagen → copiar de volta
-                processSafFile(path, title)
+                processSafFile(path, title, item.id)
             } else {
                 // Arquivo físico: processar direto
                 if (File(path).exists()) {
@@ -225,7 +225,7 @@ class FileSystemScannerService @Inject constructor(
     /**
      * Processa arquivo SAF (content://): copia para temp → Mutagen grava metadados → copia de volta.
      */
-    private suspend fun processSafFile(safUri: String, title: String) = withContext(Dispatchers.IO) {
+    private suspend fun processSafFile(safUri: String, title: String, downloadId: String) = withContext(Dispatchers.IO) {
         val uri = android.net.Uri.parse(safUri)
         val inputStream = context.contentResolver.openInputStream(uri) ?: return@withContext
 
@@ -245,7 +245,11 @@ class FileSystemScannerService @Inject constructor(
         importProcessor.process(tempFile.absolutePath)
         android.util.Log.d("FileSystemScanner", "✅ Enrichment SAF concluído para: $title")
 
-        // 3. Copiar temp enriquecido de volta para SAF
+        // 3. Sincronizar metadados do SongEntity (temp path) para DownloadItemEntity (SAF URI)
+        //    ANTES de deletar o temp, pois o SongEntity usa o temp path como key
+        syncEnrichedMetadataToDownload(downloadId, tempFile.absolutePath)
+
+        // 4. Copiar temp enriquecido de volta para SAF
         try {
             val outputStream = context.contentResolver.openOutputStream(uri, "w")
             if (outputStream != null) {
@@ -260,7 +264,7 @@ class FileSystemScannerService @Inject constructor(
             android.util.Log.w("FileSystemScanner", "⚠️ Não foi possível gravar no SAF (metadados ficam só no banco): ${e.message}")
         }
 
-        // 4. Limpar temp
+        // 5. Limpar temp
         tempFile.delete()
     }
 

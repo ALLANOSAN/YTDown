@@ -97,8 +97,9 @@ class MediaImportProcessor @Inject constructor(
                     title = finalTitle,
                     artist = finalArtist,
                     album = finalAlbum,
-                    year = null,
-                    albumArt = albumArtPath
+                    year = mbResult?.year,
+                    albumArt = albumArtPath,
+                    trackNumber = mbResult?.trackNumber
                 )
             } catch (e: Exception) {
                 android.util.Log.e("ImportProcessor", "❌ Erro ao gravar metadados: ${e.message}")

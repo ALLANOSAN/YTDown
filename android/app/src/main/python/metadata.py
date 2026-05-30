@@ -20,7 +20,8 @@ def _import_mutagen_submodule(name):
 
 
 def _force_metadata_with_mutagen(
-    filepath, title, artist, album, thumbnail_url=None, lyrics=None
+    filepath, title, artist, album, thumbnail_url=None, lyrics=None,
+    year=None, track_number=None
 ):
     """
     Força o write de metadata com mutagen, mesmo se já existir.
@@ -28,26 +29,27 @@ def _force_metadata_with_mutagen(
     """
     if filepath.lower().endswith(".mp3"):
         return _write_mp3_id3_tags(
-            filepath, title, artist, album, thumbnail_url, lyrics
+            filepath, title, artist, album, thumbnail_url, lyrics, year, track_number
         )
     elif filepath.lower().endswith((".m4a", ".mp4")):
         return _write_mp4_m4a_tags(
-            filepath, title, artist, album, thumbnail_url, lyrics
+            filepath, title, artist, album, thumbnail_url, lyrics, year, track_number
         )
     return json.dumps({"success": False, "error": "Formato não suportado"})
 
 
 def rewrite_file_metadata(
-    filepath, title=None, artist=None, album=None, artwork_url=None, lyrics=None
+    filepath, title=None, artist=None, album=None, artwork_url=None, lyrics=None,
+    year=None, track_number=None
 ):
     try:
         if filepath.lower().endswith(".mp3"):
             return _write_mp3_id3_tags(
-                filepath, title, artist, album, artwork_url, lyrics
+                filepath, title, artist, album, artwork_url, lyrics, year, track_number
             )
         elif filepath.lower().endswith((".m4a", ".mp4")):
             return _write_mp4_m4a_tags(
-                filepath, title, artist, album, artwork_url, lyrics
+                filepath, title, artist, album, artwork_url, lyrics, year, track_number
             )
         return json.dumps({"success": False, "error": "Formato não suportado"})
     except Exception as e:
@@ -55,7 +57,8 @@ def rewrite_file_metadata(
 
 
 def _write_mp3_id3_tags(
-    filepath, title, artist, album, thumbnail_url=None, lyrics=None
+    filepath, title, artist, album, thumbnail_url=None, lyrics=None,
+    year=None, track_number=None
 ):
     mutagen_id3 = _import_mutagen_submodule("mutagen.id3")
     APIC = mutagen_id3.APIC
@@ -63,9 +66,11 @@ def _write_mp3_id3_tags(
     ID3 = mutagen_id3.ID3
     ID3NoHeaderError = mutagen_id3.ID3NoHeaderError
     TALB = mutagen_id3.TALB
+    TDRC = mutagen_id3.TDRC
     TIT2 = mutagen_id3.TIT2
     TPE1 = mutagen_id3.TPE1
     TPE2 = mutagen_id3.TPE2
+    TRCK = mutagen_id3.TRCK
     USLT = mutagen_id3.USLT
 
     has_existing_tags = False
@@ -83,6 +88,12 @@ def _write_mp3_id3_tags(
     tags.add(TALB(encoding=3, text=str(album)))
     tags.add(TPE2(encoding=3, text=str(artist)))
     tags.add(COMM(encoding=3, lang="por", desc="source", text="YTDown"))
+
+    if year:
+        tags.add(TDRC(encoding=3, text=str(year)))
+
+    if track_number:
+        tags.add(TRCK(encoding=3, text=str(track_number)))
 
     if lyrics:
         tags.add(USLT(encoding=3, lang="por", desc="Lyrics", text=str(lyrics)))
@@ -196,7 +207,6 @@ def embed_album_art(audio_path, cover_path):
             pic = Picture()
             pic.type = 3
             pic.mime = "image/jpeg"
-            pic.data = open(cover_path, "rb").read()
             pic.data = image_data
             audio.add_picture(pic)
             audio.save()

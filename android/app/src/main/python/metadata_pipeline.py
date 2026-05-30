@@ -53,33 +53,36 @@ def embed_artwork(audio_path, cover_path):
     except Exception as e:
         return json.dumps({"success": False, "error": str(e)})
 
-def write_metadata(path, title, artist, album, year=None, album_art_path=None):
+def write_metadata(path, title, artist, album, year=None, album_art_path=None, track_number=None):
     """
-    Escrever metadados completos (incluindo ano) e embutir capa.
+    Escrever metadados completos (incluindo ano e número da faixa) e embutir capa.
     """
     try:
         if not os.path.exists(path):
             return json.dumps({"success": False, "error": "Audio file not found"})
 
         if path.lower().endswith(".mp3"):
-            from mutagen.id3 import TDRC
+            from mutagen.id3 import TDRC, TRCK
             try:
                 audio = ID3(path)
             except Exception:
                 audio = ID3()
-            
+
             # Limpeza
-            for tag in ["TIT2", "TPE1", "TALB", "TPE2", "TDRC"]:
+            for tag in ["TIT2", "TPE1", "TALB", "TPE2", "TDRC", "TRCK"]:
                 audio.delall(tag)
-            
+
             audio.add(TIT2(encoding=3, text=title))
             audio.add(TPE1(encoding=3, text=artist))
             audio.add(TALB(encoding=3, text=album))
             audio.add(TPE2(encoding=3, text=artist))
             audio.add(COMM(encoding=3, lang="por", desc="source", text="YTDown"))
-            
+
             if year:
                 audio.add(TDRC(encoding=3, text=str(year)))
+
+            if track_number:
+                audio.add(TRCK(encoding=3, text=str(track_number)))
             
             if album_art_path and os.path.exists(album_art_path):
                 with open(album_art_path, "rb") as f:
@@ -95,9 +98,12 @@ def write_metadata(path, title, artist, album, year=None, album_art_path=None):
             audio["\xa9ART"] = artist
             audio["\xa9alb"] = album
             audio["aART"] = artist
-            
+
             if year:
                 audio["\xa9day"] = str(year)
+
+            if track_number:
+                audio["trkn"] = [(int(track_number), 0)]
             
             if album_art_path and os.path.exists(album_art_path):
                 with open(album_art_path, "rb") as f:
@@ -113,6 +119,8 @@ def write_metadata(path, title, artist, album, year=None, album_art_path=None):
             audio["album"] = album
             if year:
                 audio["date"] = str(year)
+            if track_number:
+                audio["tracknumber"] = str(track_number)
             
             if album_art_path and os.path.exists(album_art_path):
                 with open(album_art_path, "rb") as f:

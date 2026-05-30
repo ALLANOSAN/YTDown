@@ -34,12 +34,12 @@ class PythonMetadataBridge @Inject constructor(
     /**
      * Grava metadados ID3/Vorbis completos no arquivo.
      */
-    fun writeFullMetadata(path: String, title: String, artist: String, album: String, year: String?, albumArt: String?) {
+    fun writeFullMetadata(path: String, title: String, artist: String, album: String, year: String?, albumArt: String?, trackNumber: String? = null) {
         try {
             val py = Python.getInstance()
             val module = py.getModule("metadata_pipeline")
-            Log.d(TAG, "Python: Gravando tags para $title ($year)")
-            module.callAttr("write_metadata", path, title, artist, album, year, albumArt)
+            Log.d(TAG, "Python: Gravando tags para $title (year=$year, track=$trackNumber)")
+            module.callAttr("write_metadata", path, title, artist, album, year, albumArt, trackNumber)
         } catch (e: Exception) {
             Log.e(TAG, "Erro Python ao gravar metadados: ${e.message}")
         }

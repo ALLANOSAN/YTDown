@@ -49,16 +49,13 @@ fun PlayerFullScreen(
     val isShuffleEnabled = uiState.isShuffleEnabled
     val repeatMode = uiState.repeatMode
 
-    // SISTEMA DE ALTERNÂNCIA DE ARTWORK (Passo 15)
-    var showArtistArt by remember { mutableStateOf(false) }
-    LaunchedEffect(isPlaying) {
-        if (isPlaying) {
-            while (true) {
-                kotlinx.coroutines.delay(10000)
-                showArtistArt = !showArtistArt
-            }
-        }
+    // SISTEMA DE ALTERNÂNCIA DE ARTWORK (via ArtworkRotationController)
+    // Atualiza paths no controller quando a track muda
+    LaunchedEffect(track?.id) {
+        viewModel.updateArtworkPaths(track?.albumArtPath, track?.artistArtPath)
     }
+    // Usa o artworkMode do controller (verifica se artistArtPath existe antes de alternar)
+    val showArtistArt = uiState.artworkMode == com.example.ytdown.core.artwork.ArtworkMode.ARTIST
 
     var sliderPosition by remember(position) { mutableStateOf(position.toFloat()) }
     var isDragging by remember { mutableStateOf(false) }

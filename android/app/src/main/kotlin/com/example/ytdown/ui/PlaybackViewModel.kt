@@ -49,6 +49,10 @@ class PlaybackViewModel @Inject constructor(
     fun seekTo(positionMs: Long) = actionDispatcher.seekTo(positionMs)
     fun toggleShuffle() = actionDispatcher.toggleShuffle()
     fun toggleRepeat() = actionDispatcher.toggleRepeatMode()
+
+    fun updateArtworkPaths(albumPath: String?, artistPath: String?) {
+        rotationController.updateArtworkPaths(albumPath, artistPath)
+    }
     
     fun playTrack(track: DownloadItemEntity) {
         controller.playTrack(track)

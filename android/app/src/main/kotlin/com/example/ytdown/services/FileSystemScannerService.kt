@@ -289,47 +289,43 @@ class FileSystemScannerService @Inject constructor(
     }
 
     /**
-     * Remove do banco todos os itens "completed" cujo arquivo privado
-     * não existe mais no disco ou que pertence a uma pasta não monitorada.
+     * Remove do banco itens cujo arquivo físico não existe mais.
+     *
+     * PROTEÇÕES:
+     * - NUNCA deleta itens SAF (content://) — a permissão pode estar temporariamente revogada
+     * - NUNCA deleta se não há pastas monitoradas (pode ser timing issue no startup)
+     * - Só deleta arquivos físicos confirmados como inexistentes no disco
+     * - Downloads do app (url não vazia) nunca são removidos
      */
     suspend fun removeStaleEntries(): Int = withContext(Dispatchers.IO) {
         val allItems = downloadDao.getAllDownloadsSync()
         val monitoredFolders = folderService.folders.value
         var removed = 0
 
+        // Se não há pastas monitoradas, NÃO deletar nada (pode ser timing issue)
+        if (monitoredFolders.isEmpty()) {
+            android.util.Log.d("FileSystemScanner", "⚠️ Nenhuma pasta monitorada — skip removeStaleEntries")
+            return@withContext 0
+        }
+
         allItems.forEach { item ->
-            // Não removemos downloads realizados internamente pelo app (tipo 0 ou sem path de pasta monitorada?)
-            // Se o item foi um download (url não vazia), mantemos. Se for "orphan", removemos se a pasta não for mais monitorada.
             if (item.status != "completed") return@forEach
-            
-            // Itens de download próprio (não órfãos) geralmente mantemos
-            if (!item.url.isNullOrBlank()) return@forEach
+            if (!item.url.isNullOrBlank()) return@forEach // Downloads do app sempre mantidos
 
             val outputPath = item.outputPath.takeIf { it.isNotBlank() } ?: return@forEach
-            
-            // Verifica se o arquivo ainda existe
-            val fileExists = if (outputPath.startsWith("content://")) {
-                DocumentFile.fromSingleUri(context, Uri.parse(outputPath))?.exists() == true
-            } else {
-                File(outputPath).exists()
-            }
 
-            // Verifica se o arquivo pertence a alguma pasta monitorada
-            val isMonitored = monitoredFolders.any { folder ->
-                if (folder.startsWith("content://") && outputPath.startsWith("content://")) {
-                    // SAF: comparar tree IDs (ignorar /document/... que aparece na URI do arquivo)
-                    safTreeMatches(folder, outputPath)
-                } else {
-                    outputPath.startsWith(folder)
-                }
-            }
+            // NUNCA deletar itens SAF — permissão pode estar temporariamente revogada
+            if (outputPath.startsWith("content://")) return@forEach
 
-            if (!fileExists || !isMonitored) {
+            // Só deletar arquivos físicos confirmados como inexistentes
+            if (!File(outputPath).exists()) {
                 downloadDao.delete(item)
                 removed++
-                android.util.Log.d("FileSystemScanner", "Entrada removida: ${item.title} (Status: ${if(!fileExists) "Arquivo sumiu" else "Pasta não monitorada"})")
+                android.util.Log.d("FileSystemScanner", "Entrada removida (arquivo físico não existe): ${item.title}")
             }
         }
+
+        if (removed > 0) android.util.Log.d("FileSystemScanner", "removeStaleEntries: $removed itens removidos")
         removed
     }
 

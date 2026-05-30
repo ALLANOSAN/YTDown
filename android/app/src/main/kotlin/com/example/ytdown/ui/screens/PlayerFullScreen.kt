@@ -237,86 +237,107 @@ fun PlayerFullScreen(
             }
 
             // CONTROLES (Posicionados com segurança na parte inferior)
-            Row(
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(top = 16.dp, bottom = 24.dp)
                     .zIndex(10f),
-                horizontalArrangement = Arrangement.SpaceEvenly,
-                verticalAlignment = Alignment.CenterVertically
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
-
-                IconButton(
-                    onClick = {
-                        viewModel.playPrevious()
-                    }
+                // Linha principal: Previous | Rewind | Play/Pause | Forward | Next
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.SkipPrevious,
-                        contentDescription = "Previous",
-                        tint = Color.White,
-                        modifier = Modifier.size(34.dp)
-                    )
+                    IconButton(onClick = { viewModel.playPrevious() }) {
+                        Icon(
+                            imageVector = Icons.Default.SkipPrevious,
+                            contentDescription = "Anterior",
+                            tint = Color.White,
+                            modifier = Modifier.size(34.dp)
+                        )
+                    }
+
+                    IconButton(onClick = { viewModel.rewind() }) {
+                        Icon(
+                            imageVector = Icons.Default.FastRewind,
+                            contentDescription = "Retroceder 10s",
+                            tint = Color.White,
+                            modifier = Modifier.size(34.dp)
+                        )
+                    }
+
+                    FloatingActionButton(
+                        onClick = { viewModel.togglePlayPause() },
+                        modifier = Modifier.size(72.dp),
+                        containerColor = MaterialTheme.colorScheme.primary
+                    ) {
+                        Icon(
+                            imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                            contentDescription = "Play/Pause",
+                            tint = Color.White,
+                            modifier = Modifier.size(36.dp)
+                        )
+                    }
+
+                    IconButton(onClick = { viewModel.forward() }) {
+                        Icon(
+                            imageVector = Icons.Default.FastForward,
+                            contentDescription = "Avançar 10s",
+                            tint = Color.White,
+                            modifier = Modifier.size(34.dp)
+                        )
+                    }
+
+                    IconButton(onClick = { viewModel.playNext() }) {
+                        Icon(
+                            imageVector = Icons.Default.SkipNext,
+                            contentDescription = "Próxima",
+                            tint = Color.White,
+                            modifier = Modifier.size(34.dp)
+                        )
+                    }
                 }
 
-                IconButton(
-                    onClick = {
-                        viewModel.rewind()
+                // Linha secundária: Shuffle | Repeat
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Shuffle
+                    IconButton(onClick = { viewModel.toggleShuffle() }) {
+                        Icon(
+                            imageVector = Icons.Default.Shuffle,
+                            contentDescription = "Embaralhar",
+                            tint = if (isShuffleEnabled) YTDownPurple else Color.White.copy(alpha = 0.5f),
+                            modifier = Modifier.size(28.dp)
+                        )
                     }
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.FastRewind,
-                        contentDescription = "Rewind",
-                        tint = Color.White,
-                        modifier = Modifier.size(34.dp)
-                    )
-                }
 
-                FloatingActionButton(
-                    onClick = {
-                        viewModel.togglePlayPause()
-                    },
-                    modifier = Modifier.size(72.dp), // Reduzido de 82dp para 72dp para melhorar encaixe
-                    containerColor = MaterialTheme.colorScheme.primary
-                ) {
-
-                    Icon(
-                        imageVector =
-                            if (isPlaying)
-                                Icons.Default.Pause
-                            else
-                                Icons.Default.PlayArrow,
-
-                        contentDescription = "PlayPause",
-                        tint = Color.White,
-                        modifier = Modifier.size(36.dp) // Reduzido proporcionalmente
-                    )
-                }
-
-                IconButton(
-                    onClick = {
-                        viewModel.forward()
+                    // Repeat (3 estados: OFF → ALL → ONE → OFF)
+                    IconButton(onClick = { viewModel.toggleRepeat() }) {
+                        Icon(
+                            imageVector = when (repeatMode) {
+                                2 -> Icons.Default.RepeatOne
+                                1 -> Icons.Default.Repeat
+                                else -> Icons.Default.Repeat
+                            },
+                            contentDescription = when (repeatMode) {
+                                2 -> "Repetir uma música"
+                                1 -> "Repetir todas"
+                                else -> "Repetir desligado"
+                            },
+                            tint = when (repeatMode) {
+                                0 -> Color.White.copy(alpha = 0.5f)
+                                else -> YTDownPurple
+                            },
+                            modifier = Modifier.size(28.dp)
+                        )
                     }
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.FastForward,
-                        contentDescription = "Forward",
-                        tint = Color.White,
-                        modifier = Modifier.size(34.dp)
-                    )
-                }
-
-                IconButton(
-                    onClick = {
-                        viewModel.playNext()
-                    }
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.SkipNext,
-                        contentDescription = "Next",
-                        tint = Color.White,
-                        modifier = Modifier.size(34.dp)
-                    )
                 }
             }
         }

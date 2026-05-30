@@ -168,6 +168,11 @@ dependencies {
     // Media Session (Legacy fallback / Compat)
     implementation "androidx.media:media:1.7.0"
 
+    // Media3 Session (Android 16 Live Island / Now Bar + Modern MediaSession)
+    def media3_version = "1.4.1"
+    implementation "androidx.media3:media3-session:$media3_version"
+    implementation "androidx.media3:media3-common:$media3_version"
+
     // Rede & Serialização
     implementation "com.squareup.okhttp3:okhttp:4.12.0"
     implementation "com.google.code.gson:gson:2.11.0"

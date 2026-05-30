@@ -5,7 +5,9 @@ import android.net.Uri
 import androidx.documentfile.provider.DocumentFile
 import com.example.ytdown.core.infrastructure.StorageResolver
 import com.example.ytdown.core.infrastructure.persistence.DownloadDao
+import com.example.ytdown.core.infrastructure.persistence.SongDao
 import com.example.ytdown.core.domain.DownloadItemEntity
+import com.example.ytdown.core.media.MediaImportProcessor
 import com.example.ytdown.utils.MetadataUtils
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
@@ -23,9 +25,11 @@ import java.util.UUID
 class FileSystemScannerService @Inject constructor(
     private val storage: StorageResolver,
     private val downloadDao: DownloadDao,
+    private val songDao: SongDao,
     private val folderService: MusicFolderService,
     private val artworkManager: ArtworkManager,
-    @param:ApplicationContext private val context: Context // Adicionado para acessar SharedPreferences
+    private val importProcessor: MediaImportProcessor,
+    @param:ApplicationContext private val context: Context
 ) {
     private val audioExtensions = setOf("mp3", "m4a", "aac", "ogg", "opus", "wav", "flac")
     private val prefs = context.getSharedPreferences("scanner_prefs", Context.MODE_PRIVATE)
@@ -128,42 +132,22 @@ class FileSystemScannerService @Inject constructor(
 
     private suspend fun registerOrphan(path: String, nameWithoutExtension: String, extension: String, lastModified: Long) {
         val title = MetadataUtils.normalizeMetadataText(nameWithoutExtension)
-        
+
         // 1. Verificação de duplicata: Busca por arquivo com mesmo título e tamanho
         val fileSize = if (path.startsWith("content://")) {
-            // Tentar obter tamanho via DocumentFile se necessário, ou ignorar para simplificar
-            -1L 
+            -1L
         } else {
             File(path).length()
         }
 
-        val existing = downloadDao.getAllDownloadsSync().find { 
-            it.title.equals(title, ignoreCase = true) && 
+        val existing = downloadDao.getAllDownloadsSync().find {
+            it.title.equals(title, ignoreCase = true) &&
             (fileSize == -1L || it.outputPath.let { p -> p.isNotBlank() && File(p).exists() && File(p).length() == fileSize })
         }
-        
+
         if (existing != null) return // Arquivo já existe, não duplicar
 
-        var artist = MetadataUtils.guessArtistFromTitle(title) ?: "Desconhecido"
-        var album = "YTDown"
-        var artistArtPath: String? = null
-        var albumArtPath: String? = null
-
-        // Auto-Enrichment: Tenta buscar metadados e capas automaticamente
-        if (artist != "Desconhecido") {
-            try {
-                artistArtPath = artworkManager.getArtistImage(artist)
-                // Tenta extrair álbum se o título tiver padrão "Artista - Álbum - Música"
-                val guessedAlbum = MetadataUtils.guessAlbumFromTitle(title)
-                if (guessedAlbum != null) {
-                    album = guessedAlbum
-                    albumArtPath = artworkManager.getAlbumCover(artist, album)
-                }
-            } catch (e: Exception) {
-                // Falha silenciosa no enrichment para não travar o scan
-            }
-        }
-
+        // 2. Registro rápido no banco (mostra na biblioteca imediatamente)
         val item = DownloadItemEntity(
             id = "orphan_${UUID.randomUUID().toString().take(8)}",
             url = "",
@@ -175,12 +159,92 @@ class FileSystemScannerService @Inject constructor(
             status = "completed",
             progress = 1.0,
             createdAt = lastModified,
-            artist = artist,
-            album = album,
-            albumArtPath = albumArtPath,
-            artistArtPath = artistArtPath
+            artist = MetadataUtils.guessArtistFromTitle(title) ?: "Desconhecido",
+            album = "YTDown"
         )
         downloadDao.upsert(item)
+
+        // 3. Pipeline completo de metadados (MusicBrainz → Cover Art → FanArt → Mutagen)
+        try {
+            if (path.startsWith("content://")) {
+                // SAF: copiar → processar com Mutagen → copiar de volta
+                processSafFile(path, title)
+            } else {
+                // Arquivo físico: processar direto
+                if (File(path).exists()) {
+                    android.util.Log.d("FileSystemScanner", "🔄 Enrichment completo para: $title")
+                    importProcessor.process(path)
+                }
+            }
+
+            // 4. Atualizar DownloadItemEntity com metadados enriquecidos do SongEntity
+            syncEnrichedMetadataToDownload(item.id, path)
+        } catch (e: Exception) {
+            android.util.Log.w("FileSystemScanner", "⚠️ Enrichment falhou para $title: ${e.message}")
+        }
+    }
+
+    /**
+     * Sincroniza metadados do SongEntity (enriquecido pelo MediaImportProcessor)
+     * para o DownloadItemEntity (usado pela biblioteca).
+     */
+    private suspend fun syncEnrichedMetadataToDownload(downloadId: String, audioPath: String) {
+        withContext(Dispatchers.IO) {
+            val song = songDao.getByPath(audioPath) ?: return@withContext
+            val download = downloadDao.getById(downloadId) ?: return@withContext
+
+            val updated = download.copy(
+                title = song.title,
+                artist = song.artist,
+                album = song.album,
+                albumArtPath = song.albumArtwork ?: download.albumArtPath,
+                artistArtPath = song.artistArtwork ?: download.artistArtPath
+            )
+            downloadDao.upsert(updated)
+            android.util.Log.d("FileSystemScanner", "🔗 Sync: ${song.artist} - ${song.album} | art=${song.albumArtwork != null} | artist=${song.artistArtwork != null}")
+        }
+    }
+
+    /**
+     * Processa arquivo SAF (content://): copia para temp → Mutagen grava metadados → copia de volta.
+     */
+    private suspend fun processSafFile(safUri: String, title: String) = withContext(Dispatchers.IO) {
+        val uri = android.net.Uri.parse(safUri)
+        val inputStream = context.contentResolver.openInputStream(uri) ?: return@withContext
+
+        val ext = safUri.substringAfterLast(".").takeIf { it.length <= 4 } ?: "mp3"
+        val tempFile = File.createTempFile("scanner_enrich_", ".$ext", context.cacheDir)
+
+        // 1. Copiar SAF → temp
+        inputStream.use { input ->
+            tempFile.outputStream().use { output ->
+                input.copyTo(output)
+            }
+        }
+
+        android.util.Log.d("FileSystemScanner", "📎 SAF copiado para temp: ${tempFile.name}")
+
+        // 2. Processar temp com pipeline completo (MusicBrainz → Cover Art → FanArt → Mutagen)
+        importProcessor.process(tempFile.absolutePath)
+        android.util.Log.d("FileSystemScanner", "✅ Enrichment SAF concluído para: $title")
+
+        // 3. Copiar temp enriquecido de volta para SAF
+        try {
+            val outputStream = context.contentResolver.openOutputStream(uri, "w")
+            if (outputStream != null) {
+                outputStream.use { output ->
+                    tempFile.inputStream().use { input ->
+                        input.copyTo(output)
+                    }
+                }
+                android.util.Log.d("FileSystemScanner", "✅ Metadados gravados no arquivo SAF: $title")
+            }
+        } catch (e: Exception) {
+            android.util.Log.w("FileSystemScanner", "⚠️ Não foi possível gravar no SAF (metadados ficam só no banco): ${e.message}")
+        }
+
+        // 4. Limpar temp
+        tempFile.delete()
     }
 
     private fun findAudioFiles(dir: File): List<File> {

@@ -248,11 +248,27 @@ class MediaPlaybackService : MediaSessionService() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         Log.d(TAG, "onStartCommand: action=${intent?.action}")
 
+        // CRÍTICO: Chamar startForeground() IMEDIATAMENTE para evitar
+        // ForegroundServiceDidNotStartInTimeException no Android 12+
+        // A notificação será substituída pela do Media3 quando o player iniciar
+        try {
+            val notification = NotificationCompat.Builder(this, CHANNEL_ID)
+                .setContentTitle("YTDown")
+                .setContentText("Preparando reprodução...")
+                .setSmallIcon(android.R.drawable.ic_media_play)
+                .setPriority(NotificationCompat.PRIORITY_LOW)
+                .setCategory(NotificationCompat.CATEGORY_SERVICE)
+                .setOngoing(true)
+                .build()
+            startForeground(NOTIFICATION_ID, notification)
+            Log.d(TAG, "startForeground() chamado com sucesso")
+        } catch (e: Exception) {
+            Log.e(TAG, "Erro ao chamar startForeground: ${e.message}")
+        }
+
         // Handle wake lock based on playback state
         if (playbackController.uiState.value.isPlaying) {
             acquireWakeLock()
-        } else {
-            releaseWakeLock()
         }
 
         // Let Media3 handle media buttons and session commands

@@ -263,10 +263,8 @@ constructor(
     }
 
     private fun updatePlayerMetadata(item: DownloadItemEntity) {
-        val intent = Intent(context, MediaPlaybackService::class.java).apply {
-            action = "UPDATE_METADATA"
-        }
-        context.startService(intent)
+        // Metadata é atualizada pelo PlaybackController que alimenta o BassMediaSessionAdapter
+        // O Media3 MediaSession atualiza a notificação automaticamente
     }
 
     fun next() {

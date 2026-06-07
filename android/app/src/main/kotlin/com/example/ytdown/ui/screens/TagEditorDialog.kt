@@ -121,15 +121,24 @@ private fun HeaderSection(state: com.example.ytdown.ui.DownloadInputState) {
 @Composable
 private fun MetadataFields(viewModel: DownloadViewModel, state: com.example.ytdown.ui.DownloadInputState) {
     OutlinedTextField(
+        value = state.titleInput,
+        onValueChange = viewModel::onTitleInputChanged,
+        label = { Text("Título da música") },
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+    )
+    OutlinedTextField(
         value = state.artistInput,
         onValueChange = viewModel::onArtistInputChanged,
         label = { Text("Artista") },
+        singleLine = true,
         modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
     )
     OutlinedTextField(
         value = state.albumInput,
         onValueChange = viewModel::onAlbumInputChanged,
         label = { Text("Álbum") },
+        singleLine = true,
         modifier = Modifier.fillMaxWidth()
     )
 }

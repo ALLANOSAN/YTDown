@@ -55,10 +55,22 @@ class YtDlpWrapper(
             val module = py.getModule("ytdown")
 
             binaryOrchestrator.setupNativeBinaries()
-            
-            // outputDir é o diretório destino. Usamos o template padrão do yt-dlp para que
-            // ele nomeie o arquivo com o título real do vídeo + extensão correta.
-            val outputPath = File(outputDir, "%(title)s.%(ext)s").absolutePath
+
+            // Sanitiza qualquer string para uso seguro como nome de arquivo.
+            // Remove caracteres que o Android MediaStore/SAF não aceita.
+            val invalidChars = Regex("[\\\\/:*?\"<>|\\r\\n\\t]")
+            val safeTitle = (metadata?.title?.value ?: "Sem Titulo")
+                .replace(invalidChars, "_").replace(Regex("\\s+"), " ").trim().take(80)
+            val safeArtist = (metadata?.artist?.value ?: "Artista Desconhecido")
+                .replace(invalidChars, "_").replace(Regex("\\s+"), " ").trim().take(60)
+            val safeAlbum = (metadata?.album?.value ?: "Album")
+                .replace(invalidChars, "_").replace(Regex("\\s+"), " ").trim().take(60)
+            val cleanFileName = "$safeArtist - $safeAlbum - $safeTitle"
+            // Usa %(ext)s no template: o yt-dlp/ffmpeg vai substituir pela extensão
+            // final (.m4a, .mp3, etc) e isso evita duplicar a extensão (ex: .m4a.m4a).
+            val outputPath = File(outputDir, "$cleanFileName.%(ext)s").absolutePath
+
+            android.util.Log.d("PYTHON_DOWNLOAD", "📝 Nome limpo do arquivo: $cleanFileName.%(ext)s")
 
             // Criamos o callback que o Python irá chamar
             val progressCallback = object : PythonBridge.PythonProgressCallback {
@@ -80,6 +92,7 @@ class YtDlpWrapper(
                                     binaryOrchestrator.getAppFilesDir(),
                                     metadata?.artist?.value,
                                     metadata?.album?.value,
+                                    metadata?.title?.value,
                                     artworkUrl,
                                     options.format,
                                     progressCallback // ✅ Agora passamos o callback real

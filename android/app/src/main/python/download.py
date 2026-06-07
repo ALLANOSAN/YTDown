@@ -248,6 +248,7 @@ def download_video(
     app_files_dir=None,
     artist=None,
     album=None,
+    title=None,
     artwork_url=None,
     selected_format=None,
     progress_callback=None,
@@ -383,8 +384,11 @@ def download_video(
             # Metadados e Tags - ESTÁGIO FINAL
             try:
                 ChaquopyLogger.info("🎨 Iniciando injeção de metadados e capa...", category="FLOW")
+                # Se o usuário editou o título no app, prioriza ele sobre o do YouTube.
+                # Se o usuário deixou vazio, usa o do YouTube como fallback.
+                explicit_title = (title or "").strip() or None
                 resolved_title, resolved_artist, resolved_album = _resolve_metadata(
-                    downloaded_info.get("title", "Sem título"),
+                    explicit_title or downloaded_info.get("title", "Sem título"),
                     artist,
                     album,
                     downloaded_info,

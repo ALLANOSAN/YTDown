@@ -41,6 +41,7 @@ data class DownloadInputState(
         val showDialog: Boolean = false,
         val artistInput: String = "",
         val albumInput: String = "",
+        val titleInput: String = "",
         val selectedDownloadType: DownloadType = DownloadType.AUDIO,
         val selectedFormat: String = "mp3",
         val selectedQuality: String = "192",
@@ -144,6 +145,10 @@ constructor(
 
     fun onAlbumInputChanged(newAlbum: String) {
         _inputState.update { it.copy(albumInput = newAlbum) }
+    }
+
+    fun onTitleInputChanged(newTitle: String) {
+        _inputState.update { it.copy(titleInput = newTitle) }
     }
 
     fun deleteRecentSearch(query: String) {
@@ -388,11 +393,18 @@ constructor(
                         "playlistTitle=${playlistTitle ?: "missing"}"
         )
 
+        val titleForPreFill = if (isPlaylist) {
+            playlistTitle ?: ""
+        } else {
+            parsedEntries.firstOrNull()?.title?.value ?: ""
+        }
+
         _inputState.update { state ->
             state.copy(
                     fetchedItems = parsedEntries,
                     artistInput = artistInput,
                     albumInput = albumInput,
+                    titleInput = titleForPreFill,
                     isPlaylist = isPlaylist,
                     isFetching = false,
                     showDialog = true
@@ -430,12 +442,6 @@ constructor(
 
         viewModelScope.launch {
             try {
-                val baseMeta =
-                        MediaMetadata(
-                                title = MediaTitle(""),
-                                artist = ArtistName(currentState.artistInput),
-                                album = AlbumName(currentState.albumInput)
-                        )
                 val downloadOptions =
                         DownloadOptions(
                                 type = currentState.selectedDownloadType,
@@ -454,10 +460,23 @@ constructor(
                                     ?: artworkManager.getArtistImage(currentState.artistInput)
                 }
 
+                // O titleInput editado pelo usuário vale pra todos os itens (assume que ele
+                // quis usar o mesmo título pra playlist ou ajustou pra um único vídeo).
+                // Se o usuário deixou em branco, cada item usa o título que veio do YouTube.
+                val sharedTitle = currentState.titleInput
+
                 selectedItems.forEach { item ->
                     android.util.Log.d("DOWNLOAD_FLOW", "⏳ Agendando item: ${item.title.value}")
-                    val finalMeta = baseMeta.copy(title = item.title)
-                    scheduler.schedule(item.url, folder, finalMeta, downloadOptions, resolvedArtworkUrl)
+                    val perItemMeta =
+                            MediaMetadata(
+                                    title = MediaTitle(
+                                            sharedTitle.ifBlank { item.title.value }
+                                                    .ifBlank { "Sem título" }
+                                    ),
+                                    artist = ArtistName(currentState.artistInput),
+                                    album = AlbumName(currentState.albumInput)
+                            )
+                    scheduler.schedule(item.url, folder, perItemMeta, downloadOptions, resolvedArtworkUrl)
                 }
                 
                 android.util.Log.d("DOWNLOAD_FLOW", "✅ Todos os itens foram enviados para o agendador.")

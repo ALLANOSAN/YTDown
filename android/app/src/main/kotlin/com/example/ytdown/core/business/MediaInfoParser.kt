@@ -43,7 +43,13 @@ class MediaInfoParser {
         val id = obj.optString("id", System.currentTimeMillis().toString())
         return VideoPreviewItem(
             id = id,
-            title = MediaTitle(obj.optString("title", "Unknown")),
+            title = MediaTitle(
+                obj.optString("title").ifBlank { "Sem título" }
+                    .replace(Regex("[\\\\/:*?\"<>|\\r\\n\\t]"), "_")
+                    .replace(Regex("\\s+"), " ")
+                    .trim()
+                    .take(120)
+            ),
             url = VideoUrl(obj.optString("webpage_url", obj.optString("url", ""))),
             thumbnail = obj.optString("thumbnail").takeIf { it.isNotBlank() },
             duration = obj.optLong("duration", 0)

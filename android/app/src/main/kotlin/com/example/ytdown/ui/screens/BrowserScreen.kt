@@ -8,8 +8,12 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.filled.Redo
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -25,6 +29,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -38,7 +43,6 @@ import com.example.ytdown.ui.DownloadViewModel
 import com.example.ytdown.ui.theme.SurfaceDark
 import com.example.ytdown.ui.theme.TextSecondary
 import com.example.ytdown.ui.theme.YTDownPurple
-import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -54,10 +58,28 @@ fun BrowserScreen(
     }
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
     var canGoBack by remember { mutableStateOf(false) }
+    var canGoForward by remember { mutableStateOf(false) }
+    var isFocused by remember { mutableStateOf(false) }
+
+    // Seleciona todo o texto sempre que o campo ganha foco
+    LaunchedEffect(isFocused) {
+        if (isFocused) {
+            textFieldValue = textFieldValue.copy(
+                selection = TextRange(0, textFieldValue.text.length)
+            )
+        }
+    }
 
     LaunchedEffect(browserState.currentUrl) {
         urlText = browserState.currentUrl
         textFieldValue = TextFieldValue(browserState.currentUrl)
+    }
+
+    fun updateNavigationState() {
+        webViewRef?.let {
+            canGoBack = it.canGoBack()
+            canGoForward = it.canGoForward()
+        }
     }
 
     BackHandler(enabled = canGoBack) {
@@ -68,15 +90,6 @@ fun BrowserScreen(
             topBar = {
                 CenterAlignedTopAppBar(
                         title = { Text("Navegador", color = Color.White) },
-                        actions = {
-                            IconButton(onClick = { webViewRef?.reload() }) {
-                                Icon(
-                                        Icons.Default.Refresh,
-                                        contentDescription = "Recarregar",
-                                        tint = Color.White
-                                )
-                            }
-                        },
                         colors =
                                 TopAppBarDefaults.topAppBarColors(
                                         containerColor = SurfaceDark,
@@ -139,22 +152,67 @@ fun BrowserScreen(
                     colors = CardDefaults.cardColors(containerColor = Color(0xFF121212))
             ) {
                 Row(
-                        modifier = Modifier.fillMaxWidth().padding(12.dp),
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically
                 ) {
+                    // Botão Voltar
+                    IconButton(
+                            onClick = { webViewRef?.goBack() },
+                            enabled = canGoBack,
+                            modifier = Modifier.size(40.dp)
+                    ) {
+                        Icon(
+                                Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Voltar",
+                                tint = if (canGoBack) Color.White else Color.Gray
+                        )
+                    }
+
+                    // Botão Avançar
+                    IconButton(
+                            onClick = { webViewRef?.goForward() },
+                            enabled = canGoForward,
+                            modifier = Modifier.size(40.dp)
+                    ) {
+                        Icon(
+                                Icons.AutoMirrored.Filled.Redo,
+                                contentDescription = "Avançar",
+                                tint = if (canGoForward) Color.White else Color.Gray
+                        )
+                    }
+
+                    // Botão Recarregar
+                    IconButton(
+                            onClick = { webViewRef?.reload() },
+                            modifier = Modifier.size(40.dp)
+                    ) {
+                        Icon(
+                                Icons.Default.Refresh,
+                                contentDescription = "Recarregar",
+                                tint = Color.White
+                        )
+                    }
+
                     OutlinedTextField(
                             value = textFieldValue,
                             onValueChange = { tv ->
                                 textFieldValue = tv
                                 urlText = tv.text
                             },
-                            modifier = Modifier.weight(1f).onFocusChanged { state ->
-                                if (state.isFocused) {
-                                    textFieldValue = textFieldValue.copy(
-                                        selection = TextRange(0, textFieldValue.text.length)
-                                    )
-                                }
-                            },
+                            modifier = Modifier
+                                    .weight(1f)
+                                    .onFocusChanged { state ->
+                                        isFocused = state.isFocused
+                                    },
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
+                            keyboardActions = KeyboardActions(
+                                    onGo = {
+                                        var url = textFieldValue.text.trim()
+                                        if (!url.startsWith("http")) url = "https://$url"
+                                        browserProvider.setUrl(url)
+                                        webViewRef?.loadUrl(url)
+                                    }
+                            ),
                             placeholder = {
                                 Text("Pesquisar ou digitar URL", color = TextSecondary)
                             },
@@ -171,20 +229,20 @@ fun BrowserScreen(
                                     )
                     )
 
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
 
                     IconButton(
                             onClick = {
-                                var url = urlText.trim()
+                                var url = textFieldValue.text.trim()
                                 if (!url.startsWith("http")) url = "https://$url"
                                 browserProvider.setUrl(url)
                                 webViewRef?.loadUrl(url)
                             },
                             modifier =
-                                    Modifier.size(48.dp)
+                                    Modifier.size(40.dp)
                                             .background(
                                                     YTDownPurple,
-                                                    shape = RoundedCornerShape(14.dp)
+                                                    shape = RoundedCornerShape(12.dp)
                                             )
                     ) {
                         Icon(
@@ -234,7 +292,7 @@ fun BrowserScreen(
                                                     url: String?
                                             ) {
                                                 browserProvider.setLoading(false)
-                                                canGoBack = view?.canGoBack() ?: false
+                                                updateNavigationState()
                                                 browserProvider.setUrl(
                                                         url ?: browserState.currentUrl
                                                 )
@@ -254,7 +312,7 @@ fun BrowserScreen(
                                                 super.doUpdateVisitedHistory(view, url, isReload)
                                                 if (!isReload && url != null) {
                                                     browserProvider.setUrl(url)
-                                                    canGoBack = view?.canGoBack() ?: false
+                                                    updateNavigationState()
                                                 }
                                             }
                                         }

@@ -12,6 +12,7 @@ import com.example.ytdown.core.business.DownloadEngine
 import com.example.ytdown.core.business.DownloadRepository
 import com.example.ytdown.core.domain.*
 import com.example.ytdown.core.infrastructure.NotificationHelper
+import com.example.ytdown.core.infrastructure.persistence.SongDao
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import java.io.File
@@ -26,7 +27,8 @@ constructor(
         @Assisted context: Context,
         @Assisted params: WorkerParameters,
         private val repository: DownloadRepository,
-        private val engine: DownloadEngine
+        private val engine: DownloadEngine,
+        private val songDao: SongDao
 ) : CoroutineWorker(context, params) {
 
     private val notificationHelper = NotificationHelper(context)
@@ -163,6 +165,26 @@ constructor(
                             knownAlbum = metadata.album.value.takeIf { it.isNotBlank() && !it.equals("Unknown Album", ignoreCase = true) },
                             forceEnrichment = true
                         )
+
+                        // Sincronizar artwork paths do SongEntity para o DownloadItemEntity (tabela downloads)
+                        try {
+                            val song = songDao.getByPath(tempFilePath)
+                            if (song != null) {
+                                val download = repository.find(id)
+                                if (download != null) {
+                                    repository.persist(download.copy(
+                                        albumArtPath = song.albumArtwork ?: download.albumArtPath,
+                                        artistArtPath = song.artistArtwork ?: download.artistArtPath,
+                                        title = song.title,
+                                        artist = song.artist,
+                                        album = song.album
+                                    ))
+                                }
+                                android.util.Log.d("DOWNLOAD_FLOW", "Sync artwork: ${song.artist} - ${song.title} | albumArt=${song.albumArtwork != null} artistArt=${song.artistArtwork != null}")
+                            }
+                        } catch (e: Exception) {
+                            android.util.Log.e("DOWNLOAD_FLOW", "Erro no sync de artwork: ${e.message}")
+                        }
                     } catch (e: Exception) {
                         android.util.Log.e("STORAGE_DEBUG", "⚠️ Erro no processamento de metadados: ${e.message}")
                     }

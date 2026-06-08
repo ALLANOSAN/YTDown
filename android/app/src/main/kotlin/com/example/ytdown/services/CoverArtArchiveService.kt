@@ -32,10 +32,9 @@ class CoverArtArchiveService @Inject constructor() {
 
     companion object {
         private const val BASE_URL = "https://coverartarchive.org"
-        private const val USER_AGENT = "YTDown/1.0 (Android Music Discovery; mailto:allanosan@email.com)"
+        private const val USER_AGENT = "YTDown/1.0.0 (allanosan@email.com)"
         
         // Delay obrigatório para respeitar rate limit do MusicBrainz
-        // O Cover Art Archive compartilha o mesmo rate limit
         private const val REQUEST_DELAY_MS = 1100L
         
         // Timeout configs
@@ -50,9 +49,9 @@ class CoverArtArchiveService @Inject constructor() {
      */
     suspend fun getFrontCover(releaseGroupMBID: String): String? = withContext(Dispatchers.IO) {
         try {
-            // Tenta primeiro o endpoint específico de front
+            // Busca o JSON completo do release-group
             delay(REQUEST_DELAY_MS)
-            val url = URL("$BASE_URL/release-group/$releaseGroupMBID/front")
+            val url = URL("$BASE_URL/release-group/$releaseGroupMBID")
             val connection = url.openConnection() as HttpURLConnection
             
             connection.apply {
@@ -61,41 +60,43 @@ class CoverArtArchiveService @Inject constructor() {
                 setRequestProperty("Accept", "application/json")
                 connectTimeout = CONNECT_TIMEOUT
                 readTimeout = READ_TIMEOUT
+                instanceFollowRedirects = true
             }
             
-            // Se retornar redirect (307), tenta seguir
-            if (connection.responseCode == 307 || connection.responseCode == 302) {
-                val newUrl = connection.getHeaderField("Location")
-                connection.disconnect()
-                return@withContext newUrl
-            }
-            
-            // Se não encontrou no release-group, tenta no release diretamente
             if (connection.responseCode == 404) {
                 connection.disconnect()
                 return@withContext null
             }
             
+            if (connection.responseCode != 200) {
+                connection.disconnect()
+                return@withContext null
+            }
+
             val response = connection.inputStream.bufferedReader().readText()
             connection.disconnect()
             
             val json = JSONObject(response)
-            val images = json.optJSONArray("images")
+            val images = json.optJSONArray("images") ?: return@withContext null
             
-            var result: String? = null
-            if (images != null) {
-                for (i in 0 until images.length()) {
-                    val image = images.getJSONObject(i)
-                    if (image.optBoolean("front", false)) {
-                        val thumbnails = image.optJSONObject("thumbnails")
-                        result = thumbnails?.optString("250") 
-                            ?: image.optString("image")
-                        break
-                    }
+            for (i in 0 until images.length()) {
+                val image = images.getJSONObject(i)
+                if (image.optBoolean("front", false)) {
+                    val thumbnails = image.optJSONObject("thumbnails")
+                    // Preferência: 500px (large), senão original
+                    return@withContext thumbnails?.optString("500") 
+                        ?: image.optString("image")
                 }
             }
             
-            result
+            // Fallback: primeira imagem se não houver 'front' explícito
+            if (images.length() > 0) {
+                val first = images.getJSONObject(0)
+                return@withContext first.optJSONObject("thumbnails")?.optString("500") 
+                    ?: first.optString("image")
+            }
+            
+            null
         } catch (e: Exception) {
             null
         }
@@ -222,14 +223,15 @@ class CoverArtArchiveService @Inject constructor() {
 
     /**
      * Baixa a capa do álbum em bytes.
-     * @param releaseMBID MBID do release
+     * @param releaseGroupMBID MBID do release group
+     * @param releaseMBID MBID do release (opcional)
      * @return ByteArray da imagem ou null
      * @see <a href="https://musicbrainz.org/doc/Cover_Art_Archive/API">Cover Art Archive API</a>
      */
-    suspend fun downloadAlbumArt(releaseMBID: String): ByteArray? = withContext(Dispatchers.IO) {
+    suspend fun downloadAlbumArt(releaseGroupMBID: String, releaseMBID: String? = null): ByteArray? = withContext(Dispatchers.IO) {
         try {
             // Primeiro busca a URL da melhor capa
-            val coverUrl = getBestCover(releaseMBID) ?: return@withContext null
+            val coverUrl = getBestCover(releaseGroupMBID, releaseMBID) ?: return@withContext null
 
             // Agora faz o download da imagem
             val url = URL(coverUrl)
@@ -240,6 +242,7 @@ class CoverArtArchiveService @Inject constructor() {
                 setRequestProperty("User-Agent", USER_AGENT)
                 connectTimeout = CONNECT_TIMEOUT
                 readTimeout = READ_TIMEOUT
+                instanceFollowRedirects = true
             }
 
             if (connection.responseCode == 200) {

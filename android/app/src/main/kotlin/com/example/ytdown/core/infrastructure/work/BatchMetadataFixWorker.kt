@@ -62,13 +62,17 @@ class BatchMetadataFixWorker @AssistedInject constructor(
 
                 // 2. Cover Art Archive — capa do álbum (cache + arquivo)
                 var albumArtPath: String? = null
-                if (mbResult?.releaseId != null) {
+                if (mbResult?.releaseGroupId != null || mbResult?.releaseId != null) {
                     val cacheKey = artworkCacheManager.getCacheKey(finalArtist, finalAlbum)
                     val cached = artworkCacheManager.getCachedAlbumArt(cacheKey)
                     if (cached != null) {
                         albumArtPath = cached.absolutePath
                     } else {
-                        val bytes = coverArtService.downloadAlbumArt(mbResult.releaseId)
+                        val bytes = if (mbResult?.releaseGroupId != null) {
+                            coverArtService.downloadAlbumArt(mbResult.releaseGroupId, mbResult.releaseId)
+                        } else {
+                            coverArtService.downloadAlbumArt(mbResult?.releaseId!!)
+                        }
                         if (bytes != null) {
                             val saved = artworkCacheManager.saveToAlbumCache(cacheKey, bytes)
                             albumArtPath = saved?.absolutePath

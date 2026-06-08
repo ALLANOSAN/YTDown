@@ -35,7 +35,7 @@ class MusicBrainzService @Inject constructor() {
     private val client = OkHttpClient()
 
     companion object {
-        private const val USER_AGENT = "YTDown/1.0 (Android Music Discovery)"
+        private const val USER_AGENT = "YTDown/1.0.0 (allanosan@email.com)"
         private const val BASE = "https://musicbrainz.org/ws/2"
         private const val REQUEST_DELAY_MS = 1100L
         private const val CONNECT_TIMEOUT = 10000
@@ -45,8 +45,8 @@ class MusicBrainzService @Inject constructor() {
     suspend fun searchArtistId(name: String): String? = withContext(Dispatchers.IO) {
         try {
             delay(REQUEST_DELAY_MS)
-            val query = name.replace(" ", "+")
-            val url = "$BASE/artist/?query=$query&fmt=json"
+            val query = java.net.URLEncoder.encode(name, "UTF-8")
+            val url = "$BASE/artist/?query=artist:\"$query\"&fmt=json"
             val json = fetchJson(url) ?: return@withContext null
             val artists = json.optJSONArray("artists") ?: return@withContext null
             if (artists.length() == 0) return@withContext null
@@ -65,7 +65,7 @@ class MusicBrainzService @Inject constructor() {
         return@withContext try {
             delay(1100L) // Rate limit
             val query = "recording:\"$title\" AND artist:\"$artist\""
-            val url = "https://musicbrainz.org/ws/2/recording/?query=$query&fmt=json&inc=releases+media"
+            val url = "https://musicbrainz.org/ws/2/recording/?query=${java.net.URLEncoder.encode(query, "UTF-8")}&fmt=json&inc=artists+releases+release-groups"
 
             val request = Request.Builder()
                 .url(url)
@@ -82,47 +82,53 @@ class MusicBrainzService @Inject constructor() {
             if (recordings.length() == 0) return@withContext null
 
             val item = recordings.getJSONObject(0)
+            val recordingMbid = item.optString("id")
             val releases = item.optJSONArray("releases")
             val release = releases?.optJSONObject(0)
+            val releaseMbid = release?.optString("id")
+            val releaseGroupId = release?.optJSONObject("release-group")?.optString("id")
+            
             val artistCredit = item.optJSONArray("artist-credit")
             val artistObject = artistCredit?.optJSONObject(0)
             val artistMetadata = artistObject?.optJSONObject("artist")
+            val artistMbid = artistMetadata?.optString("id")
 
             // Extrair ano do release (first-release-date do release ou date)
             val releaseDate = release?.optString("date") ?: ""
             val year = releaseDate.takeIf { it.length >= 4 }?.substring(0, 4)
 
-            // Extrair número da faixa do medium dentro do release
-            val media = release?.optJSONArray("media")
-            val firstMedium = media?.optJSONObject(0)
-            val trackList = firstMedium?.optJSONArray("tracks")
-            // Encontrar a track que corresponde ao recording
-            val recordingMbid = item.optString("id")
+            // PASSO 2: Obter número da faixa via endpoint /release (conforme solicitado pelo usuário)
             var trackNumber: String? = null
-            if (trackList != null) {
-                for (i in 0 until trackList.length()) {
-                    val track = trackList.optJSONObject(i) ?: continue
-                    val trackRecording = track.optJSONObject("recording")
-                    if (trackRecording?.optString("id") == recordingMbid) {
-                        trackNumber = track.optInt("number", 0).toString().takeIf { it != "0" }
-                        break
+            var discNumber: String? = null
+            
+            if (releaseMbid != null) {
+                delay(REQUEST_DELAY_MS)
+                val releaseUrl = "$BASE/release/$releaseMbid?inc=recordings+media&fmt=json"
+                val releaseJson = fetchJson(releaseUrl)
+                val media = releaseJson?.optJSONArray("media")
+                if (media != null) {
+                    outer@for (m in 0 until media.length()) {
+                        val medium = media.getJSONObject(m)
+                        val tracks = medium.optJSONArray("tracks") ?: continue
+                        for (t in 0 until tracks.length()) {
+                            val track = tracks.getJSONObject(t)
+                            if (track.optJSONObject("recording")?.optString("id") == recordingMbid) {
+                                trackNumber = track.optString("number")
+                                discNumber = medium.optInt("position", 1).toString().takeIf { it != "1" }
+                                break@outer
+                            }
+                        }
                     }
-                }
-                // Fallback: usar position do primeiro track se não encontrou pelo MBID
-                if (trackNumber == null && trackList.length() > 0) {
-                    trackNumber = trackList.optJSONObject(0)?.optInt("number", 0)?.toString()?.takeIf { it != "0" }
                 }
             }
 
-            // Extrair número do disco (position do medium)
-            val discNumber = firstMedium?.optInt("position", 1)?.toString()?.takeIf { it != "1" }
-
             MusicBrainzRecording(
                 title = item.optString("title"),
-                artist = artistObject?.optString("name") ?: artist,
+                artist = artistMetadata?.optString("name") ?: artistObject?.optString("name") ?: artist,
                 album = release?.optString("title") ?: "",
-                releaseId = release?.optString("id"),
-                artistId = artistMetadata?.optString("id"),
+                releaseId = releaseMbid,
+                releaseGroupId = releaseGroupId,
+                artistId = artistMbid,
                 year = year,
                 trackNumber = trackNumber,
                 discNumber = discNumber

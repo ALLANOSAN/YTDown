@@ -66,14 +66,19 @@ class ArtworkEnricher @Inject constructor(
                 var artistArtPath: String? = null
 
                 // 2. Capa do álbum → arquivo + cache
+                val releaseGroupId = mbResult?.releaseGroupId
                 val releaseId = mbResult?.releaseId
-                if (releaseId != null) {
+                if (releaseGroupId != null || releaseId != null) {
                     val albumCacheKey = artworkCacheManager.getCacheKey(artist, album.ifBlank { "YTDown" })
                     val cached = artworkCacheManager.getCachedAlbumArt(albumCacheKey)
                     if (cached != null) {
                         albumArtPath = cached.absolutePath
                     } else {
-                        val bytes = coverArtArchiveService.downloadAlbumArt(releaseId)
+                        val bytes = if (releaseGroupId != null) {
+                            coverArtArchiveService.downloadAlbumArt(releaseGroupId, releaseId)
+                        } else {
+                            coverArtArchiveService.downloadAlbumArt(releaseId!!)
+                        }
                         if (bytes != null) {
                             val saved = artworkCacheManager.saveToAlbumCache(albumCacheKey, bytes)
                             albumArtPath = saved?.absolutePath

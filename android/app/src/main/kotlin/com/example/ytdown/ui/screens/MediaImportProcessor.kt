@@ -84,14 +84,19 @@ class MediaImportProcessor @Inject constructor(
 
             // PASSO 3 — COVER ART ARCHIVE (Album Art)
             var albumArtPath: String? = null
-            if (mbResult?.releaseId != null) {
+            if (mbResult?.releaseGroupId != null || mbResult?.releaseId != null) {
                 val albumCacheKey = artworkCacheManager.getCacheKey(finalArtist, finalAlbum)
                 val cachedFile = artworkCacheManager.getCachedAlbumArt(albumCacheKey)
                 
                 if (cachedFile != null) {
                     albumArtPath = cachedFile.absolutePath
                 } else {
-                    val bytes = coverArtService.downloadAlbumArt(mbResult.releaseId)
+                    val bytes = if (mbResult?.releaseGroupId != null) {
+                        coverArtService.downloadAlbumArt(mbResult.releaseGroupId, mbResult.releaseId)
+                    } else {
+                        coverArtService.downloadAlbumArt(mbResult?.releaseId!!)
+                    }
+                    
                     if (bytes != null) {
                         val savedFile = artworkCacheManager.saveToAlbumCache(albumCacheKey, bytes)
                         albumArtPath = savedFile?.absolutePath

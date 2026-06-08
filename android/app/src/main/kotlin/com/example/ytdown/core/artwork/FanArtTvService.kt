@@ -40,14 +40,21 @@ class FanArtTvService @Inject constructor() {
                 ?: return@withContext null
 
             val json = JSONObject(body)
-
             val artists = json.optJSONArray("artistthumb")
 
             if (artists != null && artists.length() > 0) {
+                val list = mutableListOf<JSONObject>()
+                for (i in 0 until artists.length()) {
+                    list.add(artists.getJSONObject(i))
+                }
+                
+                // Ordenar por likes decrescente e pegar o primeiro
+                val best = list.sortedByDescending { 
+                    val likesStr = it.optString("likes", "0")
+                    likesStr.toIntOrNull() ?: 0
+                }.firstOrNull()
 
-                val imageObject = artists.getJSONObject(0)
-
-                imageObject.optString("url")
+                best?.optString("url")
             } else {
                 null
             }

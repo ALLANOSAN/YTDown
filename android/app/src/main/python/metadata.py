@@ -275,6 +275,43 @@ def embed_album_art(audio_path, cover_path):
         return json.dumps({"success": False, "error": str(e)})
 
 
+def extract_embedded_artwork(audio_path, output_path):
+    """
+    Extrai a capa embutida de um arquivo (MP3, M4A ou FLAC) e salva em output_path.
+    Retorna JSON {success: True} se extraído com sucesso.
+    """
+    try:
+        import mutagen
+        if audio_path.lower().endswith(".mp3"):
+            from mutagen.id3 import ID3
+            tags = ID3(audio_path)
+            apic = tags.getall("APIC")
+            if not apic:
+                return json.dumps({"success": False, "error": "No APIC frame"})
+            data = apic[0].data
+        elif audio_path.lower().endswith((".m4a", ".mp4")):
+            from mutagen.mp4 import MP4
+            audio = MP4(audio_path)
+            covr = audio.get("covr")
+            if not covr:
+                return json.dumps({"success": False, "error": "No covr tag"})
+            data = covr[0]
+        elif audio_path.lower().endswith(".flac"):
+            from mutagen.flac import FLAC
+            audio = FLAC(audio_path)
+            if not audio.pictures:
+                return json.dumps({"success": False, "error": "No pictures"})
+            data = audio.pictures[0].data
+        else:
+            return json.dumps({"success": False, "error": "Unsupported format"})
+
+        with open(output_path, "wb") as f:
+            f.write(data)
+        return json.dumps({"success": True})
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)})
+
+
 def read_file_metadata(filepath):
     """
     Lê metadados existentes de um arquivo de áudio.

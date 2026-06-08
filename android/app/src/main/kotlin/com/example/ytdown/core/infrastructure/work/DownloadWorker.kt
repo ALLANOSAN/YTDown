@@ -156,7 +156,7 @@ constructor(
                             applicationContext, 
                             com.example.ytdown.core.infrastructure.di.ImportProcessorEntryPoint::class.java
                         ).mediaImportProcessor()
-                        importProcessor.process(tempFilePath) 
+                        importProcessor.process(tempFilePath, forceEnrichment = true) 
                     } catch (e: Exception) {
                         android.util.Log.e("STORAGE_DEBUG", "⚠️ Erro no processamento de metadados: ${e.message}")
                     }

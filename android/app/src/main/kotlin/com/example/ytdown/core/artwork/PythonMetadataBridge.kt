@@ -77,6 +77,18 @@ class PythonMetadataBridge @Inject constructor() {
     }
 
     /**
+     * Extrai a capa embutida de um arquivo de áudio para o cache.
+     */
+    suspend fun extractEmbeddedArtwork(audioPath: String, outputPath: String): Boolean = withContext(Dispatchers.IO) {
+        val py = Python.getInstance()
+        val module = py.getModule("metadata")
+        val result = module.callAttr("extract_embedded_artwork", audioPath, outputPath)
+        
+        val json = JSONObject(result.toString())
+        json.optBoolean("success", false)
+    }
+
+    /**
      * Extração inteligente de metadata via nome de arquivo como fallback.
      */
     fun extractMetadataFromFilename(filename: String): Map<String, String> {
@@ -110,7 +122,8 @@ class PythonMetadataBridge @Inject constructor() {
                 "album" to json.optString("album", "").ifBlank { null },
                 "track_number" to json.optString("track_number", "").ifBlank { null },
                 "disc_number" to json.optString("disc_number", "").ifBlank { null },
-                "year" to json.optString("year", "").ifBlank { null }
+                "year" to json.optString("year", "").ifBlank { null },
+                "has_artwork" to json.optBoolean("has_artwork", false).toString()
             )
         } catch (e: Exception) {
             mapOf(

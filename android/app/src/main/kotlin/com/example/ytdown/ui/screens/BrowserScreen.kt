@@ -20,11 +20,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.activity.compose.BackHandler
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.ytdown.core.domain.DownloadType
@@ -45,9 +49,20 @@ fun BrowserScreen(
     val browserState by browserProvider.state.collectAsStateWithLifecycle()
     val inputState by viewModel.inputState.collectAsStateWithLifecycle()
     var urlText by rememberSaveable { mutableStateOf(browserState.currentUrl) }
+    var textFieldValue by rememberSaveable(stateSaver = TextFieldValue.Saver) {
+        mutableStateOf(TextFieldValue(browserState.currentUrl))
+    }
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
+    var canGoBack by remember { mutableStateOf(false) }
 
-    LaunchedEffect(browserState.currentUrl) { urlText = browserState.currentUrl }
+    LaunchedEffect(browserState.currentUrl) {
+        urlText = browserState.currentUrl
+        textFieldValue = TextFieldValue(browserState.currentUrl)
+    }
+
+    BackHandler(enabled = canGoBack) {
+        webViewRef?.goBack()
+    }
 
     Scaffold(
             topBar = {
@@ -128,9 +143,18 @@ fun BrowserScreen(
                         verticalAlignment = Alignment.CenterVertically
                 ) {
                     OutlinedTextField(
-                            value = urlText,
-                            onValueChange = { urlText = it },
-                            modifier = Modifier.weight(1f),
+                            value = textFieldValue,
+                            onValueChange = { tv ->
+                                textFieldValue = tv
+                                urlText = tv.text
+                            },
+                            modifier = Modifier.weight(1f).onFocusChanged { state ->
+                                if (state.isFocused) {
+                                    textFieldValue = textFieldValue.copy(
+                                        selection = TextRange(0, textFieldValue.text.length)
+                                    )
+                                }
+                            },
                             placeholder = {
                                 Text("Pesquisar ou digitar URL", color = TextSecondary)
                             },
@@ -210,6 +234,7 @@ fun BrowserScreen(
                                                     url: String?
                                             ) {
                                                 browserProvider.setLoading(false)
+                                                canGoBack = view?.canGoBack() ?: false
                                                 browserProvider.setUrl(
                                                         url ?: browserState.currentUrl
                                                 )
@@ -229,6 +254,7 @@ fun BrowserScreen(
                                                 super.doUpdateVisitedHistory(view, url, isReload)
                                                 if (!isReload && url != null) {
                                                     browserProvider.setUrl(url)
+                                                    canGoBack = view?.canGoBack() ?: false
                                                 }
                                             }
                                         }

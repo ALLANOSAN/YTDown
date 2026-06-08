@@ -211,10 +211,13 @@ class SystemViewModel @Inject constructor(
     fun repairAllMetadata() {
         viewModelScope.launch {
             _state.update { it.copy(isRepairing = true) }
-            metadataRepairer.repairAll { progress, message ->
+            val (repaired, failed, skipped) = metadataRepairer.repairAll { progress, message ->
                 _state.update { it.copy(repairProgress = progress, lastMessage = message) }
             }
-            _state.update { it.copy(isRepairing = false, lastMessage = "Reparo concluído") }
+            _state.update { it.copy(
+                isRepairing = false,
+                lastMessage = "Reparo concluído: $repaired corrigidos, $skipped pulados, $failed falhas"
+            ) }
         }
     }
 

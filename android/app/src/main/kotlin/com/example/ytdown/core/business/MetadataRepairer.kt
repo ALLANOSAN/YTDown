@@ -15,12 +15,13 @@ class MetadataRepairer @Inject constructor(
 ) {
     suspend fun repairAll(
         onProgress: (Float, String) -> Unit
-    ): Pair<Int, Int> {
+    ): Triple<Int, Int, Int> {
         val items = databaseService.getLibraryAudios()
-        if (items.isEmpty()) return 0 to 0
+        if (items.isEmpty()) return Triple(0, 0, 0)
 
         var repaired = 0
         var failed = 0
+        var skipped = 0
         var processed = 0
 
         for (item in items) {
@@ -29,6 +30,22 @@ class MetadataRepairer @Inject constructor(
 
             if (item.outputPath.isBlank() || !File(item.outputPath).exists()) {
                 failed++
+                continue
+            }
+
+            // Pular arquivos que ja tem tags completas
+            val hasTitle = !item.title.isNullOrBlank() &&
+                !item.title.equals("Unknown", ignoreCase = true) &&
+                !item.title.equals("Desconhecido", ignoreCase = true)
+            val hasArtist = !item.artist.isNullOrBlank() &&
+                !item.artist.equals("Unknown", ignoreCase = true) &&
+                !item.artist.equals("Desconhecido", ignoreCase = true)
+            val hasAlbum = !item.album.isNullOrBlank() &&
+                !item.album.equals("Unknown Album", ignoreCase = true) &&
+                !item.album.equals("Álbum Desconhecido", ignoreCase = true)
+            if (hasTitle && hasArtist && hasAlbum) {
+                android.util.Log.d("MetadataRepairer", "Pulando ${item.title} — ja tem tags completas")
+                skipped++
                 continue
             }
 
@@ -51,6 +68,6 @@ class MetadataRepairer @Inject constructor(
 
             if (result.isSuccess()) repaired++ else failed++
         }
-        return repaired to failed
+        return Triple(repaired, failed, skipped)
     }
 }

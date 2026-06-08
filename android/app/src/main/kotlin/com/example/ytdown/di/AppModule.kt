@@ -157,6 +157,11 @@ object AppModule {
 
     @Provides
     @Singleton
+    fun provideArtworkRotationController(): com.example.ytdown.core.artwork.ArtworkRotationController =
+            com.example.ytdown.core.artwork.ArtworkRotationController()
+
+    @Provides
+    @Singleton
     fun provideMetalRepository(
             database: MetalDatabase,
             musicBrainzService: MusicBrainzService,

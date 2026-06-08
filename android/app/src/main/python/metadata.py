@@ -21,7 +21,7 @@ def _import_mutagen_submodule(name):
 
 def _force_metadata_with_mutagen(
     filepath, title, artist, album, thumbnail_url=None, lyrics=None,
-    year=None, track_number=None
+    year=None, track_number=None, disc_number=None
 ):
     """
     Força o write de metadata com mutagen, mesmo se já existir.
@@ -29,27 +29,27 @@ def _force_metadata_with_mutagen(
     """
     if filepath.lower().endswith(".mp3"):
         return _write_mp3_id3_tags(
-            filepath, title, artist, album, thumbnail_url, lyrics, year, track_number
+            filepath, title, artist, album, thumbnail_url, lyrics, year, track_number, disc_number
         )
     elif filepath.lower().endswith((".m4a", ".mp4")):
         return _write_mp4_m4a_tags(
-            filepath, title, artist, album, thumbnail_url, lyrics, year, track_number
+            filepath, title, artist, album, thumbnail_url, lyrics, year, track_number, disc_number
         )
     return json.dumps({"success": False, "error": "Formato não suportado"})
 
 
 def rewrite_file_metadata(
     filepath, title=None, artist=None, album=None, artwork_url=None, lyrics=None,
-    year=None, track_number=None
+    year=None, track_number=None, disc_number=None
 ):
     try:
         if filepath.lower().endswith(".mp3"):
             return _write_mp3_id3_tags(
-                filepath, title, artist, album, artwork_url, lyrics, year, track_number
+                filepath, title, artist, album, artwork_url, lyrics, year, track_number, disc_number
             )
         elif filepath.lower().endswith((".m4a", ".mp4")):
             return _write_mp4_m4a_tags(
-                filepath, title, artist, album, artwork_url, lyrics, year, track_number
+                filepath, title, artist, album, artwork_url, lyrics, year, track_number, disc_number
             )
         return json.dumps({"success": False, "error": "Formato não suportado"})
     except Exception as e:
@@ -58,7 +58,7 @@ def rewrite_file_metadata(
 
 def _write_mp3_id3_tags(
     filepath, title, artist, album, thumbnail_url=None, lyrics=None,
-    year=None, track_number=None
+    year=None, track_number=None, disc_number=None
 ):
     mutagen_id3 = _import_mutagen_submodule("mutagen.id3")
     APIC = mutagen_id3.APIC
@@ -71,6 +71,7 @@ def _write_mp3_id3_tags(
     TPE1 = mutagen_id3.TPE1
     TPE2 = mutagen_id3.TPE2
     TRCK = mutagen_id3.TRCK
+    TPOS = mutagen_id3.TPOS
     USLT = mutagen_id3.USLT
 
     has_existing_tags = False
@@ -95,6 +96,9 @@ def _write_mp3_id3_tags(
     if track_number:
         tags.add(TRCK(encoding=3, text=str(track_number)))
 
+    if disc_number:
+        tags.add(TPOS(encoding=3, text=str(disc_number)))
+
     if lyrics:
         tags.add(USLT(encoding=3, lang="por", desc="Lyrics", text=str(lyrics)))
 
@@ -111,6 +115,62 @@ def _write_mp3_id3_tags(
         )
 
     tags.save(filepath, v2_version=3)
+    return json.dumps({"success": True})
+
+
+def _write_mp4_m4a_tags(
+    filepath, title, artist, album, thumbnail_url=None, lyrics=None,
+    year=None, track_number=None, disc_number=None
+):
+    """
+    Escreve metadados em arquivos M4A/MP4 usando mutagen.mp4.
+    Tags MP4: ©nam (title), ©ART (artist), ©alb (album), ©day (year),
+              trkn (track number), disk (disc number), ©lyr (lyrics), covr (cover)
+    """
+    mutagen_mp4 = _import_mutagen_submodule("mutagen.mp4")
+    MP4 = mutagen_mp4.MP4
+    MP4Cover = mutagen_mp4.MP4Cover
+
+    try:
+        audio = MP4(filepath)
+    except Exception:
+        audio = MP4()
+
+    # Limpa tags anteriores
+    for key in ("©nam", "©ART", "©alb", "©day", "trkn", "disk", "©lyr", "covr", "aART", "©gen"):
+        try:
+            del audio[key]
+        except KeyError:
+            pass
+
+    audio["©nam"] = [str(title)]
+    audio["©ART"] = [str(artist)]
+    audio["©alb"] = [str(album)]
+    audio["aART"] = [str(artist)]
+
+    if year:
+        audio["©day"] = [str(year)]
+
+    if track_number:
+        # trkn é uma tupla (track_number, total_tracks)
+        audio["trkn"] = [(int(track_number), 0)]
+
+    if disc_number:
+        # disk é uma tupla (disc_number, total_discs)
+        audio["disk"] = [(int(disc_number), 0)]
+
+    if lyrics:
+        audio["©lyr"] = [str(lyrics)]
+
+    # Embed thumbnail/capa se fornecida
+    if thumbnail_url:
+        image_data = _download_thumbnail_bytes(thumbnail_url)
+        if image_data:
+            mime = _guess_image_mime(thumbnail_url, image_data)
+            fmt = MP4Cover.FORMAT_JPEG if mime == "image/jpeg" else MP4Cover.FORMAT_PNG
+            audio["covr"] = [MP4Cover(image_data, imageformat=fmt)]
+
+    audio.save()
     return json.dumps({"success": True})
 
 
@@ -213,3 +273,98 @@ def embed_album_art(audio_path, cover_path):
         return json.dumps({"success": True})
     except Exception as e:
         return json.dumps({"success": False, "error": str(e)})
+
+
+def read_file_metadata(filepath):
+    """
+    Lê metadados existentes de um arquivo de áudio.
+    Retorna JSON com: title, artist, album, track_number, disc_number, year, has_artwork
+    Se o arquivo não existir ou não tiver tags, retorna todos os campos como None.
+    """
+    try:
+        if filepath.lower().endswith(".mp3"):
+            mutagen_id3 = _import_mutagen_submodule("mutagen.id3")
+            ID3 = mutagen_id3.ID3
+            ID3NoHeaderError = mutagen_id3.ID3NoHeaderError
+            try:
+                tags = ID3(filepath)
+            except ID3NoHeaderError:
+                return json.dumps({
+                    "success": True, "title": None, "artist": None, "album": None,
+                    "track_number": None, "disc_number": None, "year": None, "has_artwork": False
+                })
+            title = str(tags.get("TIT2", ""))
+            artist = str(tags.get("TPE1", ""))
+            album = str(tags.get("TALB", ""))
+            track = str(tags.get("TRCK", ""))
+            disc = str(tags.get("TPOS", ""))
+            year = str(tags.get("TDRC", ""))
+            has_artwork = "APIC" in tags
+            return json.dumps({
+                "success": True,
+                "title": title or None, "artist": artist or None, "album": album or None,
+                "track_number": track or None, "disc_number": disc or None, "year": year or None,
+                "has_artwork": has_artwork
+            })
+        elif filepath.lower().endswith((".m4a", ".mp4")):
+            mutagen_mp4 = _import_mutagen_submodule("mutagen.mp4")
+            MP4 = mutagen_mp4.MP4
+            try:
+                audio = MP4(filepath)
+            except Exception:
+                return json.dumps({
+                    "success": True, "title": None, "artist": None, "album": None,
+                    "track_number": None, "disc_number": None, "year": None, "has_artwork": False
+                })
+            title = audio.get("©nam", [None])[0]
+            artist = audio.get("©ART", [None])[0]
+            album = audio.get("©alb", [None])[0]
+            track = audio.get("trkn", [None])[0]
+            disc = audio.get("disk", [None])[0]
+            year = audio.get("©day", [None])[0]
+            has_artwork = "covr" in audio
+            track_str = str(track[0]) if isinstance(track, tuple) and track[0] else None
+            disc_str = str(disc[0]) if isinstance(disc, tuple) and disc[0] else None
+            return json.dumps({
+                "success": True,
+                "title": str(title) if title else None,
+                "artist": str(artist) if artist else None,
+                "album": str(album) if album else None,
+                "track_number": track_str,
+                "disc_number": disc_str,
+                "year": str(year) if year else None,
+                "has_artwork": has_artwork
+            })
+        elif filepath.lower().endswith(".flac"):
+            mutagen_flac = _import_mutagen_submodule("mutagen.flac")
+            FLAC = mutagen_flac.FLAC
+            try:
+                audio = FLAC(filepath)
+            except Exception:
+                return json.dumps({
+                    "success": True, "title": None, "artist": None, "album": None,
+                    "track_number": None, "disc_number": None, "year": None, "has_artwork": False
+                })
+            title = audio.get("title", [None])[0]
+            artist = audio.get("artist", [None])[0]
+            album = audio.get("album", [None])[0]
+            track = audio.get("tracknumber", [None])[0]
+            disc = audio.get("discnumber", [None])[0]
+            year = audio.get("date", [None])[0]
+            has_artwork = len(audio.pictures) > 0
+            return json.dumps({
+                "success": True,
+                "title": str(title) if title else None,
+                "artist": str(artist) if artist else None,
+                "album": str(album) if album else None,
+                "track_number": str(track) if track else None,
+                "disc_number": str(disc) if disc else None,
+                "year": str(year) if year else None,
+                "has_artwork": has_artwork
+            })
+        return json.dumps({
+            "success": True, "title": None, "artist": None, "album": None,
+            "track_number": None, "disc_number": None, "year": None, "has_artwork": False
+        })
+    except Exception as e:
+        return json.dumps(_failure_payload(str(e), stage="read_file_metadata"))

@@ -8,6 +8,7 @@ import com.example.ytdown.core.infrastructure.persistence.DownloadDao
 import com.example.ytdown.core.infrastructure.persistence.SongDao
 import com.example.ytdown.core.domain.DownloadItemEntity
 import com.example.ytdown.core.media.MediaImportProcessor
+import com.example.ytdown.core.artwork.PythonMetadataBridge
 import com.example.ytdown.utils.MetadataUtils
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
@@ -29,6 +30,7 @@ class FileSystemScannerService @Inject constructor(
     private val folderService: MusicFolderService,
     private val artworkManager: ArtworkManager,
     private val importProcessor: MediaImportProcessor,
+    private val pythonMetadataBridge: PythonMetadataBridge,
     @param:ApplicationContext private val context: Context
 ) {
     private val audioExtensions = setOf("mp3", "m4a", "aac", "ogg", "opus", "wav", "flac")
@@ -133,6 +135,12 @@ class FileSystemScannerService @Inject constructor(
     private suspend fun registerOrphan(path: String, nameWithoutExtension: String, extension: String, lastModified: Long) {
         val title = MetadataUtils.normalizeMetadataText(nameWithoutExtension)
 
+        // 0. Tentar ler metadados existentes do arquivo
+        val existingMeta = pythonMetadataBridge.readExistingMetadata(path)
+        val hasExistingMeta = !existingMeta["title"].isNullOrBlank() &&
+                               !existingMeta["artist"].isNullOrBlank() &&
+                               !existingMeta["album"].isNullOrBlank()
+
         // 1. Verificação de duplicata: Busca por arquivo com mesmo título e tamanho
         val fileSize = if (path.startsWith("content://")) {
             -1L
@@ -151,7 +159,7 @@ class FileSystemScannerService @Inject constructor(
         val item = DownloadItemEntity(
             id = "orphan_${UUID.randomUUID().toString().take(8)}",
             url = "",
-            title = MetadataUtils.toTitleCase(title),
+            title = if (hasExistingMeta) existingMeta["title"]!! else MetadataUtils.toTitleCase(title),
             type = 0,
             format = extension,
             quality = "128",
@@ -159,8 +167,8 @@ class FileSystemScannerService @Inject constructor(
             status = "completed",
             progress = 1.0,
             createdAt = lastModified,
-            artist = MetadataUtils.guessArtistFromTitle(title) ?: "Desconhecido",
-            album = "YTDown"
+            artist = if (hasExistingMeta) existingMeta["artist"]!! else (MetadataUtils.guessArtistFromTitle(title) ?: "Desconhecido"),
+            album = if (hasExistingMeta) existingMeta["album"]!! else "YTDown"
         )
         downloadDao.upsert(item)
 

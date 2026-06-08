@@ -114,6 +114,9 @@ class MusicBrainzService @Inject constructor() {
                 }
             }
 
+            // Extrair número do disco (position do medium)
+            val discNumber = firstMedium?.optInt("position", 1)?.toString()?.takeIf { it != "1" }
+
             MusicBrainzRecording(
                 title = item.optString("title"),
                 artist = artistObject?.optString("name") ?: artist,
@@ -121,7 +124,8 @@ class MusicBrainzService @Inject constructor() {
                 releaseId = release?.optString("id"),
                 artistId = artistMetadata?.optString("id"),
                 year = year,
-                trackNumber = trackNumber
+                trackNumber = trackNumber,
+                discNumber = discNumber
             )
         } catch (e: Exception) {
             e.printStackTrace()

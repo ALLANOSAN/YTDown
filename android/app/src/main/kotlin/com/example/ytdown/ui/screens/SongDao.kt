@@ -21,4 +21,7 @@ interface SongDao {
 
     @Query("DELETE FROM songs")
     suspend fun clearLibrary()
+
+    @Query("DELETE FROM songs WHERE path LIKE :pathPrefix || '%'")
+    suspend fun deleteByPathPrefix(pathPrefix: String)
 }

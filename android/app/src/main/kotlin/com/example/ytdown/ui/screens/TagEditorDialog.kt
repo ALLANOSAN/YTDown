@@ -74,7 +74,6 @@ fun TagEditorDialog(
 
 @Composable
 private fun MetadataSection(viewModel: DownloadViewModel, state: com.example.ytdown.ui.DownloadInputState) {
-    if (state.selectedDownloadType != DownloadType.AUDIO) return
     MetadataFields(viewModel, state)
 }
 

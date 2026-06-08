@@ -5,8 +5,8 @@ import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.example.ytdown.core.artwork.ArtworkCacheManager
-import com.example.ytdown.core.artwork.CoverArtArchiveService
-import com.example.ytdown.core.metadata.PythonMetadataBridge
+import com.example.ytdown.services.CoverArtArchiveService
+import com.example.ytdown.core.artwork.PythonMetadataBridge
 import com.example.ytdown.services.DatabaseService
 import com.example.ytdown.services.MusicBrainzService
 import dagger.assisted.Assisted

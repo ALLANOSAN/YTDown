@@ -109,22 +109,11 @@ fun BrowserScreen(
     ) { padding ->
         val context = LocalContext.current
         if (inputState.showDialog) {
-            DownloadConfigDialog(
-                    state = inputState,
-                    onDismiss = viewModel::onDismissDialog,
-                    onStart = {
-                        val publicFolder = Environment.DIRECTORY_DOWNLOADS
-                        val folder =
-                                context.getExternalFilesDir(publicFolder)?.let {
-                                    File(it, "YTDown")
-                                }
-                                        ?: File(context.filesDir, "YTDown")
-                        if (!folder.exists()) folder.mkdirs()
-                        viewModel.startDownloadFlow(
-                                com.example.ytdown.core.domain.FilePath(folder.absolutePath)
-                        )
-                    },
-                    onTypeSelected = viewModel::onDownloadTypeSelected
+            TagEditorDialog(
+                    viewModel = viewModel,
+                    onConfirm = { folder ->
+                        viewModel.startDownloadFlow(folder)
+                    }
             )
         }
 

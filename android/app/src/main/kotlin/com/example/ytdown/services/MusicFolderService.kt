@@ -6,16 +6,24 @@ import android.content.SharedPreferences
 import android.net.Uri
 import android.provider.DocumentsContract
 import android.util.Log
+import com.example.ytdown.core.infrastructure.persistence.DownloadDao
+import com.example.ytdown.core.infrastructure.persistence.SongDao
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
 class MusicFolderService @Inject constructor(
-    @param:ApplicationContext private val context: Context
+    @param:ApplicationContext private val context: Context,
+    private val downloadDao: DownloadDao,
+    private val songDao: SongDao
 ) {
     private val prefs: SharedPreferences = context.getSharedPreferences("music_folders_prefs", Context.MODE_PRIVATE)
     private val KEY_FOLDERS = "selected_music_folders"
@@ -110,6 +118,52 @@ class MusicFolderService @Inject constructor(
             prefs.edit().putStringSet(KEY_FOLDERS, current).apply()
             _folders.value = current
             Log.d(TAG, "Pasta removida: $path, total: ${current.size}")
+
+            // Limpar itens do banco que estavam nessa pasta (sem apagar arquivos físicos)
+            CoroutineScope(Dispatchers.IO).launch {
+                try {
+                    val normalizedPath = path.trimEnd('/') + "/"
+                    val allDownloads = downloadDao.getAllDownloadsSync()
+
+                    val toRemove = allDownloads.filter { item ->
+                        item.status == "completed" &&
+                        item.outputPath.isNotBlank() &&
+                        item.url.isNullOrBlank() && // só órfãos (pastas adicionadas), não downloads do app
+                        outputPathMatchesFolder(item.outputPath, normalizedPath)
+                    }
+
+                    toRemove.forEach { item ->
+                        downloadDao.delete(item)
+                    }
+
+                    // Remover também do SongDao
+                    songDao.deleteByPathPrefix(normalizedPath)
+
+                    Log.d(TAG, "🧹 Removidos ${toRemove.size} itens da biblioteca (pasta: $path)")
+                } catch (e: Exception) {
+                    Log.e(TAG, "Erro ao limpar itens da pasta $path: ${e.message}")
+                }
+            }
+        }
+    }
+
+    /**
+     * Verifica se o outputPath de um item pertence à pasta sendo removida.
+     * Suporta tanto File API quanto SAF (content://).
+     */
+    private fun outputPathMatchesFolder(outputPath: String, folderPrefix: String): Boolean {
+        return if (folderPrefix.startsWith("content://")) {
+            // SAF: comparar tree ID
+            try {
+                val folderTree = Uri.parse(folderPrefix.trimEnd('/')).path?.substringAfter("/tree/")?.substringBefore("/")
+                val fileTree = Uri.parse(outputPath).path?.substringAfter("/tree/")?.substringBefore("/")
+                folderTree != null && fileTree != null && folderTree == fileTree
+            } catch (e: Exception) {
+                false
+            }
+        } else {
+            // File API: prefix match com /
+            outputPath.startsWith(folderPrefix)
         }
     }
 }

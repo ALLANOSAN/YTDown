@@ -1,6 +1,5 @@
 package com.example.ytdown.core.artwork
 
-import com.example.ytdown.ui.PlaybackViewModel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -8,17 +7,20 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import javax.inject.Inject
 import javax.inject.Singleton
+import com.example.ytdown.ui.PlaybackUiState
 
 @Singleton
 class ArtworkStateCollector @Inject constructor(
-    private val playbackViewModel: PlaybackViewModel,
     private val rotationController: ArtworkRotationController,
     private val cacheManager: ArtworkCacheManager
 ) {
 
-    fun getArtworkState(scope: CoroutineScope): StateFlow<ArtworkState> {
+    fun getArtworkState(
+        scope: CoroutineScope,
+        playbackUiState: StateFlow<PlaybackUiState>
+    ): StateFlow<ArtworkState> {
         return combine(
-            playbackViewModel.playbackUiState,
+            playbackUiState,
             rotationController.artworkMode
         ) { uiState, mode ->
             val track = uiState.currentTrack

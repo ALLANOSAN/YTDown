@@ -10,7 +10,7 @@ import com.example.ytdown.core.infrastructure.persistence.SongDao
 import com.example.ytdown.core.metadata.MetadataExtractor
 import com.example.ytdown.core.artwork.FanArtTvService
 import com.example.ytdown.core.artwork.ArtworkCacheManager
-import com.example.ytdown.core.metadata.PythonMetadataBridge
+import com.example.ytdown.core.artwork.PythonMetadataBridge
 import com.example.ytdown.core.metadata.model.MusicBrainzRecording
 import com.example.ytdown.services.*
 import kotlinx.coroutines.Dispatchers
@@ -39,6 +39,30 @@ class MediaImportProcessor @Inject constructor(
         withContext(Dispatchers.IO) {
             val file = File(audioPath)
             if (!file.exists()) return@withContext
+
+            // PASSO 0 — VERIFICAR SE O ARQUIVO JÁ TEM METADADOS
+            val existingMeta = pythonMetadataBridge.readExistingMetadata(audioPath)
+            val hasTitle = !existingMeta["title"].isNullOrBlank()
+            val hasArtist = !existingMeta["artist"].isNullOrBlank()
+            val hasAlbum = !existingMeta["album"].isNullOrBlank()
+
+            if (hasTitle && hasArtist && hasAlbum) {
+                // Já tem metadados completos — só registrar no banco, PULAR enriquecimento
+                android.util.Log.d("ImportProcessor", "⏭️ Arquivo já tem metadados: ${existingMeta["title"]} — pulando enriquecimento")
+                val duration = metadataExtractor.extract(audioPath).duration
+                val entity = SongEntity(
+                    path = audioPath,
+                    title = existingMeta["title"]!!,
+                    artist = existingMeta["artist"]!!,
+                    album = existingMeta["album"]!!,
+                    duration = duration,
+                    albumArtwork = null,
+                    artistArtwork = null,
+                    addedAt = System.currentTimeMillis()
+                )
+                songDao.insert(entity)
+                return@withContext
+            }
 
             // PASSO 1 — EXTRAIR METADADOS DO NOME DO ARQUIVO OU TÍTULO ORIGINAL
             val sourceName = originalTitle ?: file.name
@@ -102,7 +126,8 @@ class MediaImportProcessor @Inject constructor(
                     album = finalAlbum,
                     year = mbResult?.year,
                     albumArt = albumArtPath,
-                    trackNumber = mbResult?.trackNumber
+                    trackNumber = mbResult?.trackNumber,
+                    discNumber = mbResult?.discNumber
                 )
             } catch (e: Exception) {
                 android.util.Log.e("ImportProcessor", "❌ Erro ao gravar metadados: ${e.message}")

@@ -101,6 +101,24 @@ fun DownloadOptionsBottomSheet(
 
                 // Campos de Metadados
                 OutlinedTextField(
+                        value = state.titleInput,
+                        onValueChange = viewModel::onTitleInputChanged,
+                        label = { Text("Título da música", color = TextSecondary) },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                        colors =
+                                OutlinedTextFieldDefaults.colors(
+                                        focusedBorderColor = YTDownPurple,
+                                        unfocusedBorderColor = Color.DarkGray,
+                                        focusedTextColor = Color.White,
+                                        unfocusedTextColor = Color.White
+                                )
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                OutlinedTextField(
                         value = state.artistInput,
                         onValueChange = viewModel::onArtistInputChanged,
                         label = { Text("Artista", color = TextSecondary) },

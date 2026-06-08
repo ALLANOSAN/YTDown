@@ -2,8 +2,9 @@ package com.example.ytdown.core.business
 
 import com.example.ytdown.core.artwork.ArtworkCacheManager
 import com.example.ytdown.core.artwork.FanArtTvService
-import com.example.ytdown.core.metadata.PythonMetadataBridge
+import com.example.ytdown.core.artwork.PythonMetadataBridge
 import com.example.ytdown.services.ArtworkManager
+import com.example.ytdown.services.CoverArtArchiveService
 import com.example.ytdown.services.DatabaseService
 import com.example.ytdown.services.MusicBrainzService
 import java.io.File
@@ -23,7 +24,8 @@ class ArtworkEnricher @Inject constructor(
     private val musicBrainzService: MusicBrainzService,
     private val fanArtTvService: FanArtTvService,
     private val artworkCacheManager: ArtworkCacheManager,
-    private val pythonMetadataBridge: PythonMetadataBridge
+    private val pythonMetadataBridge: PythonMetadataBridge,
+    private val coverArtArchiveService: CoverArtArchiveService
 ) {
     suspend fun getArtistImageFor(artist: String): String? = artworkManager.getArtistImage(artist)
     suspend fun getAlbumCoverFor(artist: String, album: String): String? = artworkManager.getAlbumCover(artist, album)
@@ -71,7 +73,7 @@ class ArtworkEnricher @Inject constructor(
                     if (cached != null) {
                         albumArtPath = cached.absolutePath
                     } else {
-                        val bytes = com.example.ytdown.core.artwork.CoverArtArchiveService().downloadAlbumArt(releaseId)
+                        val bytes = coverArtArchiveService.downloadAlbumArt(releaseId)
                         if (bytes != null) {
                             val saved = artworkCacheManager.saveToAlbumCache(albumCacheKey, bytes)
                             albumArtPath = saved?.absolutePath
@@ -104,7 +106,8 @@ class ArtworkEnricher @Inject constructor(
                         album = album.ifBlank { "Álbum Desconhecido" },
                         year = mbResult?.year,
                         albumArt = albumArtPath,
-                        trackNumber = mbResult?.trackNumber
+                        trackNumber = mbResult?.trackNumber,
+                        discNumber = mbResult?.discNumber
                     )
                 }
 

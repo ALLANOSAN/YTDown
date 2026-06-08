@@ -6,6 +6,7 @@ import com.example.ytdown.core.artwork.PythonMetadataBridge
 import com.example.ytdown.services.ArtworkManager
 import com.example.ytdown.services.CoverArtArchiveService
 import com.example.ytdown.services.DatabaseService
+import com.example.ytdown.services.LastfmService
 import com.example.ytdown.services.MusicBrainzService
 import java.io.File
 import javax.inject.Inject
@@ -25,7 +26,8 @@ class ArtworkEnricher @Inject constructor(
     private val fanArtTvService: FanArtTvService,
     private val artworkCacheManager: ArtworkCacheManager,
     private val pythonMetadataBridge: PythonMetadataBridge,
-    private val coverArtArchiveService: CoverArtArchiveService
+    private val coverArtArchiveService: CoverArtArchiveService,
+    private val lastfmService: LastfmService
 ) {
     suspend fun getArtistImageFor(artist: String): String? = artworkManager.getArtistImage(artist)
     suspend fun getAlbumCoverFor(artist: String, album: String): String? = artworkManager.getAlbumCover(artist, album)
@@ -82,6 +84,43 @@ class ArtworkEnricher @Inject constructor(
                         if (bytes != null) {
                             val saved = artworkCacheManager.saveToAlbumCache(albumCacheKey, bytes)
                             albumArtPath = saved?.absolutePath
+                        }
+                    }
+                }
+
+                // 2.5 Last.fm/iTunes/Deezer (fallback quando CAA nao tem)
+                if (albumArtPath == null && artist.isNotBlank()) {
+                    val albumCacheKey = artworkCacheManager.getCacheKey(artist, album.ifBlank { "YTDown" })
+                    val cached = artworkCacheManager.getCachedAlbumArt(albumCacheKey)
+                    if (cached != null) {
+                        albumArtPath = cached.absolutePath
+                    } else {
+                        // Tenta primeiro por album, depois por musica (fallback)
+                        var coverUrl: String? = null
+                        if (album.isNotBlank()) {
+                            coverUrl = lastfmService.getAlbumCover(artist, album)
+                        }
+                        if (coverUrl == null) {
+                            coverUrl = lastfmService.getTrackCover(artist, item.title.trim())
+                        }
+
+                        if (coverUrl != null) {
+                            try {
+                                val url = java.net.URL(coverUrl)
+                                val conn = url.openConnection() as java.net.HttpURLConnection
+                                conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14) YTDown/1.0")
+                                conn.connectTimeout = 10000
+                                conn.readTimeout = 10000
+                                conn.doInput = true
+                                conn.connect()
+                                val bytes = conn.inputStream.readBytes()
+                                if (bytes.isNotEmpty()) {
+                                    val saved = artworkCacheManager.saveToAlbumCache(albumCacheKey, bytes)
+                                    albumArtPath = saved?.absolutePath
+                                }
+                            } catch (e: Exception) {
+                                android.util.Log.e("ArtworkEnricher", "Erro ao baixar capa do Last.fm: ${e.message}")
+                            }
                         }
                     }
                 }

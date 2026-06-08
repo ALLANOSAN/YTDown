@@ -6,6 +6,8 @@ import com.google.gson.Gson
 import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import javax.inject.Inject
@@ -19,6 +21,10 @@ class LastfmService @Inject constructor(
     private val gson = Gson()
     private val cache = mutableMapOf<String, String?>()
     private val apiKey = BuildConfig.LASTFM_API_KEY
+
+    init {
+        android.util.Log.d("LastfmService", "API key loaded: ${!apiKey.isBlank()}")
+    }
 
     suspend fun clearCache() {
         cache.clear()
@@ -34,7 +40,11 @@ class LastfmService @Inject constructor(
     }
 
     suspend fun getAlbumCover(artist: String, album: String): String? {
-        if (artist.isBlank() || album.isBlank() || apiKey.isBlank()) return null
+        if (artist.isBlank() || album.isBlank() || apiKey.isBlank()) {
+            android.util.Log.w("LastfmService", "getAlbumCover skipped: artist=${!artist.isBlank()} album=${!album.isBlank()} apiKey=${!apiKey.isBlank()}")
+            return null
+        }
+        android.util.Log.d("LastfmService", "getAlbumCover called: artist=\"$artist\" album=\"$album\"")
         return resolveCache("album:$artist:$album") {
             fetchLastFmImage("album.getinfo", mapOf("artist" to artist, "album" to album))
                 ?: fetchItunesArtwork("$artist $album", entity = "album")
@@ -109,21 +119,30 @@ class LastfmService @Inject constructor(
         return results
     }
 
-    private fun fetchJson(url: String): JsonObject? {
-        return try {
-            val request = Request.Builder().url(url).build()
-            client.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) return null
-                val body = response.body?.string() ?: return null
-                JsonParser.parseString(body).asJsonObject
+    private suspend fun fetchJson(url: String): JsonObject? {
+        android.util.Log.d("LastfmService", "fetchJson: $url")
+        return withContext(Dispatchers.IO) {
+            try {
+                val request = Request.Builder().url(url).build()
+                val response = client.newCall(request).execute()
+                response.use {
+                    if (!it.isSuccessful) {
+                        android.util.Log.w("LastfmService", "fetchJson failed: HTTP ${it.code} for $url")
+                        return@withContext null
+                    }
+                    val body = it.body?.string() ?: return@withContext null
+                    android.util.Log.d("LastfmService", "fetchJson success: ${body.take(200)}...")
+                    JsonParser.parseString(body).asJsonObject
+                }
+            } catch (ex: Exception) {
+                android.util.Log.e("LastfmService", "fetchJson exception: ${ex.message}")
+                observabilityService.trackError("LastfmService", "lastfm_fetch_failure: ${ex.message}")
+                null
             }
-        } catch (ex: Exception) {
-            observabilityService.trackError("LastfmService", "lastfm_fetch_failure: ${ex.message}")
-            null
         }
     }
 
-    private fun fetchItunesArtwork(term: String, entity: String): String? {
+    private suspend fun fetchItunesArtwork(term: String, entity: String): String? {
         val query = java.net.URLEncoder.encode(term, "UTF-8")
         val url = "https://itunes.apple.com/search?term=$query&entity=$entity&limit=8"
         val json = fetchJson(url) ?: return null
@@ -131,12 +150,15 @@ class LastfmService @Inject constructor(
         for (element in results) {
             val obj = element.asJsonObject
             val artworkUrl = obj["artworkUrl100"]?.asString
-            if (!artworkUrl.isNullOrBlank()) return artworkUrl
+            if (!artworkUrl.isNullOrBlank()) {
+                // Upscale de 100x100 para 300x300 (qualidade melhor pro display)
+                return artworkUrl.replace("100x100bb", "300x300bb")
+            }
         }
         return null
     }
 
-    private fun fetchDeezerArtistImage(artist: String): String? {
+    private suspend fun fetchDeezerArtistImage(artist: String): String? {
         val query = java.net.URLEncoder.encode(artist, "UTF-8")
         val url = "https://api.deezer.com/search/artist?q=$query&limit=5"
         val json = fetchJson(url) ?: return null
@@ -144,7 +166,7 @@ class LastfmService @Inject constructor(
         return data.firstOrNull()?.asJsonObject?.get("picture_big")?.asString
     }
 
-    private fun fetchDeezerAlbumCover(artist: String, album: String): String? {
+    private suspend fun fetchDeezerAlbumCover(artist: String, album: String): String? {
         val query = java.net.URLEncoder.encode("$artist $album", "UTF-8")
         val url = "https://api.deezer.com/search/album?q=$query&limit=5"
         val json = fetchJson(url) ?: return null
@@ -152,7 +174,7 @@ class LastfmService @Inject constructor(
         return data.firstOrNull()?.asJsonObject?.get("cover_big")?.asString
     }
 
-    private fun fetchDeezerTrackCover(artist: String, title: String): String? {
+    private suspend fun fetchDeezerTrackCover(artist: String, title: String): String? {
         val query = java.net.URLEncoder.encode("$artist $title", "UTF-8")
         val url = "https://api.deezer.com/search/track?q=$query&limit=5"
         val json = fetchJson(url) ?: return null

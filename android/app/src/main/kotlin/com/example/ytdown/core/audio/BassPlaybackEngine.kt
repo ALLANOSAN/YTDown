@@ -46,8 +46,7 @@ class BassPlaybackEngine @Inject constructor(
         Log.d(TAG, "Fim da reprodução detectado no canal $channel")
         engineScope.launch {
             stop()
-            // Notificar fim para progressão da fila (via stateManager ou callback)
-            // nextTrack()
+            controller.onTrackEnded()
         }
     }
 

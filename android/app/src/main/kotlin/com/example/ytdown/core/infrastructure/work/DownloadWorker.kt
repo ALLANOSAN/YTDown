@@ -156,7 +156,13 @@ constructor(
                             applicationContext, 
                             com.example.ytdown.core.infrastructure.di.ImportProcessorEntryPoint::class.java
                         ).mediaImportProcessor()
-                        importProcessor.process(tempFilePath, forceEnrichment = true) 
+                        importProcessor.process(
+                            tempFilePath,
+                            originalTitle = title,
+                            knownArtist = metadata.artist.value.takeIf { it.isNotBlank() && !it.equals("Unknown", ignoreCase = true) && !it.equals("Desconhecido", ignoreCase = true) },
+                            knownAlbum = metadata.album.value.takeIf { it.isNotBlank() && !it.equals("Unknown Album", ignoreCase = true) },
+                            forceEnrichment = true
+                        )
                     } catch (e: Exception) {
                         android.util.Log.e("STORAGE_DEBUG", "⚠️ Erro no processamento de metadados: ${e.message}")
                     }

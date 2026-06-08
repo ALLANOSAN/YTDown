@@ -223,6 +223,32 @@ class PlaybackController @Inject constructor(
             .build()
     }
 
+    /**
+     * Chamado quando a música termina naturalmente (BASS_SYNC_END).
+     * Decide o que tocar em seguida baseado no repeatMode, SEM passar pelo MediaController
+     * (evita reentrância no adapter).
+     */
+    fun onTrackEnded() {
+        if (playlist.isEmpty()) return
+        val mode = uiState.value.repeatMode
+        Log.d(TAG, "onTrackEnded() called, repeatMode=$mode, currentIndex=$currentIndex, playlist.size=${playlist.size}")
+        when (mode) {
+            1 -> {
+                // Repeat ALL: avança para a próxima
+                currentIndex = (currentIndex + 1) % playlist.size
+                engineProvider.get().play(playlist[currentIndex])
+            }
+            2 -> {
+                // Repeat ONE: toca a mesma de novo
+                engineProvider.get().play(playlist[currentIndex])
+            }
+            else -> {
+                // Repeat OFF: não faz nada (engine já deu stop)
+                Log.d(TAG, "Repeat OFF — playback stopped at end of track")
+            }
+        }
+    }
+
     // ========== Métodos de Acesso ==========
 
     val currentTrack: DownloadItemEntity?

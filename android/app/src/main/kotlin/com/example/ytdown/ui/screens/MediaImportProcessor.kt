@@ -13,6 +13,7 @@ import com.example.ytdown.core.artwork.ArtworkCacheManager
 import com.example.ytdown.core.artwork.PythonMetadataBridge
 import com.example.ytdown.core.metadata.model.MusicBrainzRecording
 import com.example.ytdown.services.*
+import com.example.ytdown.services.LastfmService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -26,40 +27,60 @@ class MediaImportProcessor @Inject constructor(
     private val fanArtTvService: FanArtTvService,
     private val artworkCacheManager: ArtworkCacheManager,
     private val pythonMetadataBridge: PythonMetadataBridge,
-    private val songDao: SongDao
+    private val songDao: SongDao,
+    private val lastfmService: LastfmService
 ) {
     /**
-     * Processa qualquer arquivo de áudio adicionado ao app (Download ou Local)
+     * Processa qualquer arquivo de audio adicionado ao app (Download ou Local).
      *
-     * @param audioPath Caminho do arquivo físico
-     * @param originalTitle Título original (opcional), útil quando o arquivo tem nome genérico (ex: temp)
-     * @param forceEnrichment Se true, pula a verificação de metadados existentes (usado em downloads)
+     * Fluxo:
+     *   0. Se nao for download forcado, verifica se o arquivo ja tem tags completas
+     *   1. Extrai metadados basicos da fonte disponivel (parametros > tags do arquivo > filename)
+     *   2. MusicBrainz — fonte de verdade para titulo, artista, album, ano, faixa
+     *   3. Cover Art Archive — capa do album via MusicBrainz IDs
+     *   4. FanArt.tv — foto do artista via MusicBrainz ID
+     *   5. Mutagen — grava as tags no arquivo
+     *   6. Database — salva SongEntity
+     *
+     * @param audioPath Caminho do arquivo fisico
+     * @param originalTitle Titulo conhecido (do BottomSheet, do filename, etc.)
+     * @param knownArtist Artista conhecido (do BottomSheet, etc.) — evita depender do filename parser
+     * @param knownAlbum Album conhecido (do BottomSheet, etc.)
+     * @param forceEnrichment Se true, ignora tags existentes no arquivo e busca MusicBrainz
      */
     suspend fun process(
         audioPath: String,
         originalTitle: String? = null,
+        knownArtist: String? = null,
+        knownAlbum: String? = null,
         forceEnrichment: Boolean = false
     ) {
         withContext(Dispatchers.IO) {
             val file = File(audioPath)
             if (!file.exists()) return@withContext
 
-            // PASSO 0 — VERIFICAR SE O ARQUIVO JÁ TEM METADADOS COMPLETOS (Apenas para pastas locais)
-            if (!forceEnrichment) {
-                val existingMeta = pythonMetadataBridge.readExistingMetadata(audioPath)
-                val hasTitle = !existingMeta["title"].isNullOrBlank()
-                val hasArtist = !existingMeta["artist"].isNullOrBlank()
-                val hasAlbum = !existingMeta["album"].isNullOrBlank()
-                val hasArtwork = existingMeta["has_artwork"] == "true"
+            // -- PASSO 0: VERIFICAR SE O ARQUIVO JA TEM METADADOS COMPLETOS (Apenas para pastas locais) --
+            var existingMeta: Map<String, String?> = emptyMap()
+            var hasTitle = false
+            var hasArtist = false
+            var hasAlbum = false
+            var hasArtwork = false
 
-                // Definimos "completo" como tendo os 3 principais campos
+            if (!forceEnrichment) {
+                existingMeta = pythonMetadataBridge.readExistingMetadata(audioPath)
+                hasTitle = !existingMeta["title"].isNullOrBlank()
+                hasArtist = !existingMeta["artist"].isNullOrBlank()
+                hasAlbum = !existingMeta["album"].isNullOrBlank()
+                hasArtwork = existingMeta["has_artwork"] == "true"
+
+                // Se o arquivo ja tem os 3 campos + capa no cache, podemos pular tudo
                 if (hasTitle && hasArtist && hasAlbum) {
                     val artist = existingMeta["artist"]!!
                     val album = existingMeta["album"]!!
                     val cacheKey = artworkCacheManager.getCacheKey(artist, album)
                     var cachedFile = artworkCacheManager.getCachedAlbumArt(cacheKey)
 
-                    // Se tem artwork no arquivo mas não no cache, vamos extrair agora!
+                    // Extrai artwork embutida pro cache se necessario
                     if (hasArtwork && cachedFile == null) {
                         val tempArtFile = File(context.cacheDir, "temp_art_${System.currentTimeMillis()}.jpg")
                         if (pythonMetadataBridge.extractEmbeddedArtwork(audioPath, tempArtFile.absolutePath)) {
@@ -69,10 +90,9 @@ class MediaImportProcessor @Inject constructor(
                         }
                     }
 
-                    // Se agora temos TUDO (incluindo a capa no cache), podemos pular o MusicBrainz
                     if (cachedFile != null) {
-                        android.util.Log.d("ImportProcessor", "⏭️ Arquivo com metadados e capa: ${existingMeta["title"]} — pulando enriquecimento")
-                        
+                        android.util.Log.d("ImportProcessor", "Arquivo com metadados e capa: ${existingMeta["title"]} — pulando enriquecimento")
+
                         val duration = metadataExtractor.extract(audioPath).duration
                         val entity = SongEntity(
                             path = audioPath,
@@ -90,50 +110,102 @@ class MediaImportProcessor @Inject constructor(
                 }
             }
 
-            // PASSO 1 — DEFINIR FONTE DE DADOS PARA BUSCA
+            // -- PASSO 1: EXTRAIR METADADOS BASICOS DA FONTE DISPONIVEL --
+            // Prioridade: parametros explicitos > tags do arquivo > filename parser
             val sourceName = originalTitle ?: file.name
             val filenameMeta = pythonMetadataBridge.extractMetadataFromFilename(sourceName)
 
-            // Se for download (forceEnrichment), ignoramos o que está no arquivo e usamos o título passado/extraído.
-            // Se for importação local, priorizamos o que já está nas tags do arquivo.
-            val finalTitleFromSource = if (!forceEnrichment && hasTitle) existingMeta["title"]!! else (filenameMeta["title"] ?: originalTitle ?: file.nameWithoutExtension).trim()
-            val finalArtistFromSource = if (!forceEnrichment && hasArtist) existingMeta["artist"]!! else filenameMeta["artist"]?.trim()
-            val finalAlbumFromSource = if (!forceEnrichment && hasAlbum) existingMeta["album"]!! else null
+            // title: originalTitle > existingMeta > filenameMeta > nome do arquivo
+            // Se knownArtist esta preenchido e originalTitle comeca com "Artista - ", remove o prefixo
+            var resolvedTitle = originalTitle
+                ?: if (!forceEnrichment && hasTitle) existingMeta["title"]!!
+                else filenameMeta["title"]
+                ?: file.nameWithoutExtension
 
-            android.util.Log.d("ImportProcessor", "🔍 Buscando metadados para: $finalArtistFromSource - $finalTitleFromSource")
+            val resolvedArtist = knownArtist
+                ?: if (!forceEnrichment && hasArtist) existingMeta["artist"]!!
+                else filenameMeta["artist"]?.trim()
+                ?: ""
 
-            // PASSO 2 — MUSICBRAINZ (Metadados Reais / IDs de Capa)
-            val mbResult = musicBrainzService.searchRecording(finalTitleFromSource, finalArtistFromSource ?: "")
-            
-            // Definição final dos campos:
-            // No download (force), confiamos no MusicBrainz. 
-            // Na importação (local), confiamos no Arquivo e o MB só preenche se o arquivo estiver vazio.
-            val finalTitle = if (forceEnrichment) (mbResult?.title ?: finalTitleFromSource) 
-                             else (if (hasTitle) existingMeta["title"]!! else (mbResult?.title ?: finalTitleFromSource))
-            
-            val finalArtist = if (forceEnrichment) (mbResult?.artist ?: finalArtistFromSource ?: "Artista Desconhecido")
-                              else (if (hasArtist) existingMeta["artist"]!! else (mbResult?.artist ?: finalArtistFromSource ?: "Artista Desconhecido"))
-            
-            val finalAlbum = if (forceEnrichment) (mbResult?.album ?: finalAlbumFromSource ?: "Álbum Desconhecido")
-                             else (if (hasAlbum) existingMeta["album"]!! else (mbResult?.album ?: finalAlbumFromSource ?: "Arquivo Local"))
-            
+            // Detecta e remove prefixo "Artista - " do titulo quando knownArtist esta presente
+            if (resolvedArtist.isNotBlank()) {
+                val prefix = "$resolvedArtist - "
+                if (resolvedTitle.startsWith(prefix, ignoreCase = true)) {
+                    val stripped = resolvedTitle.removePrefix(prefix).trim()
+                    android.util.Log.d("ImportProcessor",
+                        "Titulo continha prefixo do artista: \"$resolvedTitle\" -> \"$stripped\"")
+                    resolvedTitle = stripped
+                }
+            }
+
+            // album: knownAlbum > existingMeta > vazio (vem do MusicBrainz)
+            val resolvedAlbum = knownAlbum
+                ?: if (!forceEnrichment && hasAlbum) existingMeta["album"]!!
+                else ""
+
+            android.util.Log.d("ImportProcessor",
+                "Buscando MusicBrainz para: ${resolvedArtist.ifBlank { "?" }} - $resolvedTitle")
+
+            // -- PASSO 2: MUSICBRAINZ (fonte de verdade para metadados) --
+            var mbResult: MusicBrainzRecording? = null
+            if (resolvedTitle.isNotBlank()) {
+                // Tenta buscar com artista primeiro (mais preciso)
+                mbResult = musicBrainzService.searchRecording(resolvedTitle, resolvedArtist)
+                android.util.Log.d("ImportProcessor",
+                    "MusicBrainz busca com artista: ${mbResult != null} -> título=\"${mbResult?.title}\" artista=\"${mbResult?.artist}\"")
+
+                // Fallback: se nao achou com artista, tenta so com o titulo
+                if (mbResult == null && resolvedArtist.isNotBlank()) {
+                    android.util.Log.d("ImportProcessor",
+                        "MusicBrainz sem resultados c/ artista. Tentando só com título: \"$resolvedTitle\"")
+                    val fallback = musicBrainzService.searchRecording(resolvedTitle, "")
+                    // Só aceita o fallback se o artista do resultado bater com o conhecido
+                    if (fallback != null && resolvedArtist.equals(fallback.artist, ignoreCase = true)) {
+                        mbResult = fallback
+                        android.util.Log.d("ImportProcessor",
+                            "MusicBrainz fallback aceito: \"${fallback.title}\" artista=\"${fallback.artist}\"")
+                    } else if (fallback != null) {
+                        android.util.Log.d("ImportProcessor",
+                            "MusicBrainz fallback REJEITADO: artista diverge (esperado=\"$resolvedArtist\", obtido=\"${fallback.artist}\")")
+                    }
+                }
+            }
+
+            // Se MusicBrainz achou, usa os dados dele como fonte principal
+            val finalTitle = mbResult?.title
+                ?: resolvedTitle
+                .trim()
+
+            val finalArtist = mbResult?.artist
+                ?: resolvedArtist
+                .trim()
+                .ifEmpty { "" }
+
+            val finalAlbum = mbResult?.album
+                ?: resolvedAlbum
+                .trim()
+                .ifEmpty { "" }
+
             val duration = metadataExtractor.extract(audioPath).duration
 
-            // PASSO 3 — COVER ART ARCHIVE (Album Art)
+            // -- PASSO 3: COVER ART ARCHIVE (Album Art via MusicBrainz IDs) --
             var albumArtPath: String? = null
-            if (mbResult?.releaseGroupId != null || mbResult?.releaseId != null) {
+            // So tenta se tiver pelo menos um ID do MusicBrainz E artista+album nao vazios
+            if (mbResult != null && (mbResult.releaseGroupId != null || mbResult.releaseId != null)) {
                 val albumCacheKey = artworkCacheManager.getCacheKey(finalArtist, finalAlbum)
                 val cachedFile = artworkCacheManager.getCachedAlbumArt(albumCacheKey)
-                
+
                 if (cachedFile != null) {
                     albumArtPath = cachedFile.absolutePath
                 } else {
-                    val bytes = if (mbResult?.releaseGroupId != null) {
-                        coverArtService.downloadAlbumArt(mbResult.releaseGroupId, mbResult.releaseId)
-                    } else {
-                        coverArtService.downloadAlbumArt(mbResult?.releaseId!!)
-                    }
-                    
+                    val coverService = coverArtService
+                    val bytes = if (mbResult.releaseGroupId != null) {
+                        coverService.downloadAlbumArt(mbResult.releaseGroupId, mbResult.releaseId)
+                    } else if (mbResult.releaseId != null) {
+                        // Fallback: se so tem releaseId, usa o endpoint de release direto
+                        coverService.downloadAlbumArt(mbResult.releaseId!!)
+                    } else null
+
                     if (bytes != null) {
                         val savedFile = artworkCacheManager.saveToAlbumCache(albumCacheKey, bytes)
                         albumArtPath = savedFile?.absolutePath
@@ -141,12 +213,60 @@ class MediaImportProcessor @Inject constructor(
                 }
             }
 
-            // PASSO 4 — FANART.TV (Artist Art - Apenas Cache)
+            // -- PASSO 3.5: LAST.FM / ITUNES / DEEZER (Fallback de capa quando CAA nao tem) --
+            if (albumArtPath == null && finalArtist.isNotBlank()) {
+                val albumCacheKey = artworkCacheManager.getCacheKey(finalArtist, finalAlbum)
+                val cachedFile = artworkCacheManager.getCachedAlbumArt(albumCacheKey)
+
+                if (cachedFile != null) {
+                    albumArtPath = cachedFile.absolutePath
+                    android.util.Log.d("ImportProcessor",
+                        "Capa encontrada no cache (Last.fm fallback): $albumCacheKey")
+                } else {
+                    // Tenta primeiro por album, depois por musica (fallback)
+                    var coverUrl: String? = null
+                    if (finalAlbum.isNotBlank()) {
+                        coverUrl = lastfmService.getAlbumCover(finalArtist, finalAlbum)
+                    }
+                    if (coverUrl == null) {
+                        coverUrl = lastfmService.getTrackCover(finalArtist, finalTitle)
+                    }
+
+                    if (coverUrl != null) {
+                        android.util.Log.d("ImportProcessor",
+                            "Last.fm/fallback retornou URL: $coverUrl")
+                        try {
+                            val url = java.net.URL(coverUrl)
+                            val conn = url.openConnection() as java.net.HttpURLConnection
+                            conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14) YTDown/1.0")
+                            conn.connectTimeout = 10000
+                            conn.readTimeout = 10000
+                            conn.doInput = true
+                            conn.connect()
+                            val bytes = conn.inputStream.readBytes()
+                            if (bytes.isNotEmpty()) {
+                                val savedFile = artworkCacheManager.saveToAlbumCache(albumCacheKey, bytes)
+                                albumArtPath = savedFile?.absolutePath
+                                android.util.Log.d("ImportProcessor",
+                                    "Capa salva do Last.fm/fallback: ${bytes.size} bytes")
+                            }
+                        } catch (e: Exception) {
+                            android.util.Log.e("ImportProcessor",
+                                "Erro ao baixar capa do fallback: ${e.message}")
+                        }
+                    } else {
+                        android.util.Log.d("ImportProcessor",
+                            "Last.fm/fallback: nenhuma URL encontrada para $finalArtist - $finalTitle")
+                    }
+                }
+            }
+
+            // -- PASSO 4: FANART.TV (Artist Art via MusicBrainz ID) --
             var artistArtPath: String? = null
             if (mbResult?.artistId != null) {
                 val artistCacheKey = artworkCacheManager.getArtistCacheKey(finalArtist)
                 val cachedArtistFile = artworkCacheManager.getCachedArtistArt(artistCacheKey)
-                
+
                 if (cachedArtistFile != null) {
                     artistArtPath = cachedArtistFile.absolutePath
                 } else {
@@ -158,39 +278,44 @@ class MediaImportProcessor @Inject constructor(
                 }
             }
 
-            // PASSO 5 — MUTAGEN (Gravar no arquivo)
-            try {
-                android.util.Log.d("ImportProcessor", "✍️ Gravando metadados no arquivo via Mutagen: $audioPath")
-                pythonMetadataBridge.writeFullMetadata(
-                    path = audioPath,
-                    title = finalTitle,
-                    artist = finalArtist,
-                    album = finalAlbum,
-                    year = mbResult?.year,
-                    albumArt = albumArtPath,
-                    trackNumber = mbResult?.trackNumber,
-                    discNumber = mbResult?.discNumber
-                )
-            } catch (e: Exception) {
-                android.util.Log.e("ImportProcessor", "❌ Erro ao gravar metadados: ${e.message}")
+            // -- PASSO 5: MUTAGEN (Gravar tags no arquivo) --
+            if (finalTitle.isNotBlank() || finalArtist.isNotBlank()) {
+                try {
+                    android.util.Log.d("ImportProcessor",
+                        "Gravando metadados via Mutagen: $finalArtist - $finalTitle")
+                    pythonMetadataBridge.writeFullMetadata(
+                        path = audioPath,
+                        title = finalTitle,
+                        artist = finalArtist,
+                        album = finalAlbum,
+                        year = mbResult?.year,
+                        albumArt = albumArtPath,
+                        trackNumber = mbResult?.trackNumber,
+                        discNumber = mbResult?.discNumber
+                    )
+                } catch (e: Exception) {
+                    android.util.Log.e("ImportProcessor",
+                        "Erro ao gravar metadados: ${e.message}")
+                }
             }
 
-            // PASSO 6 — DATABASE (SongEntity)
+            // -- PASSO 6: DATABASE (SongEntity) --
             val entity = SongEntity(
                 path = audioPath,
-                title = finalTitle,
-                artist = finalArtist,
-                album = finalAlbum,
+                title = finalTitle.ifBlank { file.nameWithoutExtension },
+                artist = finalArtist.ifBlank { "" },
+                album = finalAlbum.ifBlank { "" },
                 duration = duration,
                 albumArtwork = albumArtPath,
                 artistArtwork = artistArtPath,
                 addedAt = System.currentTimeMillis()
             )
             songDao.insert(entity)
-            android.util.Log.d("ImportProcessor", "✅ Processamento concluído para: $finalTitle")
+            android.util.Log.d("ImportProcessor",
+                "Processamento concluido: ${finalArtist.ifBlank { "?" }} - $finalTitle | capa=${albumArtPath != null}")
         }
     }
-    
+
     suspend fun processFolder(folderPath: String) = withContext(Dispatchers.IO) {
         val extensions = setOf("mp3", "flac", "m4a", "opus", "aac", "wav")
         File(folderPath).walkTopDown()

@@ -170,23 +170,17 @@ class PlaybackController @Inject constructor(
     fun playNext() {
         if (playlist.isEmpty()) return
         currentIndex = (currentIndex + 1) % playlist.size
-        val controller = mediaController
-        if (controller != null && controllerConnected) {
-            controller.seekToNext()
-        } else {
-            engineProvider.get().play(playlist[currentIndex])
-        }
+        val track = playlist[currentIndex]
+        engineProvider.get().play(track)
+        Log.d(TAG, "▶️ playNext: ${track.title}")
     }
 
     fun playPrevious() {
         if (playlist.isEmpty()) return
         currentIndex = if (currentIndex > 0) currentIndex - 1 else playlist.size - 1
-        val controller = mediaController
-        if (controller != null && controllerConnected) {
-            controller.seekToPrevious()
-        } else {
-            engineProvider.get().play(playlist[currentIndex])
-        }
+        val track = playlist[currentIndex]
+        engineProvider.get().play(track)
+        Log.d(TAG, "⏮️ playPrevious: ${track.title}")
     }
 
     fun togglePlayPause() {

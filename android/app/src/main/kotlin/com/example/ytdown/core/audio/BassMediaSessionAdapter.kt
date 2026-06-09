@@ -40,6 +40,12 @@ class BassMediaSessionAdapter @Inject constructor(
         scope.launch {
             playbackController.uiState.collect { state ->
                 playWhenReady = state.isPlaying
+                // Sincronizar currentIndex com o PlaybackController
+                // (playNext/Previous agora bypassam MediaController para evitar loop)
+                state.currentTrack?.let { track ->
+                    val idx = mediaItems.indexOfFirst { it.mediaId == track.id }
+                    if (idx >= 0) currentIndex = idx
+                }
                 invalidateState()
             }
         }

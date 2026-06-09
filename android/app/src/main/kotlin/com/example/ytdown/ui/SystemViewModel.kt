@@ -34,7 +34,7 @@ data class SystemScreenState(
 
 @HiltViewModel
 class SystemViewModel @Inject constructor(
-    @param:@dagger.hilt.android.qualifiers.ApplicationContext private val context: android.content.Context,
+    @param:dagger.hilt.android.qualifiers.ApplicationContext private val context: android.content.Context,
     private val libraryRepository: LibraryRepository,
     private val folderService: MusicFolderService,
     private val scannerService: FileSystemScannerService,

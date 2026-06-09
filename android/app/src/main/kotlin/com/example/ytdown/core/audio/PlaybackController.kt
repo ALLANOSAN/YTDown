@@ -204,16 +204,29 @@ class PlaybackController @Inject constructor(
     // ========== Conversão para MediaItem do Media3 ==========
 
     private fun DownloadItemEntity.toMedia3Item(): MediaItem {
+        val metadataBuilder = MediaMetadata.Builder()
+            .setTitle(title)
+            .setArtist(artist)
+            .setAlbumTitle(album)
+
+        // Adicionar artwork se disponível (mesma lógica de BassMediaSessionAdapter.toMediaItem)
+        albumArtPath?.let { path ->
+            try {
+                val uri = if (path.startsWith("http") || path.startsWith("content://")) {
+                    android.net.Uri.parse(path)
+                } else {
+                    android.net.Uri.fromFile(java.io.File(path))
+                }
+                metadataBuilder.setArtworkUri(uri)
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to set artwork URI in toMedia3Item: ${e.message}")
+            }
+        }
+
         return MediaItem.Builder()
             .setMediaId(id)
             .setUri(outputPath)
-            .setMediaMetadata(
-                MediaMetadata.Builder()
-                    .setTitle(title)
-                    .setArtist(artist)
-                    .setAlbumTitle(album)
-                    .build()
-            )
+            .setMediaMetadata(metadataBuilder.build())
             .build()
     }
 

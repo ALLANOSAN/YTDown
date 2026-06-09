@@ -152,8 +152,13 @@ class BassMediaSessionAdapter @Inject constructor(
         seekCommand: Int
     ): ListenableFuture<*> {
         if (mediaItemIndex != currentIndex && mediaItemIndex in mediaItems.indices) {
+            val oldIndex = currentIndex
             currentIndex = mediaItemIndex
-            actionDispatcher.next()
+            if (mediaItemIndex > oldIndex) {
+                actionDispatcher.next()
+            } else {
+                actionDispatcher.previous()
+            }
         } else {
             actionDispatcher.seekTo(positionMs.coerceAtLeast(0L))
         }

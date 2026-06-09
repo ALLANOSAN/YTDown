@@ -50,8 +50,9 @@ fun PlayerFullScreen(
     val repeatMode = uiState.repeatMode
 
     // SISTEMA DE ALTERNÂNCIA DE ARTWORK (via ArtworkRotationController)
-    // Atualiza paths no controller quando a track muda
-    LaunchedEffect(track?.id) {
+    // Atualiza paths no controller quando a track muda OU quando os paths
+    // são populados posteriormente (ex: hydrateArtworkIfMissing)
+    LaunchedEffect(track?.id, track?.albumArtPath, track?.artistArtPath) {
         viewModel.updateArtworkPaths(track?.albumArtPath, track?.artistArtPath)
     }
     // Usa o artworkMode do controller (verifica se artistArtPath existe antes de alternar)

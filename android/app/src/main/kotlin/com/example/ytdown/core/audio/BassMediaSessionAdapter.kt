@@ -11,6 +11,9 @@ import com.example.ytdown.core.domain.DownloadItemEntity
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.combine
+import com.example.ytdown.core.artwork.ArtworkMode
+import com.example.ytdown.core.artwork.ArtworkRotationController
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -26,7 +29,8 @@ import javax.inject.Singleton
 @Singleton
 class BassMediaSessionAdapter @Inject constructor(
     private val playbackController: PlaybackController,
-    private val actionDispatcher: PlaybackActionDispatcher
+    private val actionDispatcher: PlaybackActionDispatcher,
+    private val rotationController: ArtworkRotationController
 ) : SimpleBasePlayer(Looper.getMainLooper()) {
 
     private var mediaItems = mutableListOf<MediaItem>()
@@ -34,18 +38,37 @@ class BassMediaSessionAdapter @Inject constructor(
     private var playWhenReady = false
     private var positionUpdateJob: Job? = null
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+    // Cache para evitar rebuild do MediaItem a cada 50ms (progresso)
+    private var lastArtworkPath: String? = null
 
     init {
-        // Observar mudanças de estado do BASS e invalidar estado do Media3
+        // Observar estado + rotação de artwork para manter lock screen / Now Bar atualizados
         scope.launch {
-            playbackController.uiState.collect { state ->
+            combine(
+                playbackController.uiState,
+                rotationController.artworkMode
+            ) { state, mode ->
+                val artworkPath = when (mode) {
+                    ArtworkMode.ARTIST -> state.currentTrack?.artistArtPath
+                    ArtworkMode.ALBUM -> state.currentTrack?.albumArtPath
+                }
+                artworkPath to state
+            }.collect { (artworkPath, state) ->
                 playWhenReady = state.isPlaying
+
+                // Atualizar artwork no MediaItem atual se mudou (rotação album↔banda)
+                if (artworkPath != lastArtworkPath) {
+                    lastArtworkPath = artworkPath
+                    updateCurrentArtwork(artworkPath)
+                }
+
                 // Sincronizar currentIndex com o PlaybackController
-                // (playNext/Previous agora bypassam MediaController para evitar loop)
+                // (playNext/Previous bypassam MediaController para evitar loop)
                 state.currentTrack?.let { track ->
                     val idx = mediaItems.indexOfFirst { it.mediaId == track.id }
                     if (idx >= 0) currentIndex = idx
                 }
+
                 invalidateState()
             }
         }
@@ -222,6 +245,38 @@ class BassMediaSessionAdapter @Inject constructor(
             .setMediaId(id)
             .setUri(outputPath)
             .setMediaMetadata(metadataBuilder.build())
+            .build()
+    }
+
+    // ── Artwork rotation (lock screen / Now Bar) ──────────────────────────
+
+    /**
+     * Atualiza o URI de artwork no MediaItem atual para que a tela de bloqueio
+     * e a Now Bar do Android 16 reflitam a rotação album↔banda.
+     */
+    private fun updateCurrentArtwork(artworkPath: String?) {
+        if (currentIndex < 0 || currentIndex >= mediaItems.size) return
+        val currentItem = mediaItems[currentIndex]
+        val newMetadata = currentItem.mediaMetadata.buildUpon()
+
+        if (!artworkPath.isNullOrBlank()) {
+            try {
+                val uri = if (artworkPath.startsWith("http") || artworkPath.startsWith("content://")) {
+                    android.net.Uri.parse(artworkPath)
+                } else {
+                    android.net.Uri.fromFile(java.io.File(artworkPath))
+                }
+                newMetadata.setArtworkUri(uri)
+            } catch (e: Exception) {
+                android.util.Log.w("BassAdapter", "Failed to update artwork URI: ${e.message}")
+            }
+        } else {
+            // Sem arte → limpa o URI
+            newMetadata.setArtworkUri(null)
+        }
+
+        mediaItems[currentIndex] = currentItem.buildUpon()
+            .setMediaMetadata(newMetadata.build())
             .build()
     }
 

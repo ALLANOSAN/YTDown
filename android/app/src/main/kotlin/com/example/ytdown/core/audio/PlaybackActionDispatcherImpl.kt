@@ -19,20 +19,43 @@ class PlaybackActionDispatcherImpl @Inject constructor(
     }
 
     override fun play() {
-        Log.d(TAG, "play() called")
+        Log.d(TAG, "play() called, isPlaying=${controller.isPlaying}, hasTrack=${controller.currentTrack != null}")
         // A lógica de play() original focava em verificar se precisa dar resume.
-        // Vamos manter a lógica básica para evitar quebra.
+        // Agora também trata canais que morreram (ex: Bluetooth desconectou durante pausa longa).
+        val track = controller.currentTrack
         if (engine.hasLoadedTrack()) {
             if (!controller.isPlaying) {
-                engine.resume()
+                if (!engine.resume()) {
+                    // Resume falhou (canal stale após Bluetooth desconectar, etc.)
+                    // Fallback: recria o stream do zero no dispositivo de áudio atual
+                    Log.d(TAG, "play(): resume failed, restarting track from scratch")
+                    track?.let { engine.play(it) }
+                }
             }
+        } else if (track != null) {
+            // Canal foi perdido completamente (dispositivo de áudio mudou, etc.)
+            Log.d(TAG, "play(): no active channel, creating fresh stream for ${track.title}")
+            engine.play(track)
+        } else {
+            Log.w(TAG, "play() called but no track loaded or available")
         }
     }
 
     override fun resume() {
-        Log.d(TAG, "resume() called")
+        Log.d(TAG, "resume() called, hasTrack=${controller.currentTrack != null}")
+        val track = controller.currentTrack
         if (engine.hasLoadedTrack()) {
-            engine.resume()
+            if (!engine.resume()) {
+                // Resume falhou → fallback recriando stream
+                Log.d(TAG, "resume(): failed, restarting track from scratch")
+                track?.let { engine.play(it) }
+            }
+        } else if (track != null) {
+            // Canal perdido, recriar do zero
+            Log.d(TAG, "resume(): no active channel, creating fresh stream")
+            engine.play(track)
+        } else {
+            Log.w(TAG, "resume() called but no track available")
         }
     }
 

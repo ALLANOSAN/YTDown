@@ -137,7 +137,11 @@ class BassPlaybackEngine @Inject constructor(
      * Retoma a reprodução do canal ativo (quando há uma música carregada e pausada).
      * Este método é usado pelo dispatcher quando o usuário quer "continuar" a reprodução.
      */
-    fun resume() {
+    /**
+     * Retoma a reprodução do canal ativo.
+     * @return true se o resume foi bem-sucedido, false se falhou (canal inválido/morto).
+     */
+    fun resume(): Boolean {
         Log.d(TAG, "resume() called, activeChannel: $activeChannel")
         if (activeChannel != 0) {
             val isActive = BASS.BASS_ChannelIsActive(activeChannel)
@@ -147,16 +151,23 @@ class BassPlaybackEngine @Inject constructor(
                     controller.updateBuffering(false)
                     startProgressTracker()
                     Log.d(TAG, "Resume successful")
+                    return true
                 } else {
                     val error = BASS.BASS_ErrorGetCode()
                     Log.e(TAG, "Resume failed, error: $error")
-                    controller.setError("Erro ao continuar: ${BassErrorMapper.getErrorMessage(error)}")
+                    // Não setar erro aqui — o caller fará o fallback recriando o stream
+                    return false
                 }
             } else if (isActive == BASS.BASS_ACTIVE_PLAYING) {
                 Log.d(TAG, "Already playing")
+                return true
+            } else {
+                Log.w(TAG, "Resume: channel in unexpected state $isActive")
+                return false
             }
         } else {
             Log.w(TAG, "Resume called but no active channel")
+            return false
         }
     }
 

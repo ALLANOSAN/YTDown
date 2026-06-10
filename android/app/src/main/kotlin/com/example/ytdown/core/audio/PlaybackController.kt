@@ -110,9 +110,13 @@ class PlaybackController @Inject constructor(
             )
             val controllerFuture = MediaController.Builder(context, sessionToken).buildAsync()
             controllerFuture.addListener({
-                mediaController = controllerFuture.get()
-                controllerConnected = true
-                Log.d(TAG, "✅ MediaController conectado ao MediaPlaybackService")
+                try {
+                    mediaController = controllerFuture.get()
+                    controllerConnected = true
+                    Log.d(TAG, "✅ MediaController conectado ao MediaPlaybackService")
+                } catch (e: Exception) {
+                    Log.e(TAG, "❌ Falha ao obter MediaController: ${e.message}")
+                }
             }, MoreExecutors.directExecutor())
         } catch (e: Exception) {
             Log.e(TAG, "❌ Erro ao conectar MediaController: ${e.message}")

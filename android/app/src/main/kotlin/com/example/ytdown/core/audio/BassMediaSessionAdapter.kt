@@ -40,6 +40,9 @@ class BassMediaSessionAdapter @Inject constructor(
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     // Cache para evitar rebuild do MediaItem a cada 50ms (progresso)
     private var lastArtworkPath: String? = null
+    // Guard para evitar invalidateState 20x/s com cada emissão de espectro
+    private var lastIsPlaying = false
+    private var lastTrackId: String? = null
 
     init {
         // Observar estado + rotação de artwork para manter lock screen / Now Bar atualizados
@@ -54,16 +57,24 @@ class BassMediaSessionAdapter @Inject constructor(
                 }
                 artworkPath to state
             }.collect { (artworkPath, state) ->
+                val trackChanged = state.currentTrack?.id != lastTrackId
+                val playingChanged = state.isPlaying != lastIsPlaying
+                val artworkChanged = artworkPath != lastArtworkPath
+
+                if (!trackChanged && !playingChanged && !artworkChanged) {
+                    return@collect  // Nada relevante mudou, ignorar (evita invalidateState 20x/s)
+                }
+
+                lastTrackId = state.currentTrack?.id
+                lastIsPlaying = state.isPlaying
                 playWhenReady = state.isPlaying
 
-                // Atualizar artwork no MediaItem atual se mudou (rotação album↔banda)
-                if (artworkPath != lastArtworkPath) {
+                if (artworkChanged) {
                     lastArtworkPath = artworkPath
                     updateCurrentArtwork(artworkPath)
                 }
 
                 // Sincronizar currentIndex com o PlaybackController
-                // (playNext/Previous bypassam MediaController para evitar loop)
                 state.currentTrack?.let { track ->
                     val idx = mediaItems.indexOfFirst { it.mediaId == track.id }
                     if (idx >= 0) currentIndex = idx
@@ -183,8 +194,14 @@ class BassMediaSessionAdapter @Inject constructor(
     }
 
     override fun handleRelease(): ListenableFuture<*> {
+        // NÃO cancelar o scope — o adapter é @Singleton e será reusado quando
+        // o MediaPlaybackService for recriado. Se o scope for cancelado,
+        // a coroutine combine morre permanentemente e o player para de funcionar.
         stopPositionPolling()
-        scope.cancel()
+        playWhenReady = false
+        currentIndex = 0
+        mediaItems.clear()
+        lastArtworkPath = null
         return Futures.immediateVoidFuture()
     }
 

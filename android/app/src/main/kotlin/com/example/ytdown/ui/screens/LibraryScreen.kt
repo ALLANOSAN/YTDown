@@ -109,14 +109,8 @@ fun LibraryScreen(
                         onLongClick = { name, photo -> editingItem = EditingMetadata(name, photo, false) }
                     )
                     2 -> Column {
-                        // Seção de Pastas Monitoradas
+                        // Seção de Pastas Monitoradas (dentro do SongsList agora)
                         val folders by libraryViewModel.selectedFolders.collectAsStateWithLifecycle()
-                        if (folders.isNotEmpty()) {
-                            FoldersSection(
-                                folders = folders.toList(),
-                                onRemoveFolder = { libraryViewModel.removeFolder(it) }
-                            )
-                        }
                         SongsList(
                             songs = completedSongs,
                             recentlyAdded = recentlyAdded,
@@ -126,7 +120,9 @@ fun LibraryScreen(
                             onAddToPlaylist = { song -> songForPlaylist = song },
                             onEditName = { song -> systemViewModel.updateTrackName(song, song.title) },
                             onSuperFix = { systemViewModel.superFixID3() },
-                            onAddFolder = { folderPickerLauncher.launch(null) }
+                            onAddFolder = { folderPickerLauncher.launch(null) },
+                            folders = folders.toList(),
+                            onRemoveFolder = { libraryViewModel.removeFolder(it) }
                         )
                     }
                     3 -> PlaylistsTab(
@@ -190,102 +186,6 @@ fun LibraryScreen(
             onCreate = { name ->
                 systemViewModel.createPlaylist(name)
                 showCreatePlaylistDialog = false
-            }
-        )
-    }
-}
-
-@Composable
-private fun FoldersSection(
-    folders: List<String>,
-    onRemoveFolder: (String) -> Unit
-) {
-    var showRemoveDialog by remember { mutableStateOf<String?>(null) }
-
-    Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-        Text(
-            "Pastas Monitoradas",
-            color = TextSecondary,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(bottom = 8.dp)
-        )
-
-        folders.forEach { folder ->
-            val displayName = if (folder.startsWith("content://")) {
-                // Extrair nome da pasta da URI SAF
-                android.net.Uri.parse(folder).lastPathSegment
-                    ?.substringAfterLast(":")
-                    ?.substringAfterLast("/")
-                    ?: "Pasta do dispositivo"
-            } else {
-                folder.substringAfterLast("/")
-            }
-
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 4.dp),
-                color = SurfaceDark,
-                shape = RoundedCornerShape(8.dp)
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        Icons.Default.Folder,
-                        contentDescription = null,
-                        tint = YTDownPurple,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(10.dp))
-                    Text(
-                        displayName,
-                        color = Color.White,
-                        fontSize = 14.sp,
-                        modifier = Modifier.weight(1f)
-                    )
-                    IconButton(
-                        onClick = { showRemoveDialog = folder },
-                        modifier = Modifier.size(32.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.Close,
-                            contentDescription = "Remover pasta",
-                            tint = TextSecondary,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-                }
-            }
-        }
-    }
-
-    // Dialog de confirmação de remoção
-    showRemoveDialog?.let { folder ->
-        AlertDialog(
-            onDismissRequest = { showRemoveDialog = null },
-            containerColor = SurfaceDark,
-            title = { Text("Remover pasta?", color = Color.White) },
-            text = {
-                Text(
-                    "Os arquivos NÃO serão deletados do seu celular. A pasta será removida apenas da biblioteca do app.",
-                    color = TextSecondary
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    onRemoveFolder(folder)
-                    showRemoveDialog = null
-                }) {
-                    Text("Remover", color = Color.Red)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showRemoveDialog = null }) {
-                    Text("Cancelar", color = TextSecondary)
-                }
             }
         )
     }

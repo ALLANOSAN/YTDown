@@ -12,6 +12,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.AutoFixHigh
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.FolderDelete
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -45,7 +47,9 @@ fun SongsList(
     onAddToPlaylist: (DownloadItemEntity) -> Unit,
     onEditName: ((DownloadItemEntity) -> Unit)? = null,
     onSuperFix: ((DownloadItemEntity) -> Unit)? = null,
-    onAddFolder: (() -> Unit)? = null
+    onAddFolder: (() -> Unit)? = null,
+    folders: List<String> = emptyList(),
+    onRemoveFolder: ((String) -> Unit)? = null
 ) {
     var songMenu by remember { mutableStateOf<DownloadItemEntity?>(null) }
     var editingSong by remember { mutableStateOf<DownloadItemEntity?>(null) }
@@ -55,11 +59,79 @@ fun SongsList(
         return
     }
 
+    var showRemoveFolderDialog by remember { mutableStateOf<String?>(null) }
+
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
+        // ── Seção de pastas monitoradas ──
+        if (folders.isNotEmpty()) {
+            item {
+                Text(
+                    "Pastas da Biblioteca",
+                    color = YTDownPurple,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(bottom = 4.dp)
+                )
+            }
+            folders.forEach { folder ->
+                val displayName = if (folder.startsWith("content://")) {
+                    android.net.Uri.parse(folder).lastPathSegment
+                        ?.substringAfterLast(":")
+                        ?.substringAfterLast("/")
+                        ?: "Pasta do dispositivo"
+                } else {
+                    folder.substringAfterLast("/")
+                }
+                item(key = "folder_$folder") {
+                    Surface(
+                        color = SurfaceDark,
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                Icons.Default.Folder,
+                                contentDescription = null,
+                                tint = YTDownPurple,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(
+                                displayName,
+                                color = Color.White,
+                                fontSize = 14.sp,
+                                modifier = Modifier.weight(1f)
+                            )
+                            IconButton(
+                                onClick = { showRemoveFolderDialog = folder },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.FolderDelete,
+                                    contentDescription = "Remover pasta",
+                                    tint = Color(0xFFFF5252),
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(6.dp))
+                }
+            }
+            item {
+                Spacer(modifier = Modifier.height(8.dp))
+            }
+        }
+
+        // ── Recently Added ──
         if (recentlyAdded.isNotEmpty() && songs.size > 10) {
             item {
                 Text("Adicionadas Recentemente", color = YTDownPurple, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 8.dp))
@@ -96,6 +168,63 @@ fun SongsList(
                 )
             }
         }
+
+        // ── Botão para adicionar nova pasta ──
+        if (onAddFolder != null) {
+            item {
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedButton(
+                    onClick = onAddFolder,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = YTDownPurple)
+                ) {
+                    Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Adicionar pasta de música")
+                }
+            }
+        }
+    }
+
+    // ── Diálogo de confirmação de remoção de pasta ──
+    showRemoveFolderDialog?.let { folder ->
+        val displayName = if (folder.startsWith("content://")) {
+            android.net.Uri.parse(folder).lastPathSegment
+                ?.substringAfterLast(":")
+                ?.substringAfterLast("/")
+                ?: "Pasta do dispositivo"
+        } else {
+            folder.substringAfterLast("/")
+        }
+        AlertDialog(
+            onDismissRequest = { showRemoveFolderDialog = null },
+            containerColor = SurfaceDark,
+            title = { Text("Remover pasta?", color = Color.White) },
+            text = {
+                Column {
+                    Text("\"$displayName\" será removida da biblioteca.", color = Color.White, fontSize = 14.sp)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        "As músicas desta pasta serão removidas da sua biblioteca, mas os arquivos NÃO serão deletados do seu celular.",
+                        color = TextSecondary,
+                        fontSize = 13.sp
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    onRemoveFolder?.invoke(folder)
+                    showRemoveFolderDialog = null
+                }) {
+                    Text("Remover", color = Color.Red)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showRemoveFolderDialog = null }) {
+                    Text("Cancelar", color = TextSecondary)
+                }
+            }
+        )
     }
 
     songMenu?.let { song ->

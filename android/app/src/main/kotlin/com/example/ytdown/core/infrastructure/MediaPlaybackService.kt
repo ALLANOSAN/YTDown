@@ -22,6 +22,7 @@ import com.example.ytdown.core.audio.PlaybackController
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 
@@ -66,6 +67,7 @@ class MediaPlaybackService : MediaSessionService() {
     private var mediaSession: MediaSession? = null
     private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var wakeLock: PowerManager.WakeLock? = null
+    private var wakeLockJob: Job? = null
 
     // ========== MediaSessionService Lifecycle ==========
 
@@ -96,6 +98,9 @@ class MediaPlaybackService : MediaSessionService() {
                     }
                 }
         }
+
+        // Gerenciamento contínuo de WakeLock baseado no estado de reprodução
+        manageWakeLock()
     }
 
     /**
@@ -242,12 +247,53 @@ class MediaPlaybackService : MediaSessionService() {
 
     // ========== WakeLock Management ==========
 
+    /**
+     * Gerencia o WakeLock continuamente baseado no estado de reprodução.
+     * Quando tocando: mantém WakeLock (com renovação a cada 8 min para evitar timeout de 10 min).
+     * Quando pausado: libera WakeLock para economizar bateria.
+     */
+    private fun manageWakeLock() {
+        wakeLockJob?.cancel()
+        wakeLockJob = serviceScope.launch {
+            playbackController.uiState
+                .map { it.isPlaying }
+                .distinctUntilChanged()
+                .collect { isPlaying ->
+                    if (isPlaying) {
+                        acquireWakeLock()
+                        // Loop de renovação periódica (o acquire tem timeout de 10 min)
+                        val renewalJob = launch {
+                            while (isActive) {
+                                delay(8 * 60 * 1000L) // 8 minutos
+                                // Renova o WakeLock se ainda estiver tocando
+                                if (playbackController.uiState.value.isPlaying) {
+                                    releaseWakeLock()
+                                    acquireWakeLock()
+                                    Log.d(TAG, "WakeLock renewed (8min cycle)")
+                                } else {
+                                    break
+                                }
+                            }
+                        }
+                        // Aguarda até pausar para cancelar a renovação
+                        try {
+                            playbackController.uiState.first { !it.isPlaying }
+                        } finally {
+                            renewalJob.cancel()
+                            releaseWakeLock()
+                            Log.d(TAG, "WakeLock released (paused)")
+                        }
+                    }
+                }
+        }
+    }
+
     private fun acquireWakeLock() {
         wakeLock?.let { lock ->
             if (!lock.isHeld) {
                 try {
-                    lock.acquire(10 * 60 * 1000L)
-                    Log.d(TAG, "WakeLock acquired")
+                    lock.acquire(10 * 60 * 1000L) // 10 min timeout (Android exige timeout)
+                    Log.d(TAG, "WakeLock acquired (10min)")
                 } catch (e: Exception) {
                     Log.w(TAG, "WakeLock acquire failed: ${e.message}")
                 }
@@ -273,14 +319,8 @@ class MediaPlaybackService : MediaSessionService() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         Log.d(TAG, "onStartCommand: action=${intent?.action}")
 
-        // Handle wake lock based on playback state
-        if (playbackController.uiState.value.isPlaying) {
-            acquireWakeLock()
-        }
-
+        // WakeLock é gerenciado automaticamente pelo manageWakeLock() via uiState
         // Deixar o Media3 processar o intent (media buttons, etc.)
-        // O Media3 MediaSessionService gerencia o startForeground() automaticamente
-        // quando o player entra em estado de reprodução, usando o notificationProvider configurado.
         return super.onStartCommand(intent, flags, startId)
     }
 
@@ -288,6 +328,7 @@ class MediaPlaybackService : MediaSessionService() {
         Log.d(TAG, "onDestroy()")
 
         releaseWakeLock()
+        wakeLockJob?.cancel()
 
         try {
             unregisterReceiver(headsetReceiver)

@@ -69,11 +69,20 @@ class PlaybackActionDispatcherImpl @Inject constructor(
         if (controller.isPlaying) {
             pause()
         } else {
-            // Se há um canal carregado mas está pausado, usa resume()
+            val track = controller.currentTrack
             if (engine.hasLoadedTrack()) {
-                engine.resume()
+                if (!engine.resume()) {
+                    // Resume falhou (canal stale após Bluetooth desconectar, etc.)
+                    // Fallback: recria o stream do zero no dispositivo de áudio atual
+                    Log.d(TAG, "playPause(): resume failed, restarting track from scratch")
+                    track?.let { engine.play(it) }
+                }
+            } else if (track != null) {
+                // Canal foi perdido completamente (dispositivo de áudio mudou, etc.)
+                Log.d(TAG, "playPause(): no active channel, creating fresh stream for ${track.title}")
+                engine.play(track)
             } else {
-                Log.w(TAG, "playPause() called but no track loaded")
+                Log.w(TAG, "playPause() called but no track loaded or available")
             }
         }
     }

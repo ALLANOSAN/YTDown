@@ -108,10 +108,19 @@ class PlaybackController @Inject constructor(
                 context,
                 ComponentName(context, MediaPlaybackService::class.java)
             )
-            val controllerFuture = MediaController.Builder(context, sessionToken).buildAsync()
+            val controllerFuture = MediaController.Builder(context, sessionToken)
+                .setListener(object : MediaController.Listener {
+                    override fun onDisconnected(controller: MediaController) {
+                        Log.w(TAG, "⚠️ MediaController desconectado do service")
+                        this@PlaybackController.mediaController = null
+                        controllerConnected = false
+                    }
+                })
+                .buildAsync()
             controllerFuture.addListener({
                 try {
-                    mediaController = controllerFuture.get()
+                    val controller = controllerFuture.get()
+                    mediaController = controller
                     controllerConnected = true
                     Log.d(TAG, "✅ MediaController conectado ao MediaPlaybackService")
                 } catch (e: Exception) {
@@ -192,7 +201,25 @@ class PlaybackController @Inject constructor(
         if (controller != null && controllerConnected) {
             if (_uiState.value.isPlaying) controller.pause() else controller.play()
         } else {
-            if (_uiState.value.isPlaying) engineProvider.get().pause() else engineProvider.get().resume()
+            val engine = engineProvider.get()
+            if (_uiState.value.isPlaying) {
+                engine.pause()
+            } else {
+                val track = currentTrack
+                if (engine.hasLoadedTrack()) {
+                    if (!engine.resume()) {
+                        // Resume falhou (canal stale) — fallback recria stream do zero
+                        Log.d(TAG, "togglePlayPause(): resume failed, recreating stream")
+                        track?.let { engine.play(it) }
+                    }
+                } else if (track != null) {
+                    // Canal perdido completamente — recriar do zero
+                    Log.d(TAG, "togglePlayPause(): no active channel, creating fresh stream")
+                    engine.play(track)
+                } else {
+                    Log.w(TAG, "togglePlayPause(): no track available")
+                }
+            }
         }
     }
 

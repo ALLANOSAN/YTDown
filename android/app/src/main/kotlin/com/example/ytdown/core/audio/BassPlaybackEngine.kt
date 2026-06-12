@@ -64,8 +64,22 @@ class BassPlaybackEngine @Inject constructor(
         stop() // Garante que o canal anterior seja limpo
 
         // 1. Criar o stream (Local, URL ou SAF)
-        val channel = createStream(path)
-        
+        var channel = createStream(path)
+
+        // 1a. Se falhou com erro de dispositivo, tenta reinicializar BASS e retentar
+        if (channel == 0) {
+            val error = BASS.BASS_ErrorGetCode()
+            if (BassCore.isDeviceRelatedError(error)) {
+                Log.w(TAG, "Device-related error ($error) ao criar stream, tentando reinicializar BASS...")
+                if (BassCore.reinitialize()) {
+                    channel = createStream(path)
+                    if (channel != 0) {
+                        Log.d(TAG, "Stream criado com sucesso após reinit do BASS")
+                    }
+                }
+            }
+        }
+
         if (channel == 0) {
             val error = BASS.BASS_ErrorGetCode()
             val msg = BassErrorMapper.getErrorMessage(error)

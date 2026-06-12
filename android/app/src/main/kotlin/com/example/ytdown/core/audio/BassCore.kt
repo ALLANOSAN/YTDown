@@ -11,6 +11,8 @@ import com.un4seen.bass.BASS
 object BassCore {
     private const val TAG = "BassCore"
     private var isInitialized = false
+    private var lastContext: Context? = null
+    private var lastFrequency: Int = 44100
 
     /**
      * Inicializa o motor BASS com configurações profissionais.
@@ -21,6 +23,8 @@ object BassCore {
         if (isInitialized) return
 
         Log.i(TAG, "Iniciando BASS Core Engine...")
+        lastContext = context
+        lastFrequency = frequency
 
         // 1. Configurar BASS antes da inicialização se necessário
         // BASS_CONFIG_DEV_NONSTOP: Mantém o dispositivo de áudio ativo mesmo sem canais tocando (evita clicks ao iniciar)
@@ -81,6 +85,31 @@ object BassCore {
         Log.i(TAG, "Liberando BASS Core Engine...")
         BASS.BASS_Free()
         isInitialized = false
+    }
+
+    /**
+     * Reinicializa o motor BASS após detecção de erro de dispositivo.
+     * Chamado quando BASS_ERROR_DRIVER ou BASS_ERROR_INIT são detectados
+     * (ex: Bluetooth A2DP desconectou/reconectou durante pausa longa).
+     * @return true se a reinicialização foi bem-sucedida.
+     */
+    fun reinitialize(): Boolean {
+        Log.i(TAG, "Reinicializando BASS Core Engine após falha de dispositivo...")
+        val ctx = lastContext ?: return false
+        release()  // BASS_Free + isInitialized = false
+        initialize(ctx, lastFrequency)
+        return isReady()
+    }
+
+    /**
+     * Verifica se o código de erro BASS está relacionado a dispositivo de áudio.
+     * Estes erros indicam que o output de áudio mudou (Bluetooth des/reconectou)
+     * e o BASS precisa ser reinicializado.
+     */
+    fun isDeviceRelatedError(errorCode: Int): Boolean {
+        return errorCode == BASS.BASS_ERROR_DRIVER ||
+                errorCode == BASS.BASS_ERROR_INIT ||
+                errorCode == BASS.BASS_ERROR_HANDLE
     }
 
     /**

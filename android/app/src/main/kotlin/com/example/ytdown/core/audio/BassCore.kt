@@ -109,7 +109,8 @@ object BassCore {
     fun isDeviceRelatedError(errorCode: Int): Boolean {
         return errorCode == BASS.BASS_ERROR_DRIVER ||
                 errorCode == BASS.BASS_ERROR_INIT ||
-                errorCode == BASS.BASS_ERROR_HANDLE
+                errorCode == BASS.BASS_ERROR_HANDLE ||
+                errorCode == BASS.BASS_ERROR_REINIT
     }
 
     /**

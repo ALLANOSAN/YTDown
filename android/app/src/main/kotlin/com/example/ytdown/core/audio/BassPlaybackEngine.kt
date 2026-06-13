@@ -106,8 +106,22 @@ class BassPlaybackEngine @Inject constructor(
             Log.d(TAG, "Playback started successfully")
         } else {
             val error = BASS.BASS_ErrorGetCode()
-            controller.setError(BassErrorMapper.getErrorMessage(error))
-            Log.e(TAG, "Failed to start playback, error: $error")
+            if (BassCore.isDeviceRelatedError(error)) {
+                Log.w(TAG, "BASS_ChannelPlay failed with device error ($error) — reinitializing BASS and retrying...")
+                // Libera o handle quebrado para não envenenar hasLoadedTrack()
+                BASS.BASS_StreamFree(activeChannel)
+                activeChannel = 0
+                if (BassCore.reinitialize()) {
+                    play(item)  // retenta do zero com dispositivo reinicializado
+                    return      // critical: não passar pelo cleanup abaixo
+                }
+            }
+            // Libera o handle quebrado para não envenenar hasLoadedTrack()
+            BASS.BASS_StreamFree(activeChannel)
+            activeChannel = 0
+            val msg = BassErrorMapper.getErrorMessage(error)
+            controller.setError(msg)
+            Log.e(TAG, "Failed to start playback after reinit attempt, error: $msg")
         }
     }
 
@@ -172,6 +186,11 @@ class BassPlaybackEngine @Inject constructor(
                     // Não setar erro aqui — o caller fará o fallback recriando o stream
                     return false
                 }
+            } else if (isActive == BASS.BASS_ACTIVE_PAUSED_DEVICE) {
+                // Dispositivo de áudio mudou/dormiu enquanto o canal estava pausado
+                // (ex: Bluetooth A2DP suspenso). Não adianta tentar resumir — precisa recriar.
+                Log.w(TAG, "Resume: PAUSED_DEVICE — dispositivo de áudio mudou, retornando false para fallback recriar stream")
+                return false
             } else if (isActive == BASS.BASS_ACTIVE_PLAYING) {
                 Log.d(TAG, "Already playing")
                 return true

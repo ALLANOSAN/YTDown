@@ -23,6 +23,7 @@ object BassErrorMapper {
             BASS.BASS_ERROR_SSL -> "BASS_ERROR_SSL: SSL/HTTPS support is not available"
             BASS.BASS_ERROR_ALREADY -> "BASS_ERROR_ALREADY: Already initialized/paused/whatever"
             BASS.BASS_ERROR_NOTAUDIO -> "BASS_ERROR_NOTAUDIO: File does not contain audio"
+            BASS.BASS_ERROR_REINIT -> "BASS_ERROR_REINIT: device needs to be reinitialized"
             BASS.BASS_ERROR_NOCHAN -> "BASS_ERROR_NOCHAN: Can't get a free channel"
             BASS.BASS_ERROR_ILLTYPE -> "BASS_ERROR_ILLTYPE: An illegal type was specified"
             BASS.BASS_ERROR_ILLPARAM -> "BASS_ERROR_ILLPARAM: An illegal parameter was specified"

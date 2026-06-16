@@ -1,9 +1,6 @@
 package com.example.ytdown.core.infrastructure
 
-import android.content.BroadcastReceiver
 import android.content.Context
-import android.content.Intent
-import android.content.IntentFilter
 import android.media.AudioManager
 import android.net.Uri
 import android.os.Build
@@ -77,14 +74,6 @@ constructor(
         player.stop()
     }
 
-    private val noisyReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context?, intent: Intent?) {
-            if (intent?.action == AudioManager.ACTION_AUDIO_BECOMING_NOISY) {
-                pause()
-            }
-        }
-    }
-
     init {
         scope.launch {
             uiState.collect { state ->
@@ -92,12 +81,6 @@ constructor(
                 if (state.isPlaying) startPositionSaveLoop() else stopPositionSaveLoop()
             }
         }
-
-        // Registrar Noisy Receiver
-        context.registerReceiver(
-            noisyReceiver,
-            IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY)
-        )
     }
 
     private fun startPositionSaveLoop() {
@@ -259,7 +242,15 @@ constructor(
     
     fun resume() {
         Log.d(TAG, "resume() called")
-        player.resume()
+        if (!player.resume()) {
+            val track = controller.currentTrack
+            if (track != null) {
+                Log.d(TAG, "resume() failed, recreating stream for ${track.title}")
+                player.play(track)
+            } else {
+                Log.w(TAG, "resume() failed and no track available")
+            }
+        }
     }
 
     private fun updatePlayerMetadata(item: DownloadItemEntity) {

@@ -316,7 +316,7 @@ def read_file_metadata(filepath):
     """
     Lê metadados existentes de um arquivo de áudio.
     Retorna JSON com: title, artist, album, track_number, disc_number, year, has_artwork
-    Se o arquivo não existir ou não tiver tags, retorna todos os campos como None.
+    Se o arquivo não existir ou não tiver tags, retorna campos de texto como strings vazias.
     """
     try:
         if filepath.lower().endswith(".mp3"):
@@ -339,8 +339,8 @@ def read_file_metadata(filepath):
             has_artwork = "APIC" in tags
             return json.dumps({
                 "success": True,
-                "title": title or None, "artist": artist or None, "album": album or None,
-                "track_number": track or None, "disc_number": disc or None, "year": year or None,
+                "title": title or "", "artist": artist or "", "album": album or "",
+                "track_number": track or "", "disc_number": disc or "", "year": year or "",
                 "has_artwork": has_artwork
             })
         elif filepath.lower().endswith((".m4a", ".mp4")):
@@ -350,26 +350,28 @@ def read_file_metadata(filepath):
                 audio = MP4(filepath)
             except Exception:
                 return json.dumps({
-                    "success": True, "title": None, "artist": None, "album": None,
-                    "track_number": None, "disc_number": None, "year": None, "has_artwork": False
+                    "success": True, "title": "", "artist": "", "album": "",
+                    "track_number": "", "disc_number": "", "year": "", "has_artwork": False
                 })
-            title = audio.get("©nam", [None])[0]
-            artist = audio.get("©ART", [None])[0]
-            album = audio.get("©alb", [None])[0]
-            track = audio.get("trkn", [None])[0]
-            disc = audio.get("disk", [None])[0]
-            year = audio.get("©day", [None])[0]
+            title = audio.get("©nam", [""])[0]
+            artist = audio.get("©ART", [""])[0]
+            album = audio.get("©alb", [""])[0]
+            track = audio.get("trkn", [("", "")])[0]
+            disc = audio.get("disk", [("", "")])[0]
+            year = audio.get("©day", [""])[0]
             has_artwork = "covr" in audio
-            track_str = str(track[0]) if isinstance(track, tuple) and track[0] else None
-            disc_str = str(disc[0]) if isinstance(disc, tuple) and disc[0] else None
+            
+            track_str = str(track[0]) if isinstance(track, tuple) and track[0] else ""
+            disc_str = str(disc[0]) if isinstance(disc, tuple) and disc[0] else ""
+            
             return json.dumps({
                 "success": True,
-                "title": str(title) if title else None,
-                "artist": str(artist) if artist else None,
-                "album": str(album) if album else None,
+                "title": str(title) if title else "",
+                "artist": str(artist) if artist else "",
+                "album": str(album) if album else "",
                 "track_number": track_str,
                 "disc_number": disc_str,
-                "year": str(year) if year else None,
+                "year": str(year) if year else "",
                 "has_artwork": has_artwork
             })
         elif filepath.lower().endswith(".flac"):
@@ -379,29 +381,29 @@ def read_file_metadata(filepath):
                 audio = FLAC(filepath)
             except Exception:
                 return json.dumps({
-                    "success": True, "title": None, "artist": None, "album": None,
-                    "track_number": None, "disc_number": None, "year": None, "has_artwork": False
+                    "success": True, "title": "", "artist": "", "album": "",
+                    "track_number": "", "disc_number": "", "year": "", "has_artwork": False
                 })
-            title = audio.get("title", [None])[0]
-            artist = audio.get("artist", [None])[0]
-            album = audio.get("album", [None])[0]
-            track = audio.get("tracknumber", [None])[0]
-            disc = audio.get("discnumber", [None])[0]
-            year = audio.get("date", [None])[0]
+            title = audio.get("title", [""])[0]
+            artist = audio.get("artist", [""])[0]
+            album = audio.get("album", [""])[0]
+            track = audio.get("tracknumber", [""])[0]
+            disc = audio.get("discnumber", [""])[0]
+            year = audio.get("date", [""])[0]
             has_artwork = len(audio.pictures) > 0
             return json.dumps({
                 "success": True,
-                "title": str(title) if title else None,
-                "artist": str(artist) if artist else None,
-                "album": str(album) if album else None,
-                "track_number": str(track) if track else None,
-                "disc_number": str(disc) if disc else None,
-                "year": str(year) if year else None,
+                "title": str(title) if title else "",
+                "artist": str(artist) if artist else "",
+                "album": str(album) if album else "",
+                "track_number": str(track) if track else "",
+                "disc_number": str(disc) if disc else "",
+                "year": str(year) if year else "",
                 "has_artwork": has_artwork
             })
         return json.dumps({
-            "success": True, "title": None, "artist": None, "album": None,
-            "track_number": None, "disc_number": None, "year": None, "has_artwork": False
+            "success": True, "title": "", "artist": "", "album": "",
+            "track_number": "", "disc_number": "", "year": "", "has_artwork": False
         })
     except Exception as e:
         return json.dumps(_failure_payload(str(e), stage="read_file_metadata"))

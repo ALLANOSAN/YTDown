@@ -116,13 +116,19 @@ class PythonMetadataBridge @Inject constructor() {
         return try {
             val result = module.callAttr("read_file_metadata", path).toString()
             val json = JSONObject(result)
+            
+            fun optStringSafe(key: String): String? {
+                val value = json.optString(key, "")
+                return if (value == "null" || value.isBlank()) null else value
+            }
+
             mapOf(
-                "title" to json.optString("title", "").ifBlank { null },
-                "artist" to json.optString("artist", "").ifBlank { null },
-                "album" to json.optString("album", "").ifBlank { null },
-                "track_number" to json.optString("track_number", "").ifBlank { null },
-                "disc_number" to json.optString("disc_number", "").ifBlank { null },
-                "year" to json.optString("year", "").ifBlank { null },
+                "title" to optStringSafe("title"),
+                "artist" to optStringSafe("artist"),
+                "album" to optStringSafe("album"),
+                "track_number" to optStringSafe("track_number"),
+                "disc_number" to optStringSafe("disc_number"),
+                "year" to optStringSafe("year"),
                 "has_artwork" to json.optBoolean("has_artwork", false).toString()
             )
         } catch (e: Exception) {

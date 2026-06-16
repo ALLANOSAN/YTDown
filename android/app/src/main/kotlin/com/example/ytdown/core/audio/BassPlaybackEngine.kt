@@ -201,8 +201,12 @@ class BassPlaybackEngine @Inject constructor(
                 }
             } else if (isActive == BASS.BASS_ACTIVE_PAUSED_DEVICE) {
                 // Dispositivo de áudio mudou/dormiu enquanto o canal estava pausado
-                // (ex: Bluetooth A2DP suspenso). Não adianta tentar resumir — precisa recriar.
-                Log.w(TAG, "Resume: PAUSED_DEVICE — dispositivo de áudio mudou, retornando false para fallback recriar stream")
+                // (ex: Bluetooth A2DP suspenso). BASS_Free + BASS_Init força o BT a acordar
+                // antes do fallback recriar o stream, evitando que o ChannelPlay seguinte
+                // "toque" sem áudio (0→3→reset) e dispare endSync prematuro.
+                Log.w(TAG, "Resume: PAUSED_DEVICE — reinicializando BASS para forçar wake-up do BT A2DP")
+                BassCore.reinitialize()
+                activeChannel = 0  // handle inválido após BASS_Free
                 return false
             } else if (isActive == BASS.BASS_ACTIVE_PLAYING) {
                 Log.d(TAG, "Already playing")

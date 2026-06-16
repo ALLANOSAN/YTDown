@@ -48,10 +48,16 @@ object BassCore {
             return
         }
 
-        // 3. Carregar Plugins (Placeholder para futuras extensões, ex: AAC/FLAC)
+        // 3. Iniciar output global de áudio
+        // Necessário após BASS_Init para garantir que o mixer esteja rodando;
+        // em alguns dispositivos/Bluetooth o Android suspende o output durante
+        // pausa longa, causando BASS_ERROR_START no ChannelPlay seguinte.
+        BASS.BASS_Start()
+
+        // 4. Carregar Plugins (Placeholder para futuras extensões, ex: AAC/FLAC)
         // BASS.BASS_PluginLoad("libbass_aac.so", 0)
 
-        // 4. Configurações Globais Pós-Init
+        // 5. Configurações Globais Pós-Init
         
         // Habilitar processamento Float DSP globalmente para máxima fidelidade
         BASS.BASS_SetConfig(BASS.BASS_CONFIG_FLOATDSP, 1)
@@ -63,7 +69,7 @@ object BassCore {
         // Configurar buffer de rede para streaming (5 segundos)
         BASS.BASS_SetConfig(BASS.BASS_CONFIG_NET_BUFFER, 5000)
 
-        // 5. Obter informações do dispositivo para validação
+        // 6. Obter informações do dispositivo para validação
         val info = BASS.BASS_INFO()
         if (BASS.BASS_GetInfo(info)) {
             Log.i(TAG, "BASS Inicializado com Sucesso!")
@@ -89,8 +95,9 @@ object BassCore {
 
     /**
      * Reinicializa o motor BASS após detecção de erro de dispositivo.
-     * Chamado quando BASS_ERROR_DRIVER ou BASS_ERROR_INIT são detectados
-     * (ex: Bluetooth A2DP desconectou/reconectou durante pausa longa).
+     * Chamado quando BASS_ERROR_DRIVER, BASS_ERROR_INIT, BASS_ERROR_REINIT
+     * ou BASS_ERROR_START são detectados
+     * (ex: Bluetooth A2DP suspendeu output durante pausa longa).
      * @return true se a reinicialização foi bem-sucedida.
      */
     fun reinitialize(): Boolean {
@@ -110,7 +117,8 @@ object BassCore {
         return errorCode == BASS.BASS_ERROR_DRIVER ||
                 errorCode == BASS.BASS_ERROR_INIT ||
                 errorCode == BASS.BASS_ERROR_HANDLE ||
-                errorCode == BASS.BASS_ERROR_REINIT
+                errorCode == BASS.BASS_ERROR_REINIT ||
+                errorCode == BASS.BASS_ERROR_START
     }
 
     /**

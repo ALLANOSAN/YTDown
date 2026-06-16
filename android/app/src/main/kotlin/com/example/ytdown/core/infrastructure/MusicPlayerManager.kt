@@ -243,7 +243,7 @@ constructor(
     fun resume() {
         Log.d(TAG, "resume() called")
         if (!player.resume()) {
-            val track = controller.currentTrack
+            val track = controller.uiState.value.currentTrack
             if (track != null) {
                 Log.d(TAG, "resume() failed, recreating stream for ${track.title}")
                 player.play(track)

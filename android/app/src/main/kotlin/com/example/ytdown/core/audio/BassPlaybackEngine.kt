@@ -106,22 +106,35 @@ class BassPlaybackEngine @Inject constructor(
             Log.d(TAG, "Playback started successfully")
         } else {
             val error = BASS.BASS_ErrorGetCode()
-            if (BassCore.isDeviceRelatedError(error)) {
-                Log.w(TAG, "BASS_ChannelPlay failed with device error ($error) — reinitializing BASS and retrying...")
-                // Libera o handle quebrado para não envenenar hasLoadedTrack()
-                BASS.BASS_StreamFree(activeChannel)
-                activeChannel = 0
-                if (BassCore.reinitialize()) {
-                    play(item)  // retenta do zero com dispositivo reinicializado
-                    return      // critical: não passar pelo cleanup abaixo
-                }
-            }
-            // Libera o handle quebrado para não envenenar hasLoadedTrack()
             BASS.BASS_StreamFree(activeChannel)
             activeChannel = 0
+
+            if (BassCore.isDeviceRelatedError(error)) {
+                Log.w(TAG, "BASS_ChannelPlay device error ($error) — reinitializing BASS...")
+                if (BassCore.reinitialize()) {
+                    val retryChannel = createStream(path)
+                    if (retryChannel != 0) {
+                        activeChannel = retryChannel
+                        BASS.BASS_ChannelSetSync(activeChannel, BASS.BASS_SYNC_END, 0, endSync, 0)
+                        BASS.BASS_ChannelSetAttribute(activeChannel, BASS.BASS_ATTRIB_VOL, controller.uiState.value.volume)
+                        fxEngine.setupEqualizer()
+                        if (BASS.BASS_ChannelPlay(activeChannel, false)) {
+                            controller.updateTrack(item)
+                            controller.updatePlaying(true)
+                            updateDuration()
+                            startProgressTracker()
+                            Log.d(TAG, "Playback started after BASS reinit")
+                            return
+                        }
+                        BASS.BASS_StreamFree(activeChannel)
+                        activeChannel = 0
+                    }
+                }
+            }
+
             val msg = BassErrorMapper.getErrorMessage(error)
+            Log.e(TAG, "Playback failed definitively: $msg")
             controller.setError(msg)
-            Log.e(TAG, "Failed to start playback after reinit attempt, error: $msg")
         }
     }
 

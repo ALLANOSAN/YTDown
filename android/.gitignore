@@ -12,4 +12,4 @@ GeneratedPluginRegistrant.java
 key.properties
 **/*.keystore
 **/*.jks
-android/.kotlin/
+docs/BT_LONG_PAUSE_BUG.md

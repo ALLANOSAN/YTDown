@@ -206,16 +206,17 @@ class PlaybackController @Inject constructor(
                 engine.pause()
             } else {
                 val track = currentTrack
+                val savedPos = _uiState.value.positionMs
                 if (engine.hasLoadedTrack()) {
                     if (!engine.resume()) {
-                        // Resume falhou (canal stale) — fallback recria stream do zero
+                        // Resume falhou (canal stale) — fallback recria stream e retoma na posição
                         Log.d(TAG, "togglePlayPause(): resume failed, recreating stream")
-                        track?.let { engine.play(it) }
+                        track?.let { engine.play(it, savedPos) }
                     }
                 } else if (track != null) {
                     // Canal perdido completamente — recriar do zero
                     Log.d(TAG, "togglePlayPause(): no active channel, creating fresh stream")
-                    engine.play(track)
+                    engine.play(track, savedPos)
                 } else {
                     Log.w(TAG, "togglePlayPause(): no track available")
                 }

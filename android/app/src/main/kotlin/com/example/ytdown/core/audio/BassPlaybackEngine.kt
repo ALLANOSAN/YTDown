@@ -53,8 +53,15 @@ class BassPlaybackEngine @Inject constructor(
     /**
      * Prepara e inicia a reprodução de um item.
      */
-    fun play(item: DownloadItemEntity) {
-        Log.d(TAG, "play() called for: ${item.title}")
+    /**
+     * Inicia a reprodução de uma música (novo stream ou recriação após resume falho).
+     * @param item A música a ser tocada.
+     * @param resumePositionMs Posição em ms para seek após criar o stream (> 0 = retomada).
+     *                         Usado quando resume() falha (PAUSED_DEVICE/BASS_ERROR_START)
+     *                         e precisamos recriar o stream mantendo a posição original.
+     */
+    fun play(item: DownloadItemEntity, resumePositionMs: Long = -1L) {
+        Log.d(TAG, "play() called for: ${item.title}, resumePos: ${resumePositionMs}ms")
         val path = item.exportedPath ?: item.outputPath
         if (path.isBlank()) {
             controller.setError("Caminho de arquivo inválido")
@@ -99,6 +106,10 @@ class BassPlaybackEngine @Inject constructor(
 
         // 4. Iniciar Playback
         if (BASS.BASS_ChannelPlay(activeChannel, false)) {
+            // Retomar na posição salva (fallback após resume() falhar)
+            if (resumePositionMs > 0) {
+                seekTo(resumePositionMs)
+            }
             controller.updateTrack(item)
             controller.updatePlaying(true)
             updateDuration()
@@ -119,6 +130,10 @@ class BassPlaybackEngine @Inject constructor(
                         BASS.BASS_ChannelSetAttribute(activeChannel, BASS.BASS_ATTRIB_VOL, controller.uiState.value.volume)
                         fxEngine.setupEqualizer()
                         if (BASS.BASS_ChannelPlay(activeChannel, false)) {
+                            // Retomar na posição salva também no retry
+                            if (resumePositionMs > 0) {
+                                seekTo(resumePositionMs)
+                            }
                             controller.updateTrack(item)
                             controller.updatePlaying(true)
                             updateDuration()

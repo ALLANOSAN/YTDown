@@ -27,9 +27,9 @@ class PlaybackActionDispatcherImpl @Inject constructor(
             if (!controller.isPlaying) {
                 if (!engine.resume()) {
                     // Resume falhou (canal stale após Bluetooth desconectar, etc.)
-                    // Fallback: recria o stream do zero no dispositivo de áudio atual
+                    // Fallback: recria o stream do zero e retoma na posição salva
                     Log.d(TAG, "play(): resume failed, restarting track from scratch")
-                    track?.let { engine.play(it) }
+                    track?.let { engine.play(it, controller.positionMs) }
                 }
             }
         } else if (track != null) {
@@ -46,9 +46,9 @@ class PlaybackActionDispatcherImpl @Inject constructor(
         val track = controller.currentTrack
         if (engine.hasLoadedTrack()) {
             if (!engine.resume()) {
-                // Resume falhou → fallback recriando stream
+                // Resume falhou → fallback recriando stream e retomando na posição salva
                 Log.d(TAG, "resume(): failed, restarting track from scratch")
-                track?.let { engine.play(it) }
+                track?.let { engine.play(it, controller.positionMs) }
             }
         } else if (track != null) {
             // Canal perdido, recriar do zero
@@ -73,9 +73,9 @@ class PlaybackActionDispatcherImpl @Inject constructor(
             if (engine.hasLoadedTrack()) {
                 if (!engine.resume()) {
                     // Resume falhou (canal stale após Bluetooth desconectar, etc.)
-                    // Fallback: recria o stream do zero no dispositivo de áudio atual
+                    // Fallback: recria o stream do zero e retoma na posição salva
                     Log.d(TAG, "playPause(): resume failed, restarting track from scratch")
-                    track?.let { engine.play(it) }
+                    track?.let { engine.play(it, controller.positionMs) }
                 }
             } else if (track != null) {
                 // Canal foi perdido completamente (dispositivo de áudio mudou, etc.)

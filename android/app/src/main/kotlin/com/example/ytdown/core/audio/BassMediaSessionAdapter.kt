@@ -29,7 +29,7 @@ import javax.inject.Singleton
 @Singleton
 class BassMediaSessionAdapter @Inject constructor(
     private val playbackController: PlaybackController,
-    private val actionDispatcher: PlaybackActionDispatcher,
+    private val actionDispatcher: PlaybackActionDispatcherImpl,
     private val rotationController: ArtworkRotationController
 ) : SimpleBasePlayer(Looper.getMainLooper()) {
 

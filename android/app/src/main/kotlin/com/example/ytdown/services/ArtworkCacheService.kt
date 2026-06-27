@@ -1,6 +1,6 @@
 package com.example.ytdown.services
 
-import com.example.ytdown.utils.MemoryLruCache
+import android.util.LruCache
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -8,9 +8,9 @@ import javax.inject.Singleton
 class ArtworkCacheService @Inject constructor(
     private val lastfmService: LastfmService
 ) {
-    private val artistCache = MemoryLruCache<String, String>(256)
-    private val albumCache = MemoryLruCache<String, String>(256)
-    private val trackCache = MemoryLruCache<String, String>(256)
+    private val artistCache = LruCache<String, String>(256)
+    private val albumCache = LruCache<String, String>(256)
+    private val trackCache = LruCache<String, String>(256)
 
     suspend fun getArtistImage(artist: String): String? {
         if (artist.isBlank()) return null
@@ -31,9 +31,9 @@ class ArtworkCacheService @Inject constructor(
     }
 
     suspend fun clear(includeUpstream: Boolean = true) {
-        artistCache.clear()
-        albumCache.clear()
-        trackCache.clear()
+        artistCache.evictAll()
+        albumCache.evictAll()
+        trackCache.evictAll()
         if (includeUpstream) lastfmService.clearCache()
     }
 }

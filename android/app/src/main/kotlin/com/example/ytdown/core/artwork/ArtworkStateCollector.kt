@@ -9,6 +9,14 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import com.example.ytdown.ui.PlaybackUiState
 
+/** Representa o estado visual da arte de capa/artista. */
+data class ArtworkState(
+    val currentImage: String? = null,
+    val mode: ArtworkMode = ArtworkMode.ALBUM
+)
+
+enum class ArtworkMode { ALBUM, ARTIST }
+
 @Singleton
 class ArtworkStateCollector @Inject constructor(
     private val rotationController: ArtworkRotationController,

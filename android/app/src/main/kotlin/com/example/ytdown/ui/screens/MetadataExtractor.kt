@@ -6,6 +6,13 @@ import android.net.Uri
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 
+data class AudioMetadata(
+    val title: String,
+    val artist: String,
+    val album: String,
+    val duration: Long
+)
+
 class MetadataExtractor @Inject constructor(
     @param:ApplicationContext
     private val context: Context

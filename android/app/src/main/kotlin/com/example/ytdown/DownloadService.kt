@@ -7,9 +7,9 @@ import com.example.ytdown.core.business.YtDlpWrapper
 import com.example.ytdown.core.domain.*
 import com.example.ytdown.core.infrastructure.BinaryOrchestrator
 import com.example.ytdown.core.infrastructure.MediaScanner
-import com.example.ytdown.core.infrastructure.MimeTypeResolver
+
 import com.example.ytdown.services.StorageService
-import com.example.ytdown.utils.MemoryLruCache
+import android.util.LruCache
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import javax.inject.Inject
@@ -18,7 +18,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
-class MetadataTools(val scanner: MediaScanner, val resolver: MimeTypeResolver)
+class MetadataTools(val scanner: MediaScanner)
 
 @Singleton
 class DownloadMetadataManager
@@ -31,7 +31,7 @@ constructor(
         private val orchestrator: BinaryOrchestrator,
         @param:ApplicationContext private val context: Context
 ) {
-    private val infoCache = MemoryLruCache<String, VideoInfoJson>(50)
+    private val infoCache = LruCache<String, VideoInfoJson>(50)
 
     fun fetchVideoInfo(url: VideoUrl): VideoInfoJson {
         val cached = infoCache.get(url.value)
@@ -107,7 +107,7 @@ constructor(
                         )
 
                 if (result.isSuccess()) {
-                    val mime = tools.resolver.fromPath(FilePath(target))
+                    val mime = FilePath(target).toMimeType()
                     tools.scanner.scanSync(FilePath(target), mime)
                 }
                 result

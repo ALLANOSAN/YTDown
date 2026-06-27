@@ -60,3 +60,15 @@ value class ExitCode(val value: Int) {
 }
 
 data class ProcessOutput(val stdOut: String, val stdErr: String)
+
+fun FilePath.toMimeType(): MimeType {
+    val ext = value.substringAfterLast('.', "").lowercase()
+    val mime = android.webkit.MimeTypeMap.getSingleton()
+        .getMimeTypeFromExtension(ext) ?: when (ext) {
+            "opus" -> "audio/opus"
+            "m4a" -> "audio/mp4"
+            "flac" -> "audio/flac"
+            else -> "application/octet-stream"
+        }
+    return MimeType(mime)
+}

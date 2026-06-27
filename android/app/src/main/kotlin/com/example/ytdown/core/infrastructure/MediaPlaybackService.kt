@@ -17,7 +17,7 @@ import androidx.media3.session.MediaSessionService
 import androidx.media3.session.DefaultMediaNotificationProvider
 import com.example.ytdown.MainActivity
 import com.example.ytdown.core.audio.BassMediaSessionAdapter
-import com.example.ytdown.core.audio.PlaybackActionDispatcher
+import com.example.ytdown.core.audio.PlaybackActionDispatcherImpl
 import com.example.ytdown.core.audio.PlaybackController
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.*
@@ -59,7 +59,7 @@ class MediaPlaybackService : MediaSessionService() {
     lateinit var playbackController: PlaybackController
 
     @Inject
-    lateinit var actionDispatcher: PlaybackActionDispatcher
+    lateinit var actionDispatcher: PlaybackActionDispatcherImpl
 
     @Inject
     lateinit var bassAdapter: BassMediaSessionAdapter

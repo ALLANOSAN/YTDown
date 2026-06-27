@@ -1,6 +1,6 @@
 package com.example.ytdown.core.infrastructure
 
-import com.example.ytdown.utils.MemoryLruCache
+import android.util.LruCache
 import com.google.gson.Gson
 import com.google.gson.JsonObject
 import okhttp3.OkHttpClient
@@ -18,7 +18,7 @@ class MetadataService @Inject constructor() {
     private val gson = Gson()
     private val lastFmKey = "c0bc9642cd67227a10ce0a129981513b"
     
-    private val artworkCache = MemoryLruCache<String, Map<String, String?>>(100)
+    private val artworkCache = LruCache<String, Map<String, String?>>(100)
     
     // ⚡ In-Flight Protection: Impede requisições duplicadas.
     private val inFlightRequests = ConcurrentHashMap<String, Deferred<Map<String, String?>>>()

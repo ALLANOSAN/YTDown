@@ -20,7 +20,6 @@ import com.example.ytdown.services.MusicBrainzService
 import com.example.ytdown.services.ObservabilityService
 import com.example.ytdown.services.StorageService
 import com.example.ytdown.core.audio.PlaybackController
-import com.example.ytdown.core.audio.PlaybackActionDispatcher
 import com.example.ytdown.core.audio.PlaybackActionDispatcherImpl
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
@@ -68,12 +67,10 @@ object AppModule {
     fun provideMediaScanner(@ApplicationContext context: Context): MediaScanner =
             MediaScanner(context)
 
-    @Provides @Singleton fun provideMimeTypeResolver(): MimeTypeResolver = MimeTypeResolver()
-
     @Provides
     @Singleton
-    fun provideMetadataTools(scanner: MediaScanner, resolver: MimeTypeResolver): MetadataTools =
-            MetadataTools(scanner, resolver)
+    fun provideMetadataTools(scanner: MediaScanner): MetadataTools =
+            MetadataTools(scanner)
 
     @Provides @Singleton fun provideMediaInfoParser(): MediaInfoParser = MediaInfoParser()
 
@@ -182,7 +179,7 @@ object AppModule {
     fun providePlaybackActionDispatcher(
         controller: PlaybackController,
         engine: com.example.ytdown.core.audio.BassPlaybackEngine
-    ): PlaybackActionDispatcher = PlaybackActionDispatcherImpl(controller, engine)
+    ): PlaybackActionDispatcherImpl = PlaybackActionDispatcherImpl(controller, engine)
 
     // Gson Provider
     @Provides

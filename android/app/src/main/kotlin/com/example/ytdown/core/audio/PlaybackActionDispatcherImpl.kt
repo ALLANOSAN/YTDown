@@ -5,20 +5,20 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * PlaybackActionDispatcherImpl - Implementação do dispatcher de ações de reprodução.
+ * PlaybackActionDispatcher - Implementação do dispatcher de ações de reprodução.
  * Todas as fontes de comando (UI, MediaSession, Notification, Bluetooth) passam por aqui.
  */
 @Singleton
 class PlaybackActionDispatcherImpl @Inject constructor(
     private val controller: PlaybackController,
     private val engine: BassPlaybackEngine
-) : PlaybackActionDispatcher {
+) {
 
     companion object {
         private const val TAG = "PlaybackActionDispatcher"
     }
 
-    override fun play() {
+    fun play() {
         Log.d(TAG, "play() called, isPlaying=${controller.isPlaying}, hasTrack=${controller.currentTrack != null}")
         // A lógica de play() original focava em verificar se precisa dar resume.
         // Agora também trata canais que morreram (ex: Bluetooth desconectou durante pausa longa).
@@ -41,7 +41,7 @@ class PlaybackActionDispatcherImpl @Inject constructor(
         }
     }
 
-    override fun resume() {
+    fun resume() {
         Log.d(TAG, "resume() called, hasTrack=${controller.currentTrack != null}")
         val track = controller.currentTrack
         if (engine.hasLoadedTrack()) {
@@ -59,12 +59,12 @@ class PlaybackActionDispatcherImpl @Inject constructor(
         }
     }
 
-    override fun pause() {
+    fun pause() {
         Log.d(TAG, "pause() called")
         engine.pause()
     }
 
-    override fun playPause() {
+    fun playPause() {
         Log.d(TAG, "playPause() called, isPlaying: ${controller.isPlaying}")
         if (controller.isPlaying) {
             pause()
@@ -87,41 +87,41 @@ class PlaybackActionDispatcherImpl @Inject constructor(
         }
     }
 
-    override fun next() {
+    fun next() {
         Log.d(TAG, "next() called")
         controller.playNext()
     }
 
-    override fun previous() {
+    fun previous() {
         Log.d(TAG, "previous() called")
         controller.playPrevious()
     }
 
-    override fun rewind() {
+    fun rewind() {
         Log.d(TAG, "rewind() called")
         val current = controller.positionMs
         engine.seekTo((current - 10000).coerceAtLeast(0))
     }
 
-    override fun forward() {
+    fun forward() {
         Log.d(TAG, "forward() called")
         val current = controller.positionMs
         val duration = controller.durationMs
         engine.seekTo((current + 10000).coerceAtMost(duration))
     }
 
-    override fun seekTo(positionMs: Long) {
+    fun seekTo(positionMs: Long) {
         Log.d(TAG, "seekTo($positionMs) called")
         engine.seekTo(positionMs)
     }
 
-    override fun toggleShuffle() {
+    fun toggleShuffle() {
         Log.d(TAG, "toggleShuffle() called")
         val newShuffle = !controller.uiState.value.isShuffleEnabled
         controller.updateShuffle(newShuffle)
     }
 
-    override fun toggleRepeatMode() {
+    fun toggleRepeatMode() {
         Log.d(TAG, "toggleRepeatMode() called")
         val nextMode = (controller.uiState.value.repeatMode + 1) % 3
         controller.updateRepeatMode(nextMode)

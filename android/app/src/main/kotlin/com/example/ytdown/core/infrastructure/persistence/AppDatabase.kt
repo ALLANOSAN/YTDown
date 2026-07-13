@@ -2,6 +2,8 @@ package com.example.ytdown.core.infrastructure.persistence
 
 import androidx.room.Database
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import com.example.ytdown.core.domain.SongEntity
 import com.example.ytdown.core.domain.DownloadItemEntity
 import com.example.ytdown.core.infrastructure.persistence.entities.*
@@ -15,7 +17,7 @@ import com.example.ytdown.core.infrastructure.persistence.entities.*
         PlaylistTrackEntity::class,
         SearchHistoryEntity::class
     ],
-    version = 3, // Incrementamos a versão para forçar a criação das novas tabelas
+    version = 4, // +coluna artworkUrl na tabela downloads (Migration 3->4)
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -24,6 +26,13 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun songDao(): SongDao
 
     companion object {
-        val ALL_MIGRATIONS = arrayOf<androidx.room.migration.Migration>()
+        private val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // Coluna nova e nullable — nenhum dado existente é perdido.
+                db.execSQL("ALTER TABLE downloads ADD COLUMN artworkUrl TEXT")
+            }
+        }
+
+        val ALL_MIGRATIONS = arrayOf<Migration>(MIGRATION_3_4)
     }
 }

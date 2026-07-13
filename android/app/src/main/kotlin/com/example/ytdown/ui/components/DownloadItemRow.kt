@@ -35,7 +35,8 @@ fun DownloadItemRow(
     onClick: () -> Unit = {},
     onExport: () -> Unit = {},
     onEditMetadata: () -> Unit = {},
-    onDelete: () -> Unit = {}
+    onDelete: () -> Unit = {},
+    onRetry: () -> Unit = {}
 ) {
     var showMenu by remember { mutableStateOf(false) }
     
@@ -163,7 +164,18 @@ fun DownloadItemRow(
                     }
                 }
                 "failed" -> {
-                    Icon(Icons.Default.Error, null, tint = Color.Red, modifier = Modifier.size(24.dp))
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(Icons.Default.Error, null, tint = Color.Red, modifier = Modifier.size(24.dp))
+                        Spacer(modifier = Modifier.height(4.dp))
+                        IconButton(onClick = onRetry) {
+                            Icon(
+                                Icons.Default.Refresh,
+                                "Tentar novamente",
+                                tint = YTDownPurple,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
                 }
             }
 

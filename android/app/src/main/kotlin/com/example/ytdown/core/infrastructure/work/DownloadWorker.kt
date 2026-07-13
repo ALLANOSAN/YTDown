@@ -16,7 +16,6 @@ import com.example.ytdown.core.infrastructure.persistence.SongDao
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import java.io.File
-import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.*
 
@@ -32,7 +31,10 @@ constructor(
 ) : CoroutineWorker(context, params) {
 
     private val notificationHelper = NotificationHelper(context)
-    private val notificationId = (System.currentTimeMillis() % Int.MAX_VALUE).toInt()
+
+    // ID FIXO: todos os itens da fila compartilham a MESMA notificação,
+    // que é atualizada em vez de recriada a cada item.
+    private val notificationId = NOTIF_ID
 
     private val powerManager = context.getSystemService(Context.POWER_SERVICE) as PowerManager
     private val wifiManager =
@@ -55,56 +57,85 @@ constructor(
     private var lastProgressValue = -1
     private var lastDbUpdateTime = 0L
 
-    /** FIX #4: Watchdog now sets a flag that the download loop can check */
-    private val stalled = AtomicBoolean(false)
-
     override suspend fun doWork(): Result {
-        android.util.Log.e("DownloadWorker", "🚀 doWork started!")
-        wakeLock.acquire(30 * 60 * 1000L)
+        android.util.Log.e("DownloadWorker", "🚀 Queue worker iniciado!")
+
+        // Libera itens travados de um worker anterior abortado (sem graça).
+        runCatching { repository.resetStuckDownloading() }
+
+        wakeLock.acquire(LOCK_TIMEOUT)
         wifiLock.acquire()
 
-        val result = try {
-            val id = inputData.getString("VIDEO_ID") ?: return Result.failure()
-            val url = inputData.getString("VIDEO_URL") ?: return Result.failure()
-            val finalDestPath = inputData.getString("OUTPUT_PATH") ?: return Result.failure()
-            val title = inputData.getString("TITLE") ?: "Download"
-            
-            android.util.Log.d("DOWNLOAD_FLOW", "🚀 Iniciando Worker para: $title")
-            android.util.Log.d("STORAGE_DEBUG", "🎯 Destino final desejado: $finalDestPath")
+        setForeground(createForegroundInfo("Preparando downloads…", 0))
 
-            val metadata =
-                    MediaMetadata(
-                            MediaTitle(title),
-                            ArtistName(inputData.getString("ARTIST") ?: ""),
-                            AlbumName(inputData.getString("ALBUM") ?: "")
-                    )
+        return try {
+            var count = 0
+            while (true) {
+                val item = repository.nextPending() ?: break
 
-            val artworkUrl = inputData.getString("ARTWORK_URL")
-            val downloadOptions =
-                    DownloadOptions(
-                            type =
-                                    DownloadType.values().firstOrNull {
-                                        it.value == inputData.getString("DOWNLOAD_TYPE")
-                                    }
-                                            ?: DownloadType.AUDIO,
-                            format = inputData.getString("FORMAT") ?: "mp3",
-                            quality = inputData.getString("QUALITY") ?: "192"
-                    )
+                // Re-adquire os locks caso algum tenha expirado durante a fila longa.
+                if (!wakeLock.isHeld) wakeLock.acquire(LOCK_TIMEOUT)
+                if (!wifiLock.isHeld) wifiLock.acquire()
 
-            setForeground(createForegroundInfo(title, 0))
-
-            val startItem = repository.find(id)
-            if (startItem != null) {
-                repository.persist(startItem.copy(status = "downloading", progress = 0.0))
+                processItem(item)
+                count++
             }
+            android.util.Log.d("DOWNLOAD_FLOW", "✅ Fila concluída. Itens processados: $count")
+            Result.success()
+        } catch (e: CancellationException) {
+            android.util.Log.e("DOWNLOAD_FLOW", "🛑 Worker CANCELADO — encerrando fila (itens pendentes podem ser reagendados)")
+            Result.failure()
+        } catch (e: Exception) {
+            android.util.Log.e("DOWNLOAD_FLOW", "❌ Erro inesperado no Worker: ${e.message}", e)
+            Result.failure()
+        } finally {
+            progressScope.cancel()
+            if (wakeLock.isHeld) wakeLock.release()
+            if (wifiLock.isHeld) wifiLock.release()
+        }
+    }
 
-            // ✅ ESTRATÉGIA DE STORAGE DEFINITIVA:
-            // Baixamos sempre no diretório de cache privado do app para evitar Permission Denied do Python.
-            // O Python (yt-dlp) precisa de acesso direto ao sistema de arquivos via C, o que é bloqueado em pastas externas no Android 11+.
-            val tempDownloadDir = File(applicationContext.cacheDir, "downloads").apply { if (!exists()) mkdirs() }
-            
-            android.util.Log.d("STORAGE_DEBUG", "🛠️ Usando cache privado para download: ${tempDownloadDir.absolutePath}")
+    /**
+     * Baixa UM item da fila (lido diretamente da entidade persistida) e atualiza
+     * seu status. Continua para o próximo item no loop de [doWork], independente
+     * de falha pontual (a menos que o worker seja cancelado).
+     */
+    private suspend fun processItem(item: DownloadItemEntity) {
+        val id = item.id
+        val url = item.url
+        val finalDestPath = item.outputPath
+        val title = item.title.ifBlank { "Download" }
 
+        android.util.Log.d("DOWNLOAD_FLOW", "🚀 Processando item: $title")
+
+        val metadata = MediaMetadata(
+                MediaTitle(title),
+                ArtistName(item.artist ?: ""),
+                AlbumName(item.album ?: "")
+        )
+
+        val downloadOptions = DownloadOptions(
+                type = if (item.type == 0) DownloadType.AUDIO else DownloadType.VIDEO,
+                format = item.format.ifBlank { "mp3" },
+                quality = item.quality.ifBlank { "192" }
+        )
+
+        val artworkUrl = item.artworkUrl
+
+        setForeground(createForegroundInfo(title, 0))
+
+        val startItem = repository.find(id)
+        if (startItem != null) {
+            repository.persist(startItem.copy(status = "downloading", progress = 0.0))
+        }
+
+        // ✅ ESTRATÉGIA DE STORAGE DEFINITIVA:
+        // Baixamos sempre no diretório de cache privado do app para evitar Permission Denied do Python.
+        val tempDownloadDir = File(applicationContext.cacheDir, "downloads").apply { if (!exists()) mkdirs() }
+
+        android.util.Log.d("STORAGE_DEBUG", "🛠️ Usando cache privado para download: ${tempDownloadDir.absolutePath}")
+
+        try {
             val downloadResult =
                     withTimeoutOrNull(30 * 60 * 1000L) {
                         engine.downloadAndTag(
@@ -124,9 +155,9 @@ constructor(
                     }
 
             if (downloadResult == null) {
-                android.util.Log.e("DOWNLOAD_FLOW", "⚠️ Timeout de 30 min atingido!")
+                android.util.Log.e("DOWNLOAD_FLOW", "⚠️ Timeout de 30 min atingido para $title!")
                 updateFinalStatus(id, success = false)
-                return Result.failure()
+                return
             }
 
             val success = downloadResult.exitCode.isSuccess()
@@ -134,28 +165,28 @@ constructor(
 
             if (success && tempFilePath != null) {
                 android.util.Log.d("DOWNLOAD_FLOW", "📦 Download no cache concluído. Iniciando exportação...")
-                
+
                 // Agora exportamos do cache privado para a galeria pública (/Music ou /Video)
                 val storageService = com.example.ytdown.services.StorageService.getInstance()
-                
+
                 val mediaType = if (downloadOptions.type == DownloadType.AUDIO) StorageMediaType("audio") else StorageMediaType("video")
-                
+
                 try {
                     val exportedUri = storageService.exportToPublicCollection(
-                        context = applicationContext,
-                        sourcePath = StoragePath(tempFilePath),
-                        displayName = File(tempFilePath).name,
-                        mediaType = mediaType,
-                        mimeType = StorageMimeType(if (mediaType.isAudio()) "audio/*" else "video/*"),
-                        allowUserInteractionFallback = true
+                            context = applicationContext,
+                            sourcePath = StoragePath(tempFilePath),
+                            displayName = File(tempFilePath).name,
+                            mediaType = mediaType,
+                            mimeType = StorageMimeType(if (mediaType.isAudio()) "audio/*" else "video/*"),
+                            allowUserInteractionFallback = true
                     )
 
                     android.util.Log.d("DOWNLOAD_FLOW", "✨ Exportação para MediaStore concluída: $exportedUri")
-                    
+
                     // Inicia processamento de metadados e capas (MusicBrainz/FanArt/Mutagen)
                     try {
                         val importProcessor = dagger.hilt.android.EntryPointAccessors.fromApplication(
-                            applicationContext, 
+                            applicationContext,
                             com.example.ytdown.core.infrastructure.di.ImportProcessorEntryPoint::class.java
                         ).mediaImportProcessor()
                         importProcessor.process(
@@ -172,13 +203,15 @@ constructor(
                             if (song != null) {
                                 val download = repository.find(id)
                                 if (download != null) {
-                                    repository.persist(download.copy(
-                                        albumArtPath = song.albumArtwork ?: download.albumArtPath,
-                                        artistArtPath = song.artistArtwork ?: download.artistArtPath,
-                                        title = song.title,
-                                        artist = song.artist,
-                                        album = song.album
-                                    ))
+                                    repository.persist(
+                                        download.copy(
+                                            albumArtPath = song.albumArtwork ?: download.albumArtPath,
+                                            artistArtPath = song.artistArtwork ?: download.artistArtPath,
+                                            title = song.title,
+                                            artist = song.artist,
+                                            album = song.album
+                                        )
+                                    )
                                 }
                                 android.util.Log.d("DOWNLOAD_FLOW", "Sync artwork: ${song.artist} - ${song.title} | albumArt=${song.albumArtwork != null} artistArt=${song.artistArtwork != null}")
                             }
@@ -191,33 +224,24 @@ constructor(
 
                     // Limpar arquivo temporário
                     File(tempFilePath).delete()
-                    
+
                     updateFinalStatus(id, success = true, outputPath = finalDestPath, exportedPath = exportedUri?.toString())
-                    Result.success()
                 } catch (e: Exception) {
                     android.util.Log.e("STORAGE_DEBUG", "❌ Falha ao exportar para MediaStore: ${e.message}")
                     updateFinalStatus(id, success = false)
-                    Result.failure()
                 }
             } else {
-                android.util.Log.e("DOWNLOAD_FLOW", "❌ Download falhou no engine.")
+                android.util.Log.e("DOWNLOAD_FLOW", "❌ Download falhou no engine para $title.")
                 updateFinalStatus(id, success = false)
-                Result.failure()
             }
         } catch (e: CancellationException) {
-            android.util.Log.e("DOWNLOAD_FLOW", "🛑 Worker CANCELADO")
-            Result.failure()
+            // Item cancelado: interrompe o worker inteiro (o resto da fila fica "pending").
+            android.util.Log.e("DOWNLOAD_FLOW", "🛑 Item cancelado: $title")
+            throw e
         } catch (e: Exception) {
-            android.util.Log.e("DOWNLOAD_FLOW", "❌ Erro inesperado no Worker: ${e.message}", e)
-            Result.failure()
-        } finally {
-            progressScope.cancel()
-            if (wakeLock.isHeld) wakeLock.release()
-            if (wifiLock.isHeld) wifiLock.release()
+            android.util.Log.e("DOWNLOAD_FLOW", "❌ Erro no item $title: ${e.message}", e)
+            updateFinalStatus(id, success = false)
         }
-
-
-        return result
     }
 
     private fun createForegroundInfo(title: String, progress: Int): ForegroundInfo {
@@ -260,5 +284,12 @@ constructor(
                         exportedPath = exportedPath ?: item.exportedPath
                 )
         )
+    }
+
+    companion object {
+        /** ID fixo da notificação de progresso (compartilhado por toda a fila). */
+        private const val NOTIF_ID = 1001
+        /** Timeout do wakelock por item da fila (re-adquirido a cada item). */
+        private val LOCK_TIMEOUT = 30L * 60 * 1000
     }
 }

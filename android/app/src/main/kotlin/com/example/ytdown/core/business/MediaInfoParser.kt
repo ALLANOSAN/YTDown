@@ -27,20 +27,33 @@ class MediaInfoParser {
             playlistThumbnail = entries.getJSONObject(0).optString("thumbnail").takeIf { it.isNotBlank() }
         }
         
-        return (0 until entries.length()).map { i ->
+        // Mantém (posição no array) junto de cada item para desempatar a
+        // ordenção quando o playlist_index estiver ausente (vídeo único).
+        val indexed = (0 until entries.length()).map { i ->
             val entryObj = entries.getJSONObject(i)
             val item = extractPreview(entryObj)
-            
-            var itemCandidate = item
-            if (item.thumbnail == null) {
-                itemCandidate = item.copy(thumbnail = playlistThumbnail)
-            }
-            itemCandidate
+            val candidate = if (item.thumbnail == null) {
+                item.copy(thumbnail = playlistThumbnail)
+            } else item
+            i to candidate
         }
+
+        // Ordena pela posição REAL da playlist (playlist_index do yt-dlp).
+        // Isso garante "episódio 1 → 2 → 3…" independente de em que
+        // ordem o array `entries` vier. Itens sem índice (não-playlist)
+        // mantêm a ordem original (fallback pela posição no array).
+        return indexed
+            .sortedBy { (pos, item) -> item.playlistIndex ?: pos }
+            .map { it.second }
     }
 
     private fun extractPreview(obj: JSONObject): VideoPreviewItem {
         val id = obj.optString("id", System.currentTimeMillis().toString())
+        // yt-dlp expõe a posição da playlist como `playlist_index`
+        // (às vezes `playlist_autonumber`). Usamos para ordenar o download.
+        val playlistIndex =
+            (obj.opt("playlist_index") as? Number)?.toInt()?.takeIf { it > 0 }
+                ?: (obj.opt("playlist_autonumber") as? Number)?.toInt()?.takeIf { it > 0 }
         return VideoPreviewItem(
             id = id,
             title = MediaTitle(
@@ -52,7 +65,8 @@ class MediaInfoParser {
             ),
             url = VideoUrl(obj.optString("webpage_url", obj.optString("url", ""))),
             thumbnail = obj.optString("thumbnail").takeIf { it.isNotBlank() },
-            duration = obj.optLong("duration", 0)
+            duration = obj.optLong("duration", 0),
+            playlistIndex = playlistIndex
         )
     }
 

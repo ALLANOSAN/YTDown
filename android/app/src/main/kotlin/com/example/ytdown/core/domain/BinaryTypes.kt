@@ -38,7 +38,9 @@ data class VideoPreviewItem(
     val url: VideoUrl,
     val thumbnail: String?,
     val duration: Long,
-    val isSelected: Boolean = true // Para seleção em playlists
+    val isSelected: Boolean = true, // Para seleção em playlists
+    /** Posição na playlist conforme o yt-dlp (playlist_index). Nulo p/ vídeo único. */
+    val playlistIndex: Int? = null
 )
 
 data class DownloadOptions(

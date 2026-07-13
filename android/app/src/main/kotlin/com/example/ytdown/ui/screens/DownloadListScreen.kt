@@ -48,6 +48,7 @@ fun DownloadListScreen(
     val haptic = LocalHapticFeedback.current
     val downloads = viewModel.downloads
     val listState by viewModel.listState.collectAsStateWithLifecycle()
+    val failedDownloads by viewModel.failedDownloads.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val systemViewModel: SystemViewModel = hiltViewModel()
     var editingDownload by remember { mutableStateOf<DownloadItemEntity?>(null) }
@@ -86,6 +87,22 @@ fun DownloadListScreen(
                             colors =
                                     TopAppBarDefaults.topAppBarColors(containerColor = Color.Black),
                             actions = {
+                                if (!listState.isSelectionMode && failedDownloads.isNotEmpty()) {
+                                    IconButton(
+                                        onClick = {
+                                            haptic.performHapticFeedback(
+                                                HapticFeedbackType.TextHandleMove
+                                            )
+                                            viewModel.retryAllFailed()
+                                        }
+                                    ) {
+                                        Icon(
+                                            Icons.Default.Refresh,
+                                            "Tentar novamente todos os downloads que falharam",
+                                            tint = YTDownPurple
+                                        )
+                                    }
+                                }
                                 if (listState.isSelectionMode) {
                                     IconButton(
                                             onClick = {
@@ -254,6 +271,10 @@ fun DownloadListScreen(
                                     onDelete = {
                                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                         viewModel.deleteDownload(item.id)
+                                    },
+                                    onRetry = {
+                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        viewModel.retryDownload(item)
                                     }
                             )
                         }

@@ -259,6 +259,30 @@ constructor(
         }
     }
 
+    /**
+     * Downloads que falharam — derivado da lista completa (`allDownloads`) para a
+     * UI da lista principal expor o botão de "Tentar novamente".
+     */
+    val failedDownloads: StateFlow<List<DownloadItemEntity>> =
+        allDownloads
+            .map { list -> list.filter { it.status == "failed" } }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /**
+     * Tenta novamente um download que falhou, mantendo o mesmo id.
+     * Delega ao [DownloadScheduler.retry] (lógica centralizada, sem duplicar código).
+     */
+    fun retryDownload(item: DownloadItemEntity) {
+        viewModelScope.launch { scheduler.retry(item) }
+    }
+
+    /**
+     * Tenta novamente todos os downloads que falharam de uma vez.
+     */
+    fun retryAllFailed() {
+        viewModelScope.launch { scheduler.retryAll(failedDownloads.value) }
+    }
+
     fun exportDownload(context: Context, id: String) {
         viewModelScope.launch {
             val item = downloadRepository.find(id) ?: return@launch
@@ -465,7 +489,7 @@ constructor(
                 // Se o usuário deixou em branco, cada item usa o título que veio do YouTube.
                 val sharedTitle = currentState.titleInput
 
-                selectedItems.forEach { item ->
+                val specs = selectedItems.map { item ->
                     android.util.Log.d("DOWNLOAD_FLOW", "⏳ Agendando item: ${item.title.value}")
                     val perItemMeta =
                             MediaMetadata(
@@ -476,7 +500,15 @@ constructor(
                                     artist = ArtistName(currentState.artistInput),
                                     album = AlbumName(currentState.albumInput)
                             )
-                    scheduler.schedule(item.url, folder, perItemMeta, downloadOptions, resolvedArtworkUrl)
+                    PlaylistItem(item.url.value, perItemMeta, downloadOptions, resolvedArtworkUrl, item.playlistIndex)
+                }
+
+                // Playlists com mais de 1 item são encadeadas (download serial) para não
+                // esgotar a cota de expedited do Android e garantir que todos os vídeos rodem.
+                if (specs.size > 1) {
+                    scheduler.schedulePlaylist(folder, specs)
+                } else {
+                    specs.forEach { scheduler.schedule(VideoUrl(it.url), folder, it.meta, it.options, it.artworkUrl) }
                 }
                 
                 android.util.Log.d("DOWNLOAD_FLOW", "✅ Todos os itens foram enviados para o agendador.")

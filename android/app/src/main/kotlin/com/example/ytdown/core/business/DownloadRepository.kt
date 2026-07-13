@@ -46,15 +46,24 @@ class DownloadRepository @Inject constructor(
 
     suspend fun find(id: String): DownloadItemEntity? = dao.getById(id)
 
+    /** Próximo item "pending"/"queued" na ordem de inserção. */
+    suspend fun nextPending(): DownloadItemEntity? = dao.getNextPending()
+
+    /** Libera itens travados em "downloading" de um worker anterior abortado. */
+    suspend fun resetStuckDownloading() = dao.resetStuckDownloading()
+
     suspend fun persist(item: DownloadItemEntity) = dao.upsert(item)
 
     suspend fun delete(id: String) {
         val item = dao.getById(id) ?: return
         dao.delete(item)
+        // outputPath guarda a PASTA de destino (registro), nunca um arquivo real
+        // (os arquivos ficam no cache ou no MediaStore). Deletamos só se for um
+        // arquivo de fato, para não apagar a pasta de destino do usuário.
         if (item.outputPath.isNotBlank()) {
             try {
                 val privateFile = File(item.outputPath)
-                if (privateFile.exists()) privateFile.delete()
+                if (privateFile.exists() && privateFile.isFile) privateFile.delete()
             } catch (e: Exception) {}
         }
         item.exportedPath?.let { uriString ->

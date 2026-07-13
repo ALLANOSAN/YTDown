@@ -32,7 +32,9 @@ data class DownloadItemEntity(
     val format: String = "mp3",
     val quality: String = "192",
     val type: Int = 0, // 0: Audio, 1: Video
-    val exportedPath: String? = null
+    val exportedPath: String? = null,
+    /** URL da capa resolvida no agendamento (usada pelo engine p/ embutir metadata). */
+    val artworkUrl: String? = null
 ) {
     val folderName: String
         get() = outputPath.substringBeforeLast("/", "Downloads").substringAfterLast("/")

@@ -7,11 +7,13 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface DownloadDao {
-    @Query("SELECT * FROM downloads ORDER BY createdAt DESC")
+    // Ordem de inserção (createdAt ASC) = ordem da fila/download.
+    // Assim o item que está baixando (1º da playlist) aparece no topo.
+    @Query("SELECT * FROM downloads ORDER BY createdAt ASC")
     fun getAllDownloads(): Flow<List<DownloadItemEntity>>
 
-    // Paging3 — carrega por página, já ordenado por data desc
-    @Query("SELECT * FROM downloads ORDER BY createdAt DESC")
+    // Paging3 — carrega por página, na ordem de download (antigo→novo)
+    @Query("SELECT * FROM downloads ORDER BY createdAt ASC")
     fun getDownloadsPaged(): PagingSource<Int, DownloadItemEntity>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -25,6 +27,18 @@ interface DownloadDao {
 
     @Query("SELECT * FROM downloads WHERE id = :id")
     suspend fun getById(id: String): DownloadItemEntity?
+
+    /**
+     * Próximo item da fila, na ordem de inserção (createdAt ASC).
+     * A fila é drenada por UM único worker foreground; isso garante que o
+     * download continue mesmo com a tela off / app em segundo plano.
+     */
+    @Query("SELECT * FROM downloads WHERE status IN ('pending','queued') ORDER BY createdAt ASC LIMIT 1")
+    suspend fun getNextPending(): DownloadItemEntity?
+
+    /** Resgata itens travados em "downloading" (worker morto sem graça) para "pending". */
+    @Query("UPDATE downloads SET status = 'pending', progress = 0.0 WHERE status = 'downloading'")
+    suspend fun resetStuckDownloading()
 
     @Query("SELECT * FROM downloads")
     suspend fun getAllDownloadsSync(): List<DownloadItemEntity>

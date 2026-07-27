@@ -134,6 +134,46 @@ class SystemViewModel @Inject constructor(
         }
     }
 
+    fun updateTrackArtist(song: DownloadItemEntity, newArtist: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val updatedSong = song.copy(artist = newArtist)
+            databaseService.updateDownload(updatedSong)
+
+            val targetPath = updatedSong.exportedPath?.takeIf { it.isNotBlank() } ?: updatedSong.outputPath
+            val artworkUrl = updatedSong.albumArtPath?.takeIf { it.isNotBlank() } ?: updatedSong.artistArtPath
+
+            downloadMetadataManager.rewriteMetadata(
+                path = FilePath(targetPath),
+                metadata = MediaMetadata(
+                    MediaTitle(updatedSong.title),
+                    ArtistName(newArtist),
+                    AlbumName(updatedSong.album.orEmpty())
+                ),
+                artworkUrl = artworkUrl
+            )
+        }
+    }
+
+    fun updateTrackAlbum(song: DownloadItemEntity, newAlbum: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val updatedSong = song.copy(album = newAlbum)
+            databaseService.updateDownload(updatedSong)
+
+            val targetPath = updatedSong.exportedPath?.takeIf { it.isNotBlank() } ?: updatedSong.outputPath
+            val artworkUrl = updatedSong.albumArtPath?.takeIf { it.isNotBlank() } ?: updatedSong.artistArtPath
+
+            downloadMetadataManager.rewriteMetadata(
+                path = FilePath(targetPath),
+                metadata = MediaMetadata(
+                    MediaTitle(updatedSong.title),
+                    ArtistName(updatedSong.artist.orEmpty()),
+                    AlbumName(newAlbum)
+                ),
+                artworkUrl = artworkUrl
+            )
+        }
+    }
+
     fun performFullScan() {
         viewModelScope.launch {
             _isScanning.value = true

@@ -79,6 +79,8 @@ fun PlaylistDetailScreen(
     var showTrackMenu by remember { mutableStateOf<DownloadItemEntity?>(null) }
     var trackForPlaylist by remember { mutableStateOf<DownloadItemEntity?>(null) }
     var trackToEdit by remember { mutableStateOf<DownloadItemEntity?>(null) }
+    var trackToEditArtist by remember { mutableStateOf<DownloadItemEntity?>(null) }
+    var trackToEditAlbum by remember { mutableStateOf<DownloadItemEntity?>(null) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
 
     Scaffold(
@@ -243,6 +245,34 @@ fun PlaylistDetailScreen(
                             headlineColor = Color.White
                         )
                     )
+                    ListItem(
+                        headlineContent = { Text("Editar Artista") },
+                        leadingContent = {
+                            Icon(Icons.Default.Person, null, tint = YTDownPurple)
+                        },
+                        modifier = Modifier.clickable {
+                            trackToEditArtist = song
+                            showTrackMenu = null
+                        },
+                        colors = ListItemDefaults.colors(
+                            containerColor = Color.Transparent,
+                            headlineColor = Color.White
+                        )
+                    )
+                    ListItem(
+                        headlineContent = { Text("Editar Álbum") },
+                        leadingContent = {
+                            Icon(Icons.Default.Album, null, tint = YTDownPurple)
+                        },
+                        modifier = Modifier.clickable {
+                            trackToEditAlbum = song
+                            showTrackMenu = null
+                        },
+                        colors = ListItemDefaults.colors(
+                            containerColor = Color.Transparent,
+                            headlineColor = Color.White
+                        )
+                    )
                 }
             },
             confirmButton = {}
@@ -261,7 +291,7 @@ fun PlaylistDetailScreen(
         )
     }
 
-    // --- Editar nome da música ---
+    // --- Editar nome da música --
     trackToEdit?.let { song ->
         EditTrackNameDialog(
             song = song,
@@ -273,7 +303,31 @@ fun PlaylistDetailScreen(
         )
     }
 
-    // --- Confirmar exclusão de playlist ---
+    // --- Editar artista da música --
+    trackToEditArtist?.let { song ->
+        EditTrackArtistDialog(
+            song = song,
+            onDismiss = { trackToEditArtist = null },
+            onSave = { newArtist ->
+                systemViewModel.updateTrackArtist(song, newArtist)
+                trackToEditArtist = null
+            }
+        )
+    }
+
+    // --- Editar album da música --
+    trackToEditAlbum?.let { song ->
+        EditTrackAlbumDialog(
+            song = song,
+            onDismiss = { trackToEditAlbum = null },
+            onSave = { newAlbum ->
+                systemViewModel.updateTrackAlbum(song, newAlbum)
+                trackToEditAlbum = null
+            }
+        )
+    }
+
+    // --- Confirmar exclusão de playlist --
     if (showDeleteConfirm) {
         AlertDialog(
             onDismissRequest = { showDeleteConfirm = false },
@@ -336,6 +390,76 @@ fun EditTrackNameDialog(
             ) {
                 Text("Salvar")
             }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancelar") }
+        }
+    )
+}
+
+@Composable
+fun EditTrackArtistDialog(
+    song: DownloadItemEntity,
+    onDismiss: () -> Unit,
+    onSave: (String) -> Unit
+) {
+    var artist by remember { mutableStateOf(song.artist ?: "") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = SurfaceDark,
+        title = { Text("Editar Artista", color = Color.White) },
+        text = {
+            TextField(
+                value = artist,
+                onValueChange = { artist = it },
+                label = { Text("Artista") },
+                colors = TextFieldDefaults.colors(
+                    focusedContainerColor = Color.Transparent,
+                    unfocusedContainerColor = Color.Transparent,
+                    focusedLabelColor = YTDownPurple
+                )
+            )
+        },
+        confirmButton = {
+            Button(
+                onClick = { onSave(artist) },
+                colors = ButtonDefaults.buttonColors(containerColor = YTDownPurple)
+            ) { Text("Salvar") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancelar") }
+        }
+    )
+}
+
+@Composable
+fun EditTrackAlbumDialog(
+    song: DownloadItemEntity,
+    onDismiss: () -> Unit,
+    onSave: (String) -> Unit
+) {
+    var album by remember { mutableStateOf(song.album ?: "") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = SurfaceDark,
+        title = { Text("Editar Álbum", color = Color.White) },
+        text = {
+            TextField(
+                value = album,
+                onValueChange = { album = it },
+                label = { Text("Álbum") },
+                colors = TextFieldDefaults.colors(
+                    focusedContainerColor = Color.Transparent,
+                    unfocusedContainerColor = Color.Transparent,
+                    focusedLabelColor = YTDownPurple
+                )
+            )
+        },
+        confirmButton = {
+            Button(
+                onClick = { onSave(album) },
+                colors = ButtonDefaults.buttonColors(containerColor = YTDownPurple)
+            ) { Text("Salvar") }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("Cancelar") }

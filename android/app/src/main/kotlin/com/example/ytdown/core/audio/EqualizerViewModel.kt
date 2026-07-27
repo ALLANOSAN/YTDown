@@ -30,10 +30,10 @@ class EqualizerViewModel @Inject constructor(
     }
 
     private fun loadSavedSettings() {
-        fxEngine.setupEqualizer()
         viewModelScope.launch {
             val saved = settingsDataStore.loadSettings()
             _uiState.value = saved
+            fxEngine.setupEqualizer()
             applyAllGains()
         }
     }
@@ -63,6 +63,7 @@ class EqualizerViewModel @Inject constructor(
     fun toggleEnabled(enabled: Boolean) {
         _uiState.update { it.copy(isEnabled = enabled) }
         applyAllGains()
+        saveSettings()
     }
 
     fun updateBand(index: Int, gain: Float) {
@@ -76,6 +77,7 @@ class EqualizerViewModel @Inject constructor(
         if (_uiState.value.isEnabled) {
             fxEngine.setBandGain(index, gain)
         }
+        saveSettings()
     }
 
     // Alias para compatibilidade com a UI
@@ -86,6 +88,7 @@ class EqualizerViewModel @Inject constructor(
     fun updatePreamp(gain: Float) {
         _uiState.update { it.copy(preamp = gain) }
         fxEngine.setPreamp(gain)
+        saveSettings()
     }
 
     fun updateBassBoost(value: Float) {

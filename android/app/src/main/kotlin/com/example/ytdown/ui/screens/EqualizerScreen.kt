@@ -181,7 +181,7 @@ fun ModernVerticalSlider(label: String, gain: Float, onGainChange: (Float) -> Un
             contentAlignment = Alignment.Center
         ) {
             // Track de fundo estilizada (estilo fader profissional)
-            Canvas(modifier = Modifier.fillMaxSize()) {
+            Canvas(modifier = Modifier.fillMaxSize().padding(vertical = 24.dp)) {
                 val trackWidth = 12f
                 val corner = 6f
                 
@@ -391,7 +391,8 @@ fun PresetChip(name: String, isSelected: Boolean = false, onClick: () -> Unit) {
 fun RealtimeSpectrum(data: FloatArray, modifier: Modifier = Modifier) {
     Canvas(modifier = modifier) {
         val barCount = data.size.coerceAtLeast(10)
-        val barWidth = (size.width - (barCount - 1) * 8f) / barCount
+        val totalGap = 4f
+        val barWidth = (size.width - (barCount - 1) * totalGap) / barCount
         val maxHeight = size.height
 
         // Gradiente vertical
@@ -404,7 +405,7 @@ fun RealtimeSpectrum(data: FloatArray, modifier: Modifier = Modifier) {
         )
 
         data.forEachIndexed { i, value ->
-            val x = i * (barWidth + 8f)
+            val x = i * (barWidth + totalGap)
             val barHeight = (value * maxHeight).coerceIn(4f, maxHeight)
 
             // Barra com gradiente
@@ -418,8 +419,8 @@ fun RealtimeSpectrum(data: FloatArray, modifier: Modifier = Modifier) {
             // Brilho
             drawRoundRect(
                 color = Color.White.copy(alpha = 0.3f),
-                topLeft = Offset(x + 2, maxHeight - barHeight + 4),
-                size = Size(barWidth - 4, 8f),
+                topLeft = Offset(x + 1, maxHeight - barHeight + 4),
+                size = Size(barWidth - 2, 8f),
                 cornerRadius = CornerRadius(4f, 4f)
             )
         }

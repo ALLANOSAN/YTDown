@@ -120,19 +120,37 @@ class BassFXEngine @Inject constructor(
             if (!isEnabled) {
                 eqGains.fill(0f)
                 currentPreamp = 1.0f
-                return
-            }
-            val bandsJson = prefs[stringPreferencesKey("equalizer_bands_gains")]
-            if (bandsJson != null) {
-                val bands: List<Float> = Gson().fromJson(bandsJson, object : TypeToken<List<Float>>() {}.type)
-                val n = minOf(bands.size, 10)
-                for (i in 0 until n) {
-                    eqGains[i] = bands[i]
+            } else {
+                val bandsJson = prefs[stringPreferencesKey("equalizer_bands_gains")]
+                if (bandsJson != null) {
+                    val bands: List<Float> = Gson().fromJson(bandsJson, object : TypeToken<List<Float>>() {}.type)
+                    val n = minOf(bands.size, 10)
+                    for (i in 0 until n) {
+                        eqGains[i] = bands[i]
+                    }
                 }
+                currentPreamp = Math.pow(10.0, ((prefs[floatPreferencesKey("equalizer_preamp")] ?: 0f) / 20.0)).toFloat()
             }
-            currentPreamp = Math.pow(10.0, ((prefs[floatPreferencesKey("equalizer_preamp")] ?: 0f) / 20.0)).toFloat()
+            applyLoadedGainsToBass()
         } catch (_: Exception) {
             // DataStore not available yet — use defaults (all flat)
+        }
+    }
+
+    private fun applyLoadedGainsToBass() {
+        val channel = playbackEngine.getActiveChannel()
+        if (channel != 0) {
+            BASS.BASS_ChannelSetAttribute(channel, BASS.BASS_ATTRIB_VOL, currentPreamp)
+            for (i in 0 until 10) {
+                val handle = eqBands[i]
+                if (handle != 0) {
+                    val params = BASS.BASS_DX8_PARAMEQ()
+                    if (BASS.BASS_FXGetParameters(handle, params)) {
+                        params.fGain = eqGains[i]
+                        BASS.BASS_FXSetParameters(handle, params)
+                    }
+                }
+            }
         }
     }
 

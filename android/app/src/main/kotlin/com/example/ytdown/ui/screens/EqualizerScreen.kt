@@ -181,7 +181,7 @@ fun ModernVerticalSlider(label: String, gain: Float, onGainChange: (Float) -> Un
             contentAlignment = Alignment.Center
         ) {
             // Track de fundo estilizada (estilo fader profissional)
-            Canvas(modifier = Modifier.fillMaxSize().padding(vertical = 24.dp)) {
+            Canvas(modifier = Modifier.fillMaxSize()) {
                 val trackWidth = 12f
                 val corner = 6f
                 
@@ -216,13 +216,15 @@ fun ModernVerticalSlider(label: String, gain: Float, onGainChange: (Float) -> Un
             }
 
             // Slider invisível para interação, mas com Thumb customizado via Canvas
+            // A largura de 368.dp (320 + 48) faz com que o centro do thumb alcance exatamente
+            // as pontas da Box de 320.dp, eliminando a margem morta padrão do Slider.
             Slider(
                 value = animatedGain,
                 onValueChange = onGainChange,
                 valueRange = -15f..15f,
                 modifier = Modifier
                     .graphicsLayer { rotationZ = -90f }
-                    .width(320.dp), // Deve bater com a altura do Box
+                    .width(368.dp),
                 colors = SliderDefaults.colors(
                     thumbColor = gainColor,
                     activeTrackColor = Color.Transparent,

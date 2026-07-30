@@ -22,6 +22,10 @@ import com.example.ytdown.core.audio.*
 private const val PREFS_NAME = "player_state"
 private const val KEY_TRACK_ID = "last_track_id"
 private const val KEY_POSITION_MS = "last_position_ms"
+private const val KEY_PLAYLIST_IDS = "playlist_ids"
+private const val KEY_PLAYLIST_INDEX = "playlist_index"
+private const val KEY_REPEAT_MODE = "repeat_mode"
+private const val KEY_SHUFFLE_ENABLED = "shuffle_enabled"
 
 /**
  * MusicPlayerManager - Gerenciador de reprodução que agora usa PlaybackController como Single Source of Truth.
@@ -81,6 +85,15 @@ constructor(
                 if (state.isPlaying) startPositionSaveLoop() else stopPositionSaveLoop()
             }
         }
+
+        // ponytail: restore repeat/shuffle immediately so toggles survive cold start
+        restorePlaybackModes()
+
+        // ponytail: restore last playlist + position after deps settle
+        scope.launch {
+            delay(500)
+            if (uiState.value.currentTrack == null) restorePlaybackState()
+        }
     }
 
     private fun startPositionSaveLoop() {
@@ -132,16 +145,55 @@ constructor(
         }
     }
 
+    private fun savePlaylistContext(items: List<DownloadItemEntity>, index: Int) {
+        val ids = items.joinToString(",") { it.id }
+        prefs.edit()
+            .putString(KEY_PLAYLIST_IDS, ids)
+            .putInt(KEY_PLAYLIST_INDEX, index)
+            .apply()
+    }
+
+    private fun restorePlaybackState() {
+        val idsStr = prefs.getString(KEY_PLAYLIST_IDS, null) ?: return
+        val savedIndex = prefs.getInt(KEY_PLAYLIST_INDEX, -1)
+        if (idsStr.isBlank() || savedIndex < 0) return
+
+        scope.launch {
+            val ids = idsStr.split(",")
+            val items = ids.mapNotNull { downloadDao.getById(it) }
+            if (items.isEmpty() || savedIndex >= items.size) return@launch
+
+            playlist = items.toMutableList()
+            currentIndex = savedIndex
+            controller.playPlaylist(items, savedIndex)
+
+            val savedPosition = prefs.getLong(KEY_POSITION_MS, 0L)
+            if (savedPosition > 0) {
+                delay(300) // let engine initialise
+                player.seekTo(savedPosition)
+            }
+        }
+    }
+
     fun toggleRepeatMode() {
         Log.d(TAG, "toggleRepeatMode() called")
         val nextMode = (uiState.value.repeatMode + 1) % 3
         controller.updateRepeatMode(nextMode)
+        prefs.edit().putInt(KEY_REPEAT_MODE, nextMode).apply()
     }
 
     fun toggleShuffle() {
         Log.d(TAG, "toggleShuffle() called")
         val nextShuffle = !uiState.value.isShuffleEnabled
         controller.updateShuffle(nextShuffle)
+        prefs.edit().putBoolean(KEY_SHUFFLE_ENABLED, nextShuffle).apply()
+    }
+
+    private fun restorePlaybackModes() {
+        val savedRepeat = prefs.getInt(KEY_REPEAT_MODE, 0)
+        val savedShuffle = prefs.getBoolean(KEY_SHUFFLE_ENABLED, false)
+        if (uiState.value.repeatMode != savedRepeat) controller.updateRepeatMode(savedRepeat)
+        if (uiState.value.isShuffleEnabled != savedShuffle) controller.updateShuffle(savedShuffle)
     }
 
     fun playTrack(item: DownloadItemEntity) {
@@ -168,6 +220,8 @@ constructor(
             // 2. Inicia o MediaPlaybackService (notificação, Bluetooth, Now Bar)
             // 3. Inicia o BASS engine
             controller.playPlaylist(playlist, currentIndex)
+
+            savePlaylistContext(playlist, currentIndex)
 
             hydrateArtworkIfMissing(playlist[currentIndex])
         }
@@ -261,11 +315,13 @@ constructor(
     fun next() {
         if (playlist.isEmpty()) return
         currentIndex = (currentIndex + 1) % playlist.size
+        prefs.edit().putInt(KEY_PLAYLIST_INDEX, currentIndex).apply()
         playPlaylist(playlist, currentIndex)
     }
     fun previous() {
         if (playlist.isEmpty()) return
         currentIndex = if (currentIndex > 0) currentIndex - 1 else playlist.size - 1
+        prefs.edit().putInt(KEY_PLAYLIST_INDEX, currentIndex).apply()
         playPlaylist(playlist, currentIndex)
     }
     fun seekTo(position: Long) = player.seekTo(position)

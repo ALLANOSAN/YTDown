@@ -10,6 +10,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.drag
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
@@ -154,6 +158,9 @@ fun ModernVerticalSlider(label: String, gain: Float, onGainChange: (Float) -> Un
         else -> YTDownPurple           // Roxo para flat
     }
 
+    val minGain = -15f
+    val maxGain = 15f
+
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier.width(70.dp) // Largura um pouco maior para respiro
@@ -173,14 +180,37 @@ fun ModernVerticalSlider(label: String, gain: Float, onGainChange: (Float) -> Un
             )
         }
 
-        // Slider Container
+        // Slider Container.
+        // Trilha e thumb são desenhados no MESMO Canvas, e o arraste é lido no
+        // mesmo espaço de pixels dessa Box (0..size.height). Sem Slider() rotacionado
+        // e sem "número mágico" de largura para compensar o padding interno do thumb
+        // do Material3 — por isso o valor máximo (15dB) agora sempre corresponde
+        // exatamente ao topo, e o mínimo (-15dB) exatamente à base.
         Box(
             modifier = Modifier
                 .height(320.dp) // Aumentado de 200dp para 320dp
-                .width(50.dp),
+                .width(50.dp)
+                .pointerInput(Unit) {
+                    fun updateFromY(y: Float) {
+                        val fraction = (1f - y / size.height).coerceIn(0f, 1f)
+                        onGainChange(
+                            (minGain + fraction * (maxGain - minGain)).coerceIn(minGain, maxGain)
+                        )
+                    }
+                    awaitEachGesture {
+                        // awaitFirstDown + drag (sem exigir touch slop) => o fader
+                        // responde já no toque inicial, igual a um Slider comum.
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        updateFromY(down.position.y)
+                        drag(down.id) { change ->
+                            updateFromY(change.position.y)
+                            change.consume()
+                        }
+                    }
+                },
             contentAlignment = Alignment.Center
         ) {
-            // Track de fundo estilizada (estilo fader profissional)
+            // Track de fundo estilizada (estilo fader profissional) + thumb
             Canvas(modifier = Modifier.fillMaxSize()) {
                 val trackWidth = 12f
                 val corner = 6f
@@ -213,24 +243,20 @@ fun ModernVerticalSlider(label: String, gain: Float, onGainChange: (Float) -> Un
                         strokeWidth = 2f
                     )
                 }
-            }
 
-            // Slider invisível para interação, mas com Thumb customizado via Canvas
-            // A largura de 368.dp (320 + 48) faz com que o centro do thumb alcance exatamente
-            // as pontas da Box de 320.dp, eliminando a margem morta padrão do Slider.
-            Slider(
-                value = animatedGain,
-                onValueChange = onGainChange,
-                valueRange = -15f..15f,
-                modifier = Modifier
-                    .graphicsLayer { rotationZ = -90f }
-                    .width(368.dp),
-                colors = SliderDefaults.colors(
-                    thumbColor = gainColor,
-                    activeTrackColor = Color.Transparent,
-                    inactiveTrackColor = Color.Transparent
+                // Thumb: posição calculada a partir do MESMO gain e do MESMO
+                // size.height usados acima, então ele sempre alcança as duas pontas.
+                val fraction = ((animatedGain - minGain) / (maxGain - minGain)).coerceIn(0f, 1f)
+                val thumbY = (size.height * (1f - fraction)).coerceIn(0f, size.height)
+                val thumbHalfWidth = 22f
+                val thumbHeight = 8f
+                drawRoundRect(
+                    color = gainColor,
+                    topLeft = Offset(size.width / 2 - thumbHalfWidth, thumbY - thumbHeight / 2),
+                    size = Size(thumbHalfWidth * 2, thumbHeight),
+                    cornerRadius = CornerRadius(4f, 4f)
                 )
-            )
+            }
         }
 
         Spacer(modifier = Modifier.height(12.dp))

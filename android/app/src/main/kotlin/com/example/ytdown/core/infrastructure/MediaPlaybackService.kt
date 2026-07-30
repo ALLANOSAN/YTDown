@@ -108,6 +108,8 @@ class MediaPlaybackService : MediaSessionService() {
      * Returns the MediaSession for the controller.
      */
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? {
+        if (controllerInfo.uid != android.os.Process.myUid() &&
+            controllerInfo.uid != android.os.Process.SYSTEM_UID) return null
         return mediaSession
     }
 

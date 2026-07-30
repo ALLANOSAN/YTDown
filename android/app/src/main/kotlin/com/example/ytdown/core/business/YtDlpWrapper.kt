@@ -6,6 +6,7 @@ import com.example.ytdown.core.domain.*
 import com.example.ytdown.core.infrastructure.BinaryOrchestrator
 import com.example.ytdown.core.infrastructure.PythonEnvironment
 import com.example.ytdown.services.ObservabilityService
+import com.example.ytdown.utils.YouTubeUtils
 import java.io.File
 import org.json.JSONObject
 
@@ -44,6 +45,12 @@ class YtDlpWrapper(
         // FIX #7: Check for early cancellation before starting
         if (isCancelled || Thread.currentThread().isInterrupted) {
             observabilityService.trackError("YtDlpWrapper", "Download cancelled before start", metadata = mapOf("url" to url.value))
+            return DownloadResult(exitCode = ExitCode(1))
+        }
+
+        // ponytail: defense-in-depth — reject non-YouTube URLs before reaching yt-dlp
+        if (!YouTubeUtils.isYouTubeUrl(url.value)) {
+            observabilityService.trackError("YtDlpWrapper", "Rejected non-YouTube URL", metadata = mapOf("url" to url.value))
             return DownloadResult(exitCode = ExitCode(1))
         }
 
@@ -125,7 +132,12 @@ class YtDlpWrapper(
 
     fun fetchVideoInfo(url: String, appFilesDir: String): JSONObject {
         android.util.Log.e("YtDlpWrapper", "🔍 fetchVideoInfo START para: $url")
-        
+
+        // ponytail: defense-in-depth — reject non-YouTube URLs
+        if (!YouTubeUtils.isYouTubeUrl(url)) {
+            return JSONObject().put("success", false).put("error", "Invalid URL: only YouTube URLs are accepted")
+        }
+
         // Timeout de 5 minutos para links complexos (Mix/Rádio)
         val timeoutMs = 300000L
         

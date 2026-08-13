@@ -32,6 +32,8 @@ class MusicPlayerManagerTest {
 
     private val testDispatcher = StandardTestDispatcher()
     private val uiStateFlow = MutableStateFlow(PlaybackUiState())
+    private val playlistContextFlow =
+        MutableStateFlow(PlaybackController.PlaylistContext(emptyList(), -1))
 
     @Before
     fun setup() {
@@ -54,6 +56,7 @@ class MusicPlayerManagerTest {
         `when`(mockPrefs.getInt("repeat_mode", 0)).thenReturn(0)
         `when`(mockPrefs.getBoolean("shuffle_enabled", false)).thenReturn(false)
         `when`(mockController.uiState).thenReturn(uiStateFlow)
+        `when`(mockController.playlistContext).thenReturn(playlistContextFlow)
 
         manager = MusicPlayerManager(
             mockPlayer,
@@ -93,6 +96,35 @@ class MusicPlayerManagerTest {
 
         verify(mockEditor).putBoolean("shuffle_enabled", true)
         verify(mockEditor, atLeastOnce()).apply()
+    }
+
+    @Test
+    fun `contexto da playlist e persistido quando o controller muda de playlist`() = runTest {
+        // A UI toca por PlaybackViewModel -> PlaybackController. Se o contexto nao
+        // for persistido a partir dai, playlist_ids nunca e escrito e
+        // restorePlaybackState() retorna na primeira linha, sempre.
+        playlistContextFlow.value = PlaybackController.PlaylistContext(
+            trackIds = listOf("id-a", "id-b", "id-c"),
+            index = 1,
+        )
+
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        verify(mockEditor).putString("playlist_ids", "id-a,id-b,id-c")
+        verify(mockEditor).putInt("playlist_index", 1)
+    }
+
+    @Test
+    fun `playlist vazia nao apaga o contexto salvo`() = runTest {
+        playlistContextFlow.value = PlaybackController.PlaylistContext(listOf("id-a"), 0)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // Estado inicial do controller emite lista vazia; sobrescrever com ""
+        // apagaria a sessao anterior antes de o usuario tocar qualquer coisa.
+        playlistContextFlow.value = PlaybackController.PlaylistContext(emptyList(), -1)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        verify(mockEditor, never()).putString("playlist_ids", "")
     }
 
     @Test

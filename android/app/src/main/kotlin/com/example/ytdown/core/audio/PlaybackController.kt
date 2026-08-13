@@ -89,6 +89,20 @@ class PlaybackController @Inject constructor(
     private var playlist: List<DownloadItemEntity> = emptyList()
     private var currentIndex: Int = -1
 
+    /**
+     * Contexto da playlist corrente, para quem precisa persistir a sessao.
+     * A UI toca por aqui (PlaybackViewModel -> PlaybackController), entao este e
+     * o unico ponto por onde toda troca de faixa realmente passa.
+     */
+    data class PlaylistContext(val trackIds: List<String>, val index: Int)
+
+    private val _playlistContext = MutableStateFlow(PlaylistContext(emptyList(), -1))
+    val playlistContext: StateFlow<PlaylistContext> = _playlistContext.asStateFlow()
+
+    private fun publishPlaylistContext() {
+        _playlistContext.value = PlaylistContext(playlist.map { it.id }, currentIndex)
+    }
+
     // MediaController - conecta ao MediaPlaybackService via Media3
     private var mediaController: MediaController? = null
     private var controllerConnected = false
@@ -160,6 +174,7 @@ class PlaybackController @Inject constructor(
 
         this.playlist = tracks
         this.currentIndex = startIndex
+        publishPlaylistContext()
 
         val adapter = bassAdapterProvider.get()
 
@@ -189,6 +204,7 @@ class PlaybackController @Inject constructor(
 
         this.playlist = tracks
         this.currentIndex = startIndex
+        publishPlaylistContext()
 
         val adapter = bassAdapterProvider.get()
 
@@ -212,6 +228,7 @@ class PlaybackController @Inject constructor(
     fun playNext() {
         if (playlist.isEmpty()) return
         currentIndex = (currentIndex + 1) % playlist.size
+        publishPlaylistContext()
         val track = playlist[currentIndex]
         engineProvider.get().play(track)
         Log.d(TAG, "▶️ playNext: ${track.title}")
@@ -220,6 +237,7 @@ class PlaybackController @Inject constructor(
     fun playPrevious() {
         if (playlist.isEmpty()) return
         currentIndex = if (currentIndex > 0) currentIndex - 1 else playlist.size - 1
+        publishPlaylistContext()
         val track = playlist[currentIndex]
         engineProvider.get().play(track)
         Log.d(TAG, "⏮️ playPrevious: ${track.title}")
@@ -304,6 +322,7 @@ class PlaybackController @Inject constructor(
             1 -> {
                 // Repeat ALL: avança para a próxima
                 currentIndex = (currentIndex + 1) % playlist.size
+                publishPlaylistContext()
                 engineProvider.get().play(playlist[currentIndex])
             }
             2 -> {

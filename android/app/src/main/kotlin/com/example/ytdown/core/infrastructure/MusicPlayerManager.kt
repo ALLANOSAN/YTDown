@@ -92,6 +92,15 @@ constructor(
             }
         }
 
+        // A UI toca por PlaybackViewModel -> PlaybackController, que nao passa por
+        // playPlaylist() daqui. Sem observar o contexto do controller, playlist_ids
+        // nunca era gravado e restorePlaybackState() retornava na primeira linha.
+        scope.launch {
+            controller.playlistContext.collect { ctx ->
+                savePlaylistIds(ctx.trackIds, ctx.index)
+            }
+        }
+
         // ponytail: restore repeat/shuffle immediately so toggles survive cold start
         restorePlaybackModes()
 
@@ -152,9 +161,15 @@ constructor(
     }
 
     private fun savePlaylistContext(items: List<DownloadItemEntity>, index: Int) {
-        val ids = items.joinToString(",") { it.id }
+        savePlaylistIds(items.map { it.id }, index)
+    }
+
+    private fun savePlaylistIds(ids: List<String>, index: Int) {
+        // Lista vazia e o estado inicial do controller. Gravar "" aqui apagaria a
+        // sessao anterior antes de o usuario tocar qualquer coisa.
+        if (ids.isEmpty() || index < 0) return
         prefs.edit()
-            .putString(KEY_PLAYLIST_IDS, ids)
+            .putString(KEY_PLAYLIST_IDS, ids.joinToString(","))
             .putInt(KEY_PLAYLIST_INDEX, index)
             .apply()
     }

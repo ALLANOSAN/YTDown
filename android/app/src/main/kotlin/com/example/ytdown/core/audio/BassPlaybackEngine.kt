@@ -153,6 +153,60 @@ class BassPlaybackEngine @Inject constructor(
         }
     }
 
+    /**
+     * Prepara uma música (carrega o stream, seta posição e atualiza UI) mas NÃO inicia a reprodução.
+     * Usado para restaurar o estado na inicialização sem autoplay.
+     */
+    fun prepare(item: DownloadItemEntity, positionMs: Long = 0L) {
+        Log.d(TAG, "prepare() called for: ${item.title}, pos: ${positionMs}ms")
+        val path = item.exportedPath ?: item.outputPath
+        if (path.isBlank()) {
+            controller.setError("Caminho de arquivo inválido")
+            return
+        }
+
+        stop() // Garante que o canal anterior seja limpo
+
+        var channel = createStream(path)
+        if (channel == 0) {
+            val error = BASS.BASS_ErrorGetCode()
+            if (BassCore.isDeviceRelatedError(error)) {
+                if (BassCore.reinitialize()) {
+                    channel = createStream(path)
+                }
+            }
+        }
+
+        if (channel == 0) {
+            val error = BASS.BASS_ErrorGetCode()
+            val msg = BassErrorMapper.getErrorMessage(error)
+            Log.e(TAG, "Erro ao criar stream em prepare(): $msg")
+            controller.setError(msg)
+            return
+        }
+
+        activeChannel = channel
+
+        BASS.BASS_ChannelSetSync(activeChannel, BASS.BASS_SYNC_END, 0, endSync, 0)
+        BASS.BASS_ChannelSetAttribute(activeChannel, BASS.BASS_ATTRIB_VOL, controller.uiState.value.volume)
+        fxEngine.setupEqualizer()
+
+        // Seek to the saved position before playing
+        if (positionMs > 0) {
+            val seconds = positionMs / 1000.0
+            val bytes = BASS.BASS_ChannelSeconds2Bytes(activeChannel, seconds)
+            BASS.BASS_ChannelSetPosition(activeChannel, bytes, BASS.BASS_POS_BYTE)
+        }
+
+        controller.updateTrack(item)
+        controller.updatePlaying(false)
+        updateDuration()
+        controller.updatePosition(positionMs)
+        controller.updateBuffering(false)
+        
+        Log.d(TAG, "Track prepared successfully (paused)")
+    }
+
     private fun createStream(path: String): Int {
         return when {
             path.startsWith("content://") -> {

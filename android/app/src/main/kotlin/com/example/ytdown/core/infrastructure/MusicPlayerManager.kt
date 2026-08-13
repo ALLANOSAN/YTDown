@@ -83,6 +83,12 @@ constructor(
             uiState.collect { state ->
                 Log.d(TAG, "UI State changed: isPlaying=${state.isPlaying}, track=${state.currentTrack?.title}")
                 if (state.isPlaying) startPositionSaveLoop() else stopPositionSaveLoop()
+                
+                // Save modes automatically
+                prefs.edit()
+                    .putInt(KEY_REPEAT_MODE, state.repeatMode)
+                    .putBoolean(KEY_SHUFFLE_ENABLED, state.isShuffleEnabled)
+                    .apply()
             }
         }
 
@@ -165,13 +171,10 @@ constructor(
 
             playlist = items.toMutableList()
             currentIndex = savedIndex
-            controller.playPlaylist(items, savedIndex)
-
             val savedPosition = prefs.getLong(KEY_POSITION_MS, 0L)
-            if (savedPosition > 0) {
-                delay(300) // let engine initialise
-                player.seekTo(savedPosition)
-            }
+            
+            // Usar o novo método para restaurar SEM dar play
+            controller.restorePlaylist(items, savedIndex, savedPosition)
         }
     }
 

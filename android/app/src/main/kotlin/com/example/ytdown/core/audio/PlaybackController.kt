@@ -180,6 +180,35 @@ class PlaybackController @Inject constructor(
         }
     }
 
+    /**
+     * Restaura uma playlist e posiciona a engine para tocar, mas NÃO inicia a reprodução.
+     * Útil para restaurar o estado após o app ser reiniciado.
+     */
+    fun restorePlaylist(tracks: List<DownloadItemEntity>, startIndex: Int = 0, positionMs: Long = 0L) {
+        if (tracks.isEmpty()) return
+
+        this.playlist = tracks
+        this.currentIndex = startIndex
+
+        val adapter = bassAdapterProvider.get()
+
+        // 1. Alimentar Media3 com a playlist
+        adapter.setPlaylistFromEntities(tracks)
+
+        // 2. Preparar o BASS engine na música e posição, SEM autoplay
+        engineProvider.get().prepare(tracks[startIndex], positionMs)
+        Log.d(TAG, "⏸️ restorePlaylist: ${tracks[startIndex].title} at $positionMs ms")
+
+        // 3. Notificar Media3 via MediaController SEM autoplay
+        val controller = mediaController
+        if (controller != null && controllerConnected) {
+            val mediaItems = tracks.map { it.toMedia3Item() }
+            controller.setMediaItems(mediaItems, startIndex, positionMs)
+            controller.prepare()
+            // NÃO chamamos controller.play() aqui para não dar autoplay
+        }
+    }
+
     fun playNext() {
         if (playlist.isEmpty()) return
         currentIndex = (currentIndex + 1) % playlist.size

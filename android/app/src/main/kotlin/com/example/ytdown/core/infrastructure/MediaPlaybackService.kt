@@ -64,6 +64,9 @@ class MediaPlaybackService : MediaSessionService() {
     @Inject
     lateinit var bassAdapter: BassMediaSessionAdapter
 
+    @Inject
+    lateinit var musicPlayerManager: MusicPlayerManager
+
     private var mediaSession: MediaSession? = null
     private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var wakeLock: PowerManager.WakeLock? = null
@@ -347,6 +350,8 @@ class MediaPlaybackService : MediaSessionService() {
         }
         mediaSession = null
 
+        musicPlayerManager.saveCurrentPositionNow()
+
         super.onDestroy()
     }
 
@@ -355,8 +360,12 @@ class MediaPlaybackService : MediaSessionService() {
     override fun onTaskRemoved(rootIntent: Intent?) {
         val player = mediaSession?.player
         if (player == null || !player.playWhenReady || player.mediaItemCount == 0) {
+            musicPlayerManager.saveCurrentPositionNow()
             // No media playing - stop service
             stopSelf()
+        } else {
+            // Se está tocando, também salvamos a posição por segurança (o app foi fechado, mas o serviço continua vivo)
+            musicPlayerManager.saveCurrentPositionNow()
         }
     }
 }

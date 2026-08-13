@@ -61,8 +61,6 @@ class YtDlpWrapper(
             val py = Python.getInstance()
             val module = py.getModule("ytdown")
 
-            binaryOrchestrator.setupNativeBinaries()
-
             // Sanitiza qualquer string para uso seguro como nome de arquivo.
             // Remove caracteres que o Android MediaStore/SAF não aceita.
             val invalidChars = Regex("[\\\\/:*?\"<>|\\r\\n\\t]")

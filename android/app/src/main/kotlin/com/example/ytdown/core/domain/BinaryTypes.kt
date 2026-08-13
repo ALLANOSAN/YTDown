@@ -6,9 +6,6 @@ import java.io.File
 value class VideoInfoJson(val value: String)
 
 @JvmInline
-value class AssetPath(val value: String)
-
-@JvmInline
 value class VideoUrl(val value: String)
 
 @JvmInline
@@ -53,8 +50,6 @@ enum class DownloadType(val value: String) {
     AUDIO("audio"),
     VIDEO("video")
 }
-
-data class BinaryConfig(val name: String, val asset: AssetPath)
 
 @JvmInline
 value class ExitCode(val value: Int) {

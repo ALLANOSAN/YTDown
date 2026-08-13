@@ -122,18 +122,8 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun provideAssetExtractor(@ApplicationContext context: Context): AssetExtractor =
-            AssetExtractor(context)
-
-    @Provides @Singleton fun provideArchiveExtractor(): ArchiveExtractor = ArchiveExtractor()
-
-    @Provides
-    @Singleton
-    fun provideBinaryOrchestrator(
-            assets: AssetExtractor,
-            storage: StorageResolver,
-            @ApplicationContext context: Context
-    ): BinaryOrchestrator = BinaryOrchestrator(assets, storage, context)
+    fun provideBinaryOrchestrator(@ApplicationContext context: Context): BinaryOrchestrator =
+            BinaryOrchestrator(context)
 
     // =====================================================
     // METAL MODULE - Sistema de Descoberta de Metal

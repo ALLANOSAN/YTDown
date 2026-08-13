@@ -118,6 +118,15 @@ def _get_current_yt_dlp_version(app_files_dir=None):
     version = getattr(getattr(yt_dlp_module, "version", None), "__version__", None)
     if version:
         return str(version)
+    # yt_dlp real: o __init__.py nao expoe module.version apos
+    # spec_from_file_location — carrega o submódulo version explicitamente
+    try:
+        version_module = importlib.import_module("yt_dlp.version")
+        version = getattr(version_module, "__version__", None)
+        if version:
+            return str(version)
+    except Exception:
+        pass
     alternative = getattr(yt_dlp_module, "__version__", None)
     if alternative:
         return str(alternative)

@@ -32,5 +32,21 @@ class TestMetadataInjection(unittest.TestCase):
         self.assertEqual(str(tags["TPE1"]), artist)
         self.assertEqual(str(tags["TALB"]), album)
 
+    def test_id3_v2_0_corrompido_nao_crasha(self):
+        """Header ID3v2.0 (nunca suportado pelo mutagen) num arquivo baixado
+        corrompido não pode derrubar a injeção — deve criar tags do zero."""
+        # Mock identico ao setup: b"ID3" + zeros = ID3v2.0
+        broken = "broken_song.mp3"
+        with open(broken, "wb") as f:
+            f.write(b"ID3" + b"\x00" * 100)
+        try:
+            result = _force_metadata_with_mutagen(broken, "T", "A", "L")
+            import json
+            payload = json.loads(result)
+            self.assertTrue(payload.get("success"), f"falhou: {payload}")
+        finally:
+            if os.path.exists(broken):
+                os.remove(broken)
+
 if __name__ == "__main__":
     unittest.main()

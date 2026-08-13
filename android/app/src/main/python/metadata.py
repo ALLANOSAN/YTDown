@@ -78,6 +78,20 @@ def _write_mp3_id3_tags(
     try:
         tags = ID3(filepath)
         has_existing_tags = True
+    except mutagen_id3.ID3UnsupportedVersionError:
+        # ponytail: header ID3v2.0 (nunca suportado) num arquivo baixado
+        # corrompido — remove o header (10 bytes + tamanho syncsafe)
+        # preservando o áudio; o save() abaixo releria o header e falharia
+        with open(filepath, "rb") as f:
+            header = f.read(10)
+            size = 0
+            for b in header[6:10]:
+                size = (size << 7) | b
+            f.seek(10 + size)
+            audio = f.read()
+        with open(filepath, "wb") as f:
+            f.write(audio)
+        tags = ID3()
     except ID3NoHeaderError:
         tags = ID3()
 
@@ -325,7 +339,7 @@ def read_file_metadata(filepath):
             ID3NoHeaderError = mutagen_id3.ID3NoHeaderError
             try:
                 tags = ID3(filepath)
-            except ID3NoHeaderError:
+            except (ID3NoHeaderError, mutagen_id3.ID3UnsupportedVersionError):
                 return json.dumps({
                     "success": True, "title": None, "artist": None, "album": None,
                     "track_number": None, "disc_number": None, "year": None, "has_artwork": False

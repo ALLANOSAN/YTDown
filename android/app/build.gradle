@@ -85,6 +85,15 @@ android {
         }
     }
 
+    testOptions {
+        unitTests {
+            // Sem isto, android.util.Log lanca em teste JVM. Como o collect do
+            // MusicPlayerManager loga antes de gravar em SharedPreferences, a
+            // excecao matava a corrotina e as verificacoes nunca aconteciam.
+            returnDefaultValues = true
+        }
+    }
+
     buildTypes {
         debug {
             applicationIdSuffix ".native"

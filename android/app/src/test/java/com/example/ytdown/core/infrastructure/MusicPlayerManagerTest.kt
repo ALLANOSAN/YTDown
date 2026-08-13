@@ -78,7 +78,10 @@ class MusicPlayerManagerTest {
 
         // It should save repeat mode to SharedPreferences automatically
         verify(mockEditor).putInt("repeat_mode", 1)
-        verify(mockEditor).apply()
+        // StateFlow reemite o valor atual ao coletar, entao o collect roda para o
+        // estado inicial e de novo para a mudanca: apply() acontece 2x. O que
+        // importa e o putInt acima, que so casa com a emissao de repeatMode=1.
+        verify(mockEditor, atLeastOnce()).apply()
     }
 
     @Test
@@ -89,7 +92,7 @@ class MusicPlayerManagerTest {
         testDispatcher.scheduler.advanceUntilIdle()
 
         verify(mockEditor).putBoolean("shuffle_enabled", true)
-        verify(mockEditor).apply()
+        verify(mockEditor, atLeastOnce()).apply()
     }
 
     @Test

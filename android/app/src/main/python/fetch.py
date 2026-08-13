@@ -2,6 +2,7 @@ import json
 
 from runtime import _get_yt_dlp_module
 from helpers import (
+    _apply_cookies_file,
     _extract_info_with_retry,
     _failure_payload,
     _is_retryable_network_error,
@@ -29,6 +30,10 @@ def fetch_video_info(url, app_files_dir=None):
             }
         },
     }
+
+    # Conta logada via cookies.txt (se importado) desbloqueia videos que o
+    # YouTube esconde de acesso anonimo
+    _apply_cookies_file(ydl_opts, app_files_dir)
 
     try:
         yt_dlp_module = _get_yt_dlp_module(app_files_dir)

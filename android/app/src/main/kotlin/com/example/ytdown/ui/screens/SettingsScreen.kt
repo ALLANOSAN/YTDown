@@ -32,6 +32,7 @@ import com.example.ytdown.ui.SystemViewModel
 import com.example.ytdown.ui.theme.SurfaceDark
 import com.example.ytdown.ui.theme.TextSecondary
 import com.example.ytdown.ui.theme.YTDownPurple
+import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -43,6 +44,36 @@ fun SettingsScreen(
 ) {
     val state by viewModel.state.collectAsState()
     val context = LocalContext.current
+
+    // ponytail: estado local da tela — cookies só precisam de import aqui
+    var cookieStatus by remember { mutableStateOf<String?>(null) }
+    val cookiesLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri == null) {
+            cookieStatus = "Importação cancelada."
+            return@rememberLauncherForActivityResult
+        }
+        try {
+            val dest = File(context.filesDir, "cookies.txt")
+            val input = context.contentResolver.openInputStream(uri)
+                ?: throw IllegalStateException("Não foi possível ler o arquivo selecionado")
+            input.use { inputStream ->
+                dest.outputStream().use { out -> inputStream.copyTo(out) }
+            }
+            val size = dest.length()
+            val isNetscape = String(dest.readBytes(), Charsets.UTF_8)
+                .startsWith("# Netscape HTTP Cookie File")
+            if (size <= 0L || !isNetscape) {
+                dest.delete()
+                cookieStatus = "Arquivo inválido! Precisa ser um cookies.txt exportado pela extensão 'Get cookies.txt LOCALLY' (formato Netscape)."
+            } else {
+                cookieStatus = "Cookies importados ($size bytes)! Reinicie o download dos vídeos indisponíveis."
+            }
+        } catch (e: Exception) {
+            cookieStatus = "Falha ao importar: ${e.message}"
+        }
+    }
 
     // ✅ FIX: registra o launcher moderno para o SAF file picker.
     // Quando StorageService não consegue exportar via MediaStore, emite um
@@ -191,6 +222,33 @@ fun SettingsScreen(
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF388E3C))
                     ) {
                         Text(if (state.isExporting) "Exportando..." else stringResource(R.string.action_export))
+                    }
+                }
+            }
+
+            // Row 3.5: Conta YouTube / Cookies (desbloqueia vídeos indisponíveis)
+            BentoCard(
+                modifier = Modifier.fillMaxWidth(),
+                title = "Conta YouTube",
+                subtitle = "Importar cookies.txt desbloqueia vídeos que o YouTube esconde de acesso anônimo",
+                icon = Icons.Default.Cookie,
+                color = Color(0xFFF57C00).copy(alpha = 0.1f)
+            ) {
+                Column {
+                    if (cookieStatus != null) {
+                        Text(
+                            cookieStatus!!,
+                            color = TextSecondary,
+                            fontSize = 13.sp
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                    }
+                    Button(
+                        onClick = { cookiesLauncher.launch(arrayOf("text/plain", "application/octet-stream")) },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF57C00))
+                    ) {
+                        Text("Importar cookies.txt")
                     }
                 }
             }

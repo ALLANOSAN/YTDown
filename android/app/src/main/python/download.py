@@ -4,6 +4,7 @@ import traceback
 from logger import ChaquopyLogger, log_failure
 from runtime import _get_yt_dlp_module
 from helpers import (
+    _apply_cookies_file,
     _failure_payload,
     _is_retryable_network_error,
     _resolve_metadata,
@@ -204,17 +205,18 @@ def _resolve_downloaded_files(ydl, entries, format_type):
             continue
         filepath = _resolve_downloaded_filename(ydl, entry, format_type)
         if filepath and os.path.exists(filepath):
-            files.append(filepath)
+            # par (filepath, info): mantém alinhado com a entry válida,
+            # mesmo quando entries contém None (vídeos indisponíveis)
+            files.append((filepath, entry))
     return files
 
 
-def _apply_tags_to_files(files, info_sources, artist, album, artwork_url):
-    if not files:
+def _apply_tags_to_files(files_with_info, artist, album, artwork_url):
+    if not files_with_info:
         return False
 
     success = True
-    for index, filepath in enumerate(files):
-        info = info_sources[index] if index < len(info_sources) else {}
+    for filepath, info in files_with_info:
         title = info.get("title", os.path.splitext(os.path.basename(filepath))[0])
         resolved_title, resolved_artist, resolved_album = _resolve_metadata(
             title,
@@ -304,8 +306,17 @@ def download_video(
         "retries": 5,
         "fragment_retries": 10,
         "logger": ChaquopyLogger,
-        "noplaylist": True,
+        # ponytail: playlist share URLs (watch?v=X&list=Y) devem baixar a
+        # playlist; só ignora playlist quando a URL é de vídeo puro
+        "noplaylist": "list=" not in (url or ""),
+        # ponytail: vídeos indisponíveis (semi-privados/bot-check) não podem
+        # abortar a playlist — pula a entry, baixa o resto
+        "ignoreerrors": True,
     }
+
+    # Conta logada via cookies.txt (se importado) desbloqueia videos que o
+    # YouTube esconde de acesso anonimo
+    _apply_cookies_file(ydl_opts, app_files_dir)
 
     # SSL CA BUNDLE Diagnostic
     if app_files_dir:
@@ -345,6 +356,13 @@ def download_video(
         with yt_dlp_module.YoutubeDL(ydl_opts) as ydl:
             ChaquopyLogger.info(f"Extraindo informações e iniciando download...", category="FLOW")
             downloaded_info = ydl.extract_info(url, download=True)
+            # ponytail: com ignoreerrors=True, video unico que falha retorna
+            # None em vez de lancar — tratar antes de chamar .get()
+            if not downloaded_info:
+                return json.dumps(log_failure(
+                    "Falha ao obter informações do vídeo (possivelmente indisponível sem login)",
+                    stage="extract_info",
+                ))
             is_playlist = downloaded_info.get("_type") == "playlist"
 
             if is_playlist:
@@ -354,10 +372,9 @@ def download_video(
                 if not downloaded_files:
                     return json.dumps(log_failure("Playlist vazia ou falha no download dos itens", stage="playlist_validation"))
                 
-                final_filename = downloaded_files[0]
+                final_filename = downloaded_files[0][0]
                 tags_injected = _apply_tags_to_files(
                     downloaded_files,
-                    entries,
                     artist,
                     album,
                     artwork_url or downloaded_info.get("thumbnail"),
@@ -368,7 +385,7 @@ def download_video(
                         "message": "Playlist download completed",
                         "progress": 100,
                         "filename": final_filename,
-                        "filenames": downloaded_files,
+                        "filenames": [f for f, _ in downloaded_files],
                         "tags_injected": tags_injected,
                         "detected_title": downloaded_info.get("title", "Playlist"),
                 })

@@ -27,7 +27,6 @@ def _failure_payload(error, stage, retryable=False, **extra):
 import traceback
 import logging
 import os
-import datetime
 
 # Configuração de logs persistentes
 LOG_FILE = "/data/user/0/com.example.ytdown/files/python_errors.log"
@@ -36,7 +35,7 @@ def report_error_to_firebase(error, stage=None, **extra):
     """
     Registra erros em log local persistente e formata para o ObservabilityService capturar via PythonBridge.
     """
-    timestamp = datetime.datetime.now().isoformat()
+    timestamp = datetime.now().isoformat()
     error_msg = f"{timestamp} | Stage: {stage} | Error: {str(error)} | Extra: {str(extra)}"
     
     # Log local
@@ -435,3 +434,31 @@ def _normalize_tag_value(value):
             value = str(value)
     text = str(value).strip()
     return text.casefold()
+
+
+def _apply_cookies_file(ydl_opts, app_files_dir):
+    """Aponta o yt-dlp para cookies.txt da conta logada, se existir.
+
+    O yt-dlp suporta `cookiefile` nativamente; com cookies do usuário o
+    YouTube deixa de esconder videos que nega a acesso anonimo
+    ("Video unavailable" em playlists).
+
+    So aplica se o arquivo for formato Netscape valido: arquivo corrompido/
+    truncado (import quebrado) faz o yt-dlp FALHAR TODA a playlist com
+    "does not look like a Netscape format cookies file".
+    """
+    if not app_files_dir:
+        return
+    cookies_path = os.path.join(app_files_dir, "cookies.txt")
+    if not os.path.isfile(cookies_path):
+        return
+    try:
+        with open(cookies_path, "rb") as f:
+            head = f.read(1024)
+    except OSError:
+        return
+    # Formato Netscape: primeira linha nao-vazia deve ser o header oficial.
+    # yt-dlp exige exatamente "# Netscape HTTP Cookie File" como 1a linha.
+    if not head.startswith(b"# Netscape HTTP Cookie File"):
+        return
+    ydl_opts["cookiefile"] = cookies_path

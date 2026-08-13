@@ -23,7 +23,8 @@ import javax.inject.Singleton
 class BassPlaybackEngine @Inject constructor(
     @param:ApplicationContext private val context: Context,
     private val controllerProvider: Lazy<PlaybackController>,
-    private val fxEngineProvider: Lazy<BassFXEngine>
+    private val fxEngineProvider: Lazy<BassFXEngine>,
+    private val audioFocus: AudioFocusManager
 ) {
     init {
         android.util.Log.e("BassPlaybackEngine", "ENGINE CREATED")
@@ -32,6 +33,15 @@ class BassPlaybackEngine @Inject constructor(
     // Propriedade lazy para evitar dependência circular na inicialização
     private val controller: PlaybackController by lazy { controllerProvider.get() }
     private val fxEngine: BassFXEngine by lazy { fxEngineProvider.get() }
+
+    init {
+        // O listener de foco nao pode conhecer o engine direto (o AudioFocusManager
+        // e @Singleton e criado antes); os callbacks fecham sobre este objeto.
+        audioFocus.onPause = { pause() }
+        audioFocus.onResume = { resumeInternal(requestFocus = false) }
+        audioFocus.onVolume = { setVolume(it) }
+        audioFocus.isPlaying = { controller.uiState.value.isPlaying }
+    }
     
     companion object {
         private const val TAG = "BassPlaybackEngine"
@@ -68,7 +78,14 @@ class BassPlaybackEngine @Inject constructor(
             return
         }
 
-        stop() // Garante que o canal anterior seja limpo
+        stopInternal(abandonFocus = false) // limpa o canal anterior, mantem o foco
+
+        // Sem foco, outro app esta no comando — nao atropela o audio dele.
+        if (!audioFocus.request(controller.uiState.value.volume)) {
+            Log.w(TAG, "Foco de audio negado; play abortado")
+            controller.setError("Outro aplicativo esta usando o audio")
+            return
+        }
 
         // 1. Criar o stream (Local, URL ou SAF)
         var channel = createStream(path)
@@ -165,7 +182,7 @@ class BassPlaybackEngine @Inject constructor(
             return
         }
 
-        stop() // Garante que o canal anterior seja limpo
+        stopInternal(abandonFocus = false) // limpa o canal anterior, mantem o foco
 
         var channel = createStream(path)
         if (channel == 0) {
@@ -251,8 +268,17 @@ class BassPlaybackEngine @Inject constructor(
      * Retoma a reprodução do canal ativo.
      * @return true se o resume foi bem-sucedido, false se falhou (canal inválido/morto).
      */
-    fun resume(): Boolean {
+    /** Retomada pedida pelo usuario/UI: precisa garantir o foco antes de soar. */
+    fun resume(): Boolean = resumeInternal(requestFocus = true)
+
+    private fun resumeInternal(requestFocus: Boolean): Boolean {
         Log.d(TAG, "resume() called, activeChannel: $activeChannel")
+        // Play() pede foco, mas retomar uma faixa ja preparada nao passa por la —
+        // sem isto, dar play numa faixa restaurada tocava sem foco nenhum.
+        if (requestFocus && !audioFocus.request(controller.uiState.value.volume)) {
+            Log.w(TAG, "Foco de audio negado; resume abortado")
+            return false
+        }
         if (activeChannel != 0) {
             val isActive = BASS.BASS_ChannelIsActive(activeChannel)
             if (isActive == BASS.BASS_ACTIVE_STOPPED || isActive == BASS.BASS_ACTIVE_PAUSED) {
@@ -325,7 +351,15 @@ class BassPlaybackEngine @Inject constructor(
         }
     }
 
-    fun stop() {
+    /** Parada definitiva: libera o canal e devolve o foco de audio. */
+    fun stop() = stopInternal(abandonFocus = true)
+
+    /**
+     * Troca de faixa: libera o canal mas mantem o foco.
+     * Soltar e repedir o foco entre uma musica e outra abre uma janela em que
+     * outro app pode retomar a reproducao dele.
+     */
+    private fun stopInternal(abandonFocus: Boolean) {
         Log.d(TAG, "stop() called, activeChannel: $activeChannel")
         if (activeChannel != 0) {
             BASS.BASS_ChannelStop(activeChannel)
@@ -335,6 +369,8 @@ class BassPlaybackEngine @Inject constructor(
         controller.updatePlaying(false)
         controller.updatePosition(0L)
         stopProgressTracker()
+        // No pause o foco fica, para o resume voltar sozinho.
+        if (abandonFocus) audioFocus.abandon()
         Log.d(TAG, "Stop complete")
     }
 

@@ -95,11 +95,20 @@ fun SettingsScreen(
         }
     }
 
+    // A mensagem de resultado ficava numa Surface no fim de uma tela rolavel,
+    // uns 12 elementos abaixo do botao: quem apertava "Reparar Tags" nao via
+    // nada acontecer. O Snackbar aparece por cima, perto, e some sozinho.
+    val snackbarHostState = remember { SnackbarHostState() }
+    LaunchedEffect(state.lastMessage) {
+        state.lastMessage?.let { snackbarHostState.showSnackbar(it) }
+    }
+
     Scaffold(
             // Scaffold aninhado: o de RootApp.kt ja consome os insets das barras
             // do sistema. Sem zerar, o padding entra duas vezes. A altura da
             // topBar continua vindo no `padding` normalmente.
             contentWindowInsets = WindowInsets(0),
+            snackbarHost = { SnackbarHost(snackbarHostState) },
             topBar = {
                 TopAppBar(
                         title = { Text(stringResource(R.string.settings_title), color = Color.White, style = MaterialTheme.typography.titleLarge) },

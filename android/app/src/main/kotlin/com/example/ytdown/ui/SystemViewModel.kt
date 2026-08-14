@@ -3,6 +3,7 @@ package com.example.ytdown.ui
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.work.*
+import com.example.ytdown.utils.LocalLogger
 import com.example.ytdown.DownloadMetadataManager
 import com.example.ytdown.core.business.ArtworkEnricher
 import com.example.ytdown.core.business.LibraryExporter
@@ -250,14 +251,26 @@ class SystemViewModel @Inject constructor(
 
     fun repairAllMetadata() {
         viewModelScope.launch {
-            _state.update { it.copy(isRepairing = true) }
-            val (repaired, failed, skipped) = metadataRepairer.repairAll { progress, message ->
-                _state.update { it.copy(repairProgress = progress, lastMessage = message) }
+            // Sem o try/catch, uma excecao deixava isRepairing preso em true:
+            // o botao (que so dispara com !isRepairing) morria em silencio e
+            // nenhuma mensagem chegava na tela.
+            _state.update { it.copy(isRepairing = true, repairProgress = 0f) }
+            try {
+                val total = databaseService.getLibraryAudios().size
+                val (repaired, failed, skipped) = metadataRepairer.repairAll { progress, message ->
+                    _state.update { it.copy(repairProgress = progress, lastMessage = message) }
+                }
+                _state.update { it.copy(
+                    isRepairing = false,
+                    lastMessage = MaintenanceFeedback.reparo(total, repaired, skipped, failed)
+                ) }
+            } catch (e: Exception) {
+                _state.update { it.copy(
+                    isRepairing = false,
+                    lastMessage = MaintenanceFeedback.erro("Reparo", e)
+                ) }
+                LocalLogger.error("repairAllMetadata falhou", e, "SystemViewModel")
             }
-            _state.update { it.copy(
-                isRepairing = false,
-                lastMessage = "Reparo concluído: $repaired corrigidos, $skipped pulados, $failed falhas"
-            ) }
         }
     }
 
@@ -273,11 +286,23 @@ class SystemViewModel @Inject constructor(
 
     fun enrichAllArtwork() {
         viewModelScope.launch {
-            _state.update { it.copy(isRepairing = true) }
-            artworkEnricher.enrichAll { progress, message ->
-                _state.update { it.copy(repairProgress = progress, lastMessage = message) }
+            _state.update { it.copy(isRepairing = true, repairProgress = 0f) }
+            try {
+                val total = databaseService.getLibraryAudios().size
+                val (updated, failed, skipped) = artworkEnricher.enrichAll { progress, message ->
+                    _state.update { it.copy(repairProgress = progress, lastMessage = message) }
+                }
+                _state.update { it.copy(
+                    isRepairing = false,
+                    lastMessage = MaintenanceFeedback.reparo(total, updated, skipped, failed)
+                ) }
+            } catch (e: Exception) {
+                _state.update { it.copy(
+                    isRepairing = false,
+                    lastMessage = MaintenanceFeedback.erro("Busca de capas", e)
+                ) }
+                LocalLogger.error("enrichAllArtwork falhou", e, "SystemViewModel")
             }
-            _state.update { it.copy(isRepairing = false, lastMessage = "Enriquecimento concluído") }
         }
     }
 

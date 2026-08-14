@@ -20,7 +20,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.example.ytdown.core.domain.DownloadItemEntity
 import com.example.ytdown.providers.DownloadDiagnosticsProvider
 import com.example.ytdown.ui.theme.SurfaceDark

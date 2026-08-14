@@ -8,6 +8,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import java.util.regex.Pattern
+import com.example.ytdown.utils.LocalLogger
 
 /**
  * Serviço de Observabilidade com Sanitização de Dados Sensíveis.
@@ -39,28 +40,21 @@ class ObservabilityService @Inject constructor(
                     }
                 }
             } catch (e: Exception) {
-                android.util.Log.e("Observability", "Erro ao monitorar logcat", e)
+                LocalLogger.error("Erro ao monitorar logcat", e, "Observability")
             }
         }
     }
 
     fun trackError(tag: String, message: String, throwable: Throwable? = null, metadata: Map<String, String>? = null) {
-        val sanitizedMsg = sanitize(message)
-        
-        // Log Remoto (Firebase)
-        val crashlytics = FirebaseCrashlytics.getInstance()
-        crashlytics.setCustomKey("tag", tag)
-        
-        // Adiciona metadados extras para busca via MCP
+        // Metadados extras primeiro — o LocalLogger.error faz log + recordException.
         metadata?.forEach { (key, value) ->
-            crashlytics.setCustomKey(key, value)
+            try {
+                FirebaseCrashlytics.getInstance().setCustomKey(key, LocalLogger.sanitize(value))
+            } catch (_: Throwable) {
+                // Firebase indisponível; o log local abaixo continua valendo.
+            }
         }
-
-        crashlytics.log("[$tag] $sanitizedMsg")
-        throwable?.let { crashlytics.recordException(it) }
-
-        // Log Local
-        android.util.Log.e(tag, sanitizedMsg, throwable)
+        LocalLogger.error(message, throwable, tag)
     }
 
     fun info(tag: String, message: String) {

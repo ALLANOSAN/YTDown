@@ -3,7 +3,7 @@ import re
 import time
 from datetime import datetime
 from urllib.error import HTTPError, URLError
-from urllib.parse import unquote, urlparse
+from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
 _MAX_THUMBNAIL_BYTES = 6 * 1024 * 1024
@@ -183,13 +183,15 @@ def _strip_generated_suffix(value):
     if not text:
         return ""
 
-    text = re.sub(r"[_-][0-9a-f]{6,}$", "", text, flags=re.IGNORECASE)
+    # UUID antes do hex genérico: o genérico casa os 12 hex finais do UUID e
+    # deixa o resto do UUID no título, sem o padrão de UUID nunca mais casar.
     text = re.sub(
         r"[_-][0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
         "",
         text,
         flags=re.IGNORECASE,
     )
+    text = re.sub(r"[_-][0-9a-f]{6,}$", "", text, flags=re.IGNORECASE)
 
     text = text.replace("_", " ")
     return _normalize_text(text)
@@ -318,6 +320,31 @@ def _guess_image_mime(url, data):
     return "image/jpeg"
 
 
+def _looks_like_image(data):
+    """
+    Confere a assinatura binária do conteúdo.
+
+    A capa chega como uma string só, que tanto pode ser um caminho do cache do
+    app quanto uma URL vinda de metadado remoto — a função não distingue as
+    duas. A garantia então é sobre o CONTEÚDO: sem isso, qualquer caminho local
+    (cookies.txt, banco) virava "capa" embutida no arquivo do usuário, e uma
+    página de erro HTTP entrava como image/jpeg.
+    """
+    if not data or len(data) < 12:
+        return False
+    if data.startswith(b"\xff\xd8\xff"):  # JPEG
+        return True
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):  # PNG
+        return True
+    if data.startswith(b"RIFF") and data[8:12] == b"WEBP":  # WebP
+        return True
+    if data.startswith(b"GIF87a") or data.startswith(b"GIF89a"):  # GIF
+        return True
+    if data.startswith(b"BM"):  # BMP
+        return True
+    return False
+
+
 def _download_thumbnail_bytes(thumbnail_url):
     if not thumbnail_url:
         return None
@@ -354,21 +381,24 @@ def _download_thumbnail_bytes(thumbnail_url):
     try:
         parsed = urlparse(source)
         scheme = (parsed.scheme or "").lower()
-
-        if scheme == "file":
-            local_path = unquote(parsed.path or "")
-            if os.name == "nt" and re.match(r"^/[A-Za-z]:", local_path):
-                local_path = local_path[1:]
-            local_data = _read_local_bytes(local_path)
-            if local_data:
-                return local_data
-
-        if not scheme and os.path.isabs(source):
-            local_data = _read_local_bytes(source)
-            if local_data:
-                return local_data
     except Exception as e:
         print(f"⚠️ Falha ao interpretar origem da capa: {str(e)}")
+        return None
+
+    # Caminho absoluto sem esquema = arquivo do cache de capas do app.
+    if not scheme and os.path.isabs(source):
+        local_data = _read_local_bytes(source)
+        if not _looks_like_image(local_data):
+            print("⚠️ Arquivo de capa local não é imagem — ignorado")
+            return None
+        return local_data
+
+    # Só http(s) vai para a rede. urllib resolve file://, data: e ftp://
+    # nativamente, o que transformaria esta função em leitor de arquivo
+    # arbitrário caso a origem viesse de metadado remoto.
+    if scheme not in ("http", "https"):
+        print(f"⚠️ Origem de capa com esquema não suportado: {scheme or '(nenhum)'}")
+        return None
 
     try:
         data = _download_url_bytes(
@@ -379,12 +409,14 @@ def _download_thumbnail_bytes(thumbnail_url):
             max_bytes=_MAX_THUMBNAIL_BYTES,
             label="thumbnail_download",
         )
-        if not data:
-            return None
-        return data
     except Exception as e:
         print(f"⚠️ Não foi possível baixar thumbnail para APIC: {str(e)}")
         return None
+
+    if not _looks_like_image(data):
+        print("⚠️ Resposta da capa não é imagem — ignorada")
+        return None
+    return data
 
 
 def _set_vorbis_like_tags(audio, title, artist, album):

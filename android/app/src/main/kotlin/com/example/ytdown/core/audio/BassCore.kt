@@ -3,6 +3,7 @@ package com.example.ytdown.core.audio
 import android.content.Context
 import android.util.Log
 import com.un4seen.bass.BASS
+import com.example.ytdown.utils.LocalLogger
 
 /**
  * BassCore - Gerenciamento centralizado do motor nativo BASS.
@@ -37,14 +38,14 @@ object BassCore {
         // Usamos BASS_DEVICE_OPENSLES como fallback/padrão para melhor performance.
         try {
             val success = BASS.BASS_Init(-1, frequency, BASS.BASS_DEVICE_OPENSLES)
-            android.util.Log.e("BASS_INIT", "RESULT: $success")
+            LocalLogger.debug("RESULT: $success", tag = "BASS_INIT")
             if (!success) {
                 val error = BASS.BASS_ErrorGetCode()
-                Log.e(TAG, "Falha ao inicializar BASS: ${BassErrorMapper.getErrorMessage(error)}")
+                LocalLogger.error("Falha ao inicializar BASS: ${BassErrorMapper.getErrorMessage(error)}", tag = TAG)
                 return
             }
         } catch (e: Exception) {
-            android.util.Log.e("BASS_INIT", "FAILED", e)
+            LocalLogger.error("FAILED", e, "BASS_INIT")
             return
         }
 

@@ -6,9 +6,11 @@ import com.example.ytdown.core.domain.*
 import com.example.ytdown.core.infrastructure.BinaryOrchestrator
 import com.example.ytdown.core.infrastructure.PythonEnvironment
 import com.example.ytdown.services.ObservabilityService
+import com.example.ytdown.utils.FileNameSanitizer
 import com.example.ytdown.utils.YouTubeUtils
 import java.io.File
 import org.json.JSONObject
+import com.example.ytdown.utils.LocalLogger
 
 data class DownloadResult(val exitCode: ExitCode, val outputPath: String? = null)
 
@@ -62,14 +64,12 @@ class YtDlpWrapper(
             val module = py.getModule("ytdown")
 
             // Sanitiza qualquer string para uso seguro como nome de arquivo.
-            // Remove caracteres que o Android MediaStore/SAF não aceita.
-            val invalidChars = Regex("[\\\\/:*?\"<>|\\r\\n\\t]")
-            val safeTitle = (metadata?.title?.value ?: "Sem Titulo")
-                .replace(invalidChars, "_").replace(Regex("\\s+"), " ").trim().take(80)
-            val safeArtist = (metadata?.artist?.value ?: "Artista Desconhecido")
-                .replace(invalidChars, "_").replace(Regex("\\s+"), " ").trim().take(60)
-            val safeAlbum = (metadata?.album?.value ?: "Album")
-                .replace(invalidChars, "_").replace(Regex("\\s+"), " ").trim().take(60)
+            val safeTitle = FileNameSanitizer.safeFileName(metadata?.title?.value.orEmpty())
+                .ifBlank { "Sem Titulo" }.take(80)
+            val safeArtist = FileNameSanitizer.safeFileName(metadata?.artist?.value.orEmpty())
+                .ifBlank { "Artista Desconhecido" }.take(60)
+            val safeAlbum = FileNameSanitizer.safeFileName(metadata?.album?.value.orEmpty())
+                .ifBlank { "Album" }.take(60)
             val cleanFileName = "$safeArtist - $safeAlbum - $safeTitle"
             // Usa %(ext)s no template: o yt-dlp/ffmpeg vai substituir pela extensão
             // final (.m4a, .mp3, etc) e isso evita duplicar a extensão (ex: .m4a.m4a).
@@ -110,7 +110,7 @@ class YtDlpWrapper(
             val error = result.optString("error", "Unknown")
 
             if (!success) {
-                android.util.Log.e("PYTHON_DOWNLOAD", "❌ Python retornou erro: $error")
+                LocalLogger.error("❌ Python retornou erro: $error", tag = "PYTHON_DOWNLOAD")
                 observabilityService.trackError("YtDlpWrapper", "Python download failed", metadata = mapOf("error" to error, "url" to url.value))
             } else {
                 android.util.Log.d("PYTHON_DOWNLOAD", "✅ Download concluído: $filename")
@@ -121,7 +121,7 @@ class YtDlpWrapper(
                     outputPath = filename
             )
         } catch (e: Exception) {
-            android.util.Log.e("PYTHON_DOWNLOAD", "❌ Erro fatal no download: ${e.message}", e)
+            LocalLogger.error("❌ Erro fatal no download: ${e.message}", e, "PYTHON_DOWNLOAD")
             observabilityService.trackError("YtDlpWrapper", "Fatal error during download", e, mapOf("url" to url.value))
             DownloadResult(exitCode = ExitCode(1))
         }
@@ -129,7 +129,7 @@ class YtDlpWrapper(
 
 
     fun fetchVideoInfo(url: String, appFilesDir: String): JSONObject {
-        android.util.Log.e("YtDlpWrapper", "🔍 fetchVideoInfo START para: $url")
+        LocalLogger.debug("🔍 fetchVideoInfo START para: $url", tag = "YtDlpWrapper")
 
         // ponytail: defense-in-depth — reject non-YouTube URLs
         if (!YouTubeUtils.isYouTubeUrl(url)) {
@@ -141,9 +141,9 @@ class YtDlpWrapper(
         
         return try {
             val py = Python.getInstance()
-            android.util.Log.e("YtDlpWrapper", "🔍 Python instance obtained")
+            LocalLogger.debug("🔍 Python instance obtained", tag = "YtDlpWrapper")
             val module = py.getModule("ytdown")
-            android.util.Log.e("YtDlpWrapper", "🔍 Module ytdown obtained, calling fetch_video_info...")
+            LocalLogger.debug("🔍 Module ytdown obtained, calling fetch_video_info...", tag = "YtDlpWrapper")
             
             // Executa com timeout usando ExecutorService
             val executor = java.util.concurrent.Executors.newSingleThreadExecutor()
@@ -153,18 +153,18 @@ class YtDlpWrapper(
             
             try {
                 val resultJson = future.get(timeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS)
-                android.util.Log.e("YtDlpWrapper", "🔍 fetch_video_info retornou!")
+                LocalLogger.debug("🔍 fetch_video_info retornou!", tag = "YtDlpWrapper")
                 executor.shutdown()
                 JSONObject(resultJson)
             } catch (e: java.util.concurrent.TimeoutException) {
-                android.util.Log.e("YtDlpWrapper", "🔍 fetch_video_info TIMEOUT (5 min)!")
+                LocalLogger.error("🔍 fetch_video_info TIMEOUT (5 min)!", tag = "YtDlpWrapper")
                 future.cancel(true)
                 executor.shutdown()
                 JSONObject().put("success", false).put("error", "Timeout: o YouTube demorou demais para responder.")
             }
 
         } catch (e: Exception) {
-            android.util.Log.e("YtDlpWrapper", "🔍 fetch_video_info EXCEPTION: ${e.message}")
+            LocalLogger.error("🔍 fetch_video_info EXCEPTION: ${e.message}", tag = "YtDlpWrapper")
             observabilityService.trackError("YtDlpWrapper", "Error fetching video info", e, mapOf("url" to url))
             JSONObject().put("success", false).put("error", e.message)
         }
@@ -197,20 +197,6 @@ class YtDlpWrapper(
         } catch (e: Exception) {
             observabilityService.trackError("YtDlpWrapper", "Fatal error during metadata rewrite", e, mapOf("filePath" to filePath))
             ExitCode(1)
-        }
-    }
-
-    fun fetchMetadataFromSource(artist: String, title: String): JSONObject? {
-        return try {
-            val py = Python.getInstance()
-            val module = py.getModule("ytdown")
-            val result = module.callAttr("search_metadata", artist, title)
-            
-            if (result == null || result.toString() == "None") return null
-            JSONObject(result.toString())
-        } catch (e: Exception) {
-            observabilityService.trackError("YtDlpWrapper", "Error searching metadata", e, mapOf("artist" to artist, "title" to title))
-            null
         }
     }
 

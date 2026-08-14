@@ -24,6 +24,7 @@ import java.io.File
 import javax.inject.Inject
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
+import com.example.ytdown.utils.LocalLogger
 
 // FIX #9: Sealed class for proper error state exposed to UI
 sealed class DownloadUiState {
@@ -331,28 +332,28 @@ constructor(
     }
 
     fun fetchVideoDetails(context: Context, url: VideoUrl) {
-        android.util.Log.e("DownloadViewModel", "🔍 fetchVideoDetails INICIADO para: ${url.value}")
+        LocalLogger.debug("🔍 fetchVideoDetails INICIADO para: ${url.value}", tag = "DownloadViewModel")
         viewModelScope.launch(Dispatchers.IO) {
             libraryRepository.saveSearch(url.value)
-            android.util.Log.e("DownloadViewModel", "🔍 Chamando performFetch...")
+            LocalLogger.debug("🔍 Chamando performFetch...", tag = "DownloadViewModel")
             fetchQueue.add { performFetch(context, url) }.await()
-            android.util.Log.e("DownloadViewModel", "🔍 performFetch FINALIZADO")
+            LocalLogger.debug("🔍 performFetch FINALIZADO", tag = "DownloadViewModel")
         }
     }
 
     private suspend fun performFetch(context: Context, url: VideoUrl) {
-        android.util.Log.e("DownloadViewModel", "🔍 performFetch started para: ${url.value}")
+        LocalLogger.debug("🔍 performFetch started para: ${url.value}", tag = "DownloadViewModel")
         _inputState.update { it.copy(isFetching = true, fetchError = null, showDialog = false) }
         runCatching { 
-            android.util.Log.e("DownloadViewModel", "🔍 chamando metadataManager.fetchVideoInfo...")
+            LocalLogger.debug("🔍 chamando metadataManager.fetchVideoInfo...", tag = "DownloadViewModel")
             metadataManager.fetchVideoInfo(url)
         }
                 .onSuccess { 
-                    android.util.Log.e("DownloadViewModel", "🔍 fetchVideoInfo SUCESSO!")
+                    LocalLogger.debug("🔍 fetchVideoInfo SUCESSO!", tag = "DownloadViewModel")
                     updateStateWithInfo(it) 
                 }
                 .onFailure { error ->
-                    android.util.Log.e("DownloadViewModel", "🔍 fetchVideoInfo FALHOU: ${error.message}")
+                    LocalLogger.error("🔍 fetchVideoInfo FALHOU: ${error.message}", tag = "DownloadViewModel")
                     observabilityService.trackError(
                             "DownloadViewModel",
                             "fetchVideoDetails failure: ${error.message}",
@@ -459,7 +460,7 @@ constructor(
         android.util.Log.d("STORAGE_DEBUG", "📂 Pasta informada pela UI: ${folder.value}")
 
         if (selectedItems.isEmpty()) {
-            android.util.Log.e("DOWNLOAD_FLOW", "❌ Abortando: NENHUM item selecionado ou lista vazia!")
+            LocalLogger.error("❌ Abortando: NENHUM item selecionado ou lista vazia!", tag = "DOWNLOAD_FLOW")
             _uiState.value = DownloadUiState.Idle
             return
         }
@@ -518,7 +519,7 @@ constructor(
                 }
                 _uiState.value = DownloadUiState.Success(message = "${selectedItems.size} item(s) scheduled for download")
             } catch (e: Exception) {
-                android.util.Log.e("DOWNLOAD_FLOW", "❌ Falha crítica no fluxo de download: ${e.message}", e)
+                LocalLogger.error("❌ Falha crítica no fluxo de download: ${e.message}", e, "DOWNLOAD_FLOW")
                 _uiState.value = DownloadUiState.Error(message = e.message ?: "Unknown error scheduling download", throwable = e)
                 observabilityService.trackError("DownloadViewModel", "startDownloadFlow failed", e)
             }

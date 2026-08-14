@@ -14,7 +14,9 @@ class FanArtTvService @Inject constructor() {
     private val client = OkHttpClient()
 
     companion object {
-        private const val API_KEY = "f3db96ca2d95eaeba2227bd3fb51e192" // Utilizando a chave de API funcional
+        // Chave vem do .secrets.json (git-ignored) via buildConfigField, igual
+        // ao LASTFM_API_KEY. Literal no fonte ia parar no git e no DEX do APK.
+        private val API_KEY = com.example.ytdown.BuildConfig.FANARTTV_API_KEY
         private const val BASE_URL = "https://webservice.fanart.tv/v3"
     }
 

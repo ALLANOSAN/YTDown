@@ -4,6 +4,7 @@ import android.content.Context
 import com.chaquo.python.Python
 import com.chaquo.python.PyObject
 import com.chaquo.python.android.AndroidPlatform
+import com.example.ytdown.utils.LocalLogger
 
 object PythonBridge {
     private var pythonInitialized = false
@@ -33,13 +34,13 @@ object PythonBridge {
             }
             pythonInitialized = true
         } catch (e: Exception) {
-            android.util.Log.e(TAG, "❌ Falha crítica ao iniciar Chaquopy: ${e.message}", e)
+            LocalLogger.error("❌ Falha crítica ao iniciar Chaquopy: ${e.message}", e, TAG)
         }
     }
 
     fun invokePythonJson(methodName: String, vararg args: Any?): String {
         if (!pythonInitialized) {
-            android.util.Log.e(TAG, "❌ ERRO: Tentativa de chamar Python antes da inicialização!")
+            LocalLogger.error("❌ ERRO: Tentativa de chamar Python antes da inicialização!", tag = TAG)
             throw IllegalStateException("PythonBridge não inicializado. Chame initializePython(context) primeiro.")
         }
         
@@ -49,7 +50,7 @@ object PythonBridge {
             android.util.Log.d(TAG, "🐍 Ponte Python -> Kotlin: '$methodName' concluído.")
             result
         } catch (e: Exception) {
-            android.util.Log.e(TAG, "❌ Erro fatal na ponte Python ($methodName): ${e.message}", e)
+            LocalLogger.error("❌ Erro fatal na ponte Python ($methodName): ${e.message}", e, TAG)
             "{\"success\": false, \"error\": \"Bridge error: ${e.message}\", \"stage\": \"bridge_invocation\"}"
         }
     }

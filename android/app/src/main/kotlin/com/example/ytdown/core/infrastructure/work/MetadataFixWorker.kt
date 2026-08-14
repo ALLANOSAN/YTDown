@@ -16,6 +16,7 @@ import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import com.example.ytdown.utils.LocalLogger
 
 @HiltWorker
 class MetadataFixWorker @AssistedInject constructor(
@@ -53,7 +54,7 @@ class MetadataFixWorker @AssistedInject constructor(
             )
             Result.success()
         } catch (e: Exception) {
-            android.util.Log.e("MetadataFixWorker", "Erro: ${e.message}")
+            LocalLogger.error("Erro: ${e.message}", tag = "MetadataFixWorker")
             Result.retry()
         }
     }

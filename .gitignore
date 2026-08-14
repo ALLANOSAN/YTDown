@@ -71,9 +71,13 @@ build.sh
 **/build/
 android/app/outputs/
 android/app/intermediates/
-android/app/schemas/
+# android/app/schemas/ NAO entra aqui: os schemas exportados do Room sao
+# a base para escrever a proxima migracao e para o AppDatabaseMigrationsTest.
 /scripts/
-.github/
+# .github/* (nao .github/) para o negativo abaixo funcionar: git nao
+# reinclui arquivo dentro de diretorio ignorado.
+.github/*
+!.github/workflows/
 .agent/
 .planning
 .opencode

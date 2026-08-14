@@ -13,6 +13,7 @@ import javax.inject.Inject
 
 import com.example.ytdown.core.artwork.ArtworkRotationController
 import com.example.ytdown.core.artwork.ArtworkMode
+import com.example.ytdown.utils.LocalLogger
 // ...
 @HiltViewModel
 class PlaybackViewModel @Inject constructor(
@@ -21,7 +22,7 @@ class PlaybackViewModel @Inject constructor(
 ) : ViewModel() {
 
     init {
-        android.util.Log.e("PlaybackViewModel", "VIEWMODEL CREATED")
+        LocalLogger.debug("VIEWMODEL CREATED", tag = "PlaybackViewModel")
     }
 
     val playbackUiState: StateFlow<PlaybackUiState> = 

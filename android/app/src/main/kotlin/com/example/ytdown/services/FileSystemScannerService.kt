@@ -5,7 +5,6 @@ import android.net.Uri
 import androidx.documentfile.provider.DocumentFile
 import com.example.ytdown.core.infrastructure.StorageResolver
 import com.example.ytdown.core.infrastructure.persistence.DownloadDao
-import com.example.ytdown.core.infrastructure.persistence.SongDao
 import com.example.ytdown.core.domain.DownloadItemEntity
 import com.example.ytdown.core.media.MediaImportProcessor
 import com.example.ytdown.core.artwork.PythonMetadataBridge
@@ -17,6 +16,7 @@ import javax.inject.Singleton
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.UUID
+import com.example.ytdown.utils.LocalLogger
 
 /**
  * Serviço que escaneia o sistema de arquivos em busca de músicas órfãs
@@ -26,7 +26,6 @@ import java.util.UUID
 class FileSystemScannerService @Inject constructor(
     private val storage: StorageResolver,
     private val downloadDao: DownloadDao,
-    private val songDao: SongDao,
     private val folderService: MusicFolderService,
     private val artworkManager: ArtworkManager,
     private val importProcessor: MediaImportProcessor,
@@ -34,33 +33,43 @@ class FileSystemScannerService @Inject constructor(
     @param:ApplicationContext private val context: Context
 ) {
     private val audioExtensions = setOf("mp3", "m4a", "aac", "ogg", "opus", "wav", "flac")
-    private val prefs = context.getSharedPreferences("scanner_prefs", Context.MODE_PRIVATE)
 
     suspend fun scanAndRegisterOrphans(onProgress: (String) -> Unit = {}): Int = withContext(Dispatchers.IO) {
         val audioDir = storage.privateDownloadsDir(isAudio = true)
         val selectedFolders = folderService.folders.value
         
         var registered = 0
-        val dbPaths = downloadDao.getAllDownloadsSync().flatMap { listOfNotNull(
+        // Uma única leitura do banco para o scan inteiro. Antes, registerOrphan
+        // chamava getAllDownloadsSync() por arquivo (N queries) e comparava contra
+        // um retrato que envelhecia a cada inserção — dois arquivos iguais no mesmo
+        // scan escapavam da deduplicação.
+        val snapshot = downloadDao.getAllDownloadsSync()
+        val dbPaths = snapshot.flatMap { listOfNotNull(
             it.outputPath.takeIf { path -> path.isNotBlank() },
             it.exportedPath?.takeIf { uri -> uri.isNotBlank() }
         ) }.toSet()
+        val known = snapshot.mapNotNullTo(mutableSetOf()) { item ->
+            val file = File(item.outputPath)
+            if (item.outputPath.isNotBlank() && file.exists()) {
+                item.title.lowercase() to file.length()
+            } else null
+        }
 
         // 1. Escanear diretório privado (File API)
         if (audioDir.exists()) {
-            registered += scanPhysicalDir(audioDir, dbPaths, onProgress)
+            registered += scanPhysicalDir(audioDir, dbPaths, known, onProgress)
         }
 
         // 2. Escanear diretórios externos selecionados
         selectedFolders.forEach { path ->
             if (path.startsWith("content://")) {
                 // Escanear via SAF (Storage Access Framework)
-                registered += scanDocumentTree(path, dbPaths, onProgress)
+                registered += scanDocumentTree(path, dbPaths, known, onProgress)
             } else {
                 // Escanear via File API
                 val dir = File(path)
                 if (dir.exists() && dir.isDirectory) {
-                    registered += scanPhysicalDir(dir, dbPaths, onProgress)
+                    registered += scanPhysicalDir(dir, dbPaths, known, onProgress)
                 }
             }
         }
@@ -68,25 +77,35 @@ class FileSystemScannerService @Inject constructor(
         registered
     }
 
-    private suspend fun scanPhysicalDir(dir: File, dbPaths: Set<String>, onProgress: (String) -> Unit): Int {
+    private suspend fun scanPhysicalDir(
+        dir: File,
+        dbPaths: Set<String>,
+        known: MutableSet<Pair<String, Long>>,
+        onProgress: (String) -> Unit
+    ): Int {
         var registered = 0
         onProgress("Escaneando: ${dir.name}")
-        val lastScanned = prefs.getLong("last_scan_${dir.absolutePath}", 0L)
-        if (dir.lastModified() <= lastScanned) return 0
-
+        // Sem guard de mtime: o mtime de um diretório só muda quando os filhos
+        // DIRETOS mudam. Numa biblioteca Musica/Artista/Album/*.mp3 a raiz nunca
+        // muda, então música nova em subpasta nunca era detectada. A varredura
+        // abaixo é barata e o filtro por dbPaths já evita reescrever o banco.
         val audioFiles = findAudioFiles(dir)
         val orphans = audioFiles.filter { !dbPaths.contains(it.absolutePath) }
 
         orphans.forEach { file ->
             onProgress("Adicionando: ${file.name}")
-            registerOrphan(file.absolutePath, file.nameWithoutExtension, file.extension, file.lastModified())
+            registerOrphan(file.absolutePath, file.nameWithoutExtension, file.extension, file.lastModified(), known)
             registered++
         }
-        prefs.edit().putLong("last_scan_${dir.absolutePath}", System.currentTimeMillis()).apply()
         return registered
     }
 
-    private suspend fun scanDocumentTree(uriString: String, dbPaths: Set<String>, onProgress: (String) -> Unit): Int {
+    private suspend fun scanDocumentTree(
+        uriString: String,
+        dbPaths: Set<String>,
+        known: MutableSet<Pair<String, Long>>,
+        onProgress: (String) -> Unit
+    ): Int {
         var registered = 0
         try {
             val treeUri = Uri.parse(uriString)
@@ -103,11 +122,11 @@ class FileSystemScannerService @Inject constructor(
                 val extension = name.substringAfterLast(".", "mp3")
                 val title = name.substringBeforeLast(".")
                 
-                registerOrphan(doc.uri.toString(), title, extension, doc.lastModified())
+                registerOrphan(doc.uri.toString(), title, extension, doc.lastModified(), known)
                 registered++
             }
         } catch (e: Exception) {
-            android.util.Log.e("FileSystemScanner", "Erro ao escanear DocumentTree: $uriString", e)
+            LocalLogger.error("Erro ao escanear DocumentTree: $uriString", e, "FileSystemScanner")
         }
         return registered
     }
@@ -132,8 +151,14 @@ class FileSystemScannerService @Inject constructor(
         return result
     }
 
-    private suspend fun registerOrphan(path: String, nameWithoutExtension: String, extension: String, lastModified: Long) {
-        val title = MetadataUtils.normalizeMetadataText(nameWithoutExtension)
+    private suspend fun registerOrphan(
+        path: String,
+        nameWithoutExtension: String,
+        extension: String,
+        lastModified: Long,
+        known: MutableSet<Pair<String, Long>>
+    ) {
+        val title = MetadataUtils.cleanFilenameTitle(nameWithoutExtension)
 
         // 0. Tentar ler metadados existentes do arquivo
         val existingMeta = pythonMetadataBridge.readExistingMetadata(path)
@@ -148,12 +173,14 @@ class FileSystemScannerService @Inject constructor(
             File(path).length()
         }
 
-        val existing = downloadDao.getAllDownloadsSync().find {
-            it.title.equals(title, ignoreCase = true) &&
-            (fileSize == -1L || it.outputPath.let { p -> p.isNotBlank() && File(p).exists() && File(p).length() == fileSize })
+        // Só deduplica quando dá pra comparar o tamanho. Em SAF (content://) o
+        // tamanho é desconhecido e o critério caía para "mesmo título" — duas
+        // faixas "Intro" de álbuns diferentes e a segunda sumia da biblioteca.
+        // O filtro por dbPaths lá em cima já cobre o mesmo arquivo reescaneado.
+        if (fileSize != -1L) {
+            val chave = title.lowercase() to fileSize
+            if (!known.add(chave)) return // Já registrado (banco ou este mesmo scan)
         }
-
-        if (existing != null) return // Arquivo já existe, não duplicar
 
         // 2. Registro rápido no banco (mostra na biblioteca imediatamente)
         val item = DownloadItemEntity(
@@ -178,38 +205,15 @@ class FileSystemScannerService @Inject constructor(
                 // SAF: copiar → processar com Mutagen → copiar de volta
                 processSafFile(path, title, item.id)
             } else {
-                // Arquivo físico: processar direto
+                // Arquivo físico: processar direto.
+                // O process() já propaga o resultado pro DownloadItemEntity.
                 if (File(path).exists()) {
                     android.util.Log.d("FileSystemScanner", "🔄 Enrichment completo para: $title")
-                    importProcessor.process(path, title)
+                    importProcessor.process(path, title, downloadId = item.id)
                 }
             }
-
-            // 4. Atualizar DownloadItemEntity com metadados enriquecidos do SongEntity
-            syncEnrichedMetadataToDownload(item.id, path)
         } catch (e: Exception) {
             android.util.Log.w("FileSystemScanner", "⚠️ Enrichment falhou para $title: ${e.message}")
-        }
-    }
-
-    /**
-     * Sincroniza metadados do SongEntity (enriquecido pelo MediaImportProcessor)
-     * para o DownloadItemEntity (usado pela biblioteca).
-     */
-    private suspend fun syncEnrichedMetadataToDownload(downloadId: String, audioPath: String) {
-        withContext(Dispatchers.IO) {
-            val song = songDao.getByPath(audioPath) ?: return@withContext
-            val download = downloadDao.getById(downloadId) ?: return@withContext
-
-            val updated = download.copy(
-                title = song.title,
-                artist = song.artist,
-                album = song.album,
-                albumArtPath = song.albumArtwork ?: download.albumArtPath,
-                artistArtPath = song.artistArtwork ?: download.artistArtPath
-            )
-            downloadDao.upsert(updated)
-            android.util.Log.d("FileSystemScanner", "🔗 Sync: ${song.artist} - ${song.album} | art=${song.albumArtwork != null} | artist=${song.artistArtwork != null}")
         }
     }
 
@@ -249,13 +253,11 @@ class FileSystemScannerService @Inject constructor(
 
         android.util.Log.d("FileSystemScanner", "📎 SAF copiado para temp: ${tempFile.name}")
 
-        // 2. Processar temp com pipeline completo (MusicBrainz → Cover Art → FanArt → Mutagen)
-        importProcessor.process(tempFile.absolutePath, title)
+        // 2. Processar temp com pipeline completo (MusicBrainz → Cover Art → FanArt → Mutagen).
+        //    O downloadId faz o process() sincronizar o item da biblioteca, que
+        //    aponta pra URI SAF e não pro caminho temporário.
+        importProcessor.process(tempFile.absolutePath, title, downloadId = downloadId)
         android.util.Log.d("FileSystemScanner", "✅ Enrichment SAF concluído para: $title")
-
-        // 3. Sincronizar metadados do SongEntity (temp path) para DownloadItemEntity (SAF URI)
-        //    ANTES de deletar o temp, pois o SongEntity usa o temp path como key
-        syncEnrichedMetadataToDownload(downloadId, tempFile.absolutePath)
 
         // 4. Copiar temp enriquecido de volta para SAF
         try {

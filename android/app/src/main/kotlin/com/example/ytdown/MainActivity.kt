@@ -26,6 +26,7 @@ import javax.inject.Inject
 import android.Manifest
 import android.os.Build
 import androidx.activity.result.contract.ActivityResultContracts
+import com.example.ytdown.utils.LocalLogger
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
@@ -65,7 +66,7 @@ class MainActivity : ComponentActivity() {
                 py.getModule("yt_dlp")
                 android.util.Log.d("CHAQUOPY_DEBUG", "✅ Biblioteca 'yt-dlp' encontrada.")
             } catch (e: Exception) {
-                android.util.Log.e("CHAQUOPY_DEBUG", "⚠️ Biblioteca 'yt-dlp' não encontrada via import direto.")
+                LocalLogger.error("⚠️ Biblioteca 'yt-dlp' não encontrada via import direto.", tag = "CHAQUOPY_DEBUG")
             }
 
             // 2. Verifica conectividade básica de rede via Python
@@ -75,11 +76,11 @@ class MainActivity : ComponentActivity() {
                 val ip = socket.callAttr("gethostbyname", "google.com").toString()
                 android.util.Log.d("CHAQUOPY_DEBUG", "✅ DNS OK: google.com -> $ip")
             } catch (e: Exception) {
-                android.util.Log.e("CHAQUOPY_DEBUG", "❌ Falha crítica de REDE/DNS no Python: ${e.message}")
+                LocalLogger.error("❌ Falha crítica de REDE/DNS no Python: ${e.message}", tag = "CHAQUOPY_DEBUG")
             }
             
         } catch (e: Exception) {
-            android.util.Log.e("CHAQUOPY_DEBUG", "❌ Falha no diagnóstico de inicialização: ${e.message}")
+            LocalLogger.error("❌ Falha no diagnóstico de inicialização: ${e.message}", tag = "CHAQUOPY_DEBUG")
         }
         android.util.Log.d("CHAQUOPY_DEBUG", "--------------------------------------------------")
 

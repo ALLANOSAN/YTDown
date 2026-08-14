@@ -12,6 +12,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import javax.inject.Inject
 import javax.inject.Singleton
+import com.example.ytdown.utils.LocalLogger
 
 @Singleton
 class LastfmService @Inject constructor(
@@ -119,15 +120,24 @@ class LastfmService @Inject constructor(
         return results
     }
 
+    companion object {
+        private val apiKeyParam = Regex("api_key=[^&]*")
+
+        /** A URL do Last.fm carrega a api_key no query string; logar a URL crua
+         *  escrevia a chave em claro no logcat a cada busca de capa. */
+        internal fun redactSecrets(url: String): String =
+            url.replace(apiKeyParam, "api_key=REDACTED")
+    }
+
     private suspend fun fetchJson(url: String): JsonObject? {
-        android.util.Log.d("LastfmService", "fetchJson: $url")
+        android.util.Log.d("LastfmService", "fetchJson: ${redactSecrets(url)}")
         return withContext(Dispatchers.IO) {
             try {
                 val request = Request.Builder().url(url).build()
                 val response = client.newCall(request).execute()
                 response.use {
                     if (!it.isSuccessful) {
-                        android.util.Log.w("LastfmService", "fetchJson failed: HTTP ${it.code} for $url")
+                        android.util.Log.w("LastfmService", "fetchJson failed: HTTP ${it.code} for ${redactSecrets(url)}")
                         return@withContext null
                     }
                     val body = it.body?.string() ?: return@withContext null
@@ -135,7 +145,7 @@ class LastfmService @Inject constructor(
                     JsonParser.parseString(body).asJsonObject
                 }
             } catch (ex: Exception) {
-                android.util.Log.e("LastfmService", "fetchJson exception: ${ex.message}")
+                LocalLogger.error("fetchJson exception: ${ex.message}", tag = "LastfmService")
                 observabilityService.trackError("LastfmService", "lastfm_fetch_failure: ${ex.message}")
                 null
             }

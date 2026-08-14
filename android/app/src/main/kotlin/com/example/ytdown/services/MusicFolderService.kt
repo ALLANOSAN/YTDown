@@ -18,6 +18,7 @@ import kotlinx.coroutines.launch
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
+import com.example.ytdown.utils.LocalLogger
 
 @Singleton
 class MusicFolderService @Inject constructor(
@@ -100,7 +101,7 @@ class MusicFolderService @Inject constructor(
                 context.contentResolver.takePersistableUriPermission(uri, flags)
                 Log.d(TAG, "Permissão persistente adquirida para: $path")
             } catch (e: Exception) {
-                Log.e(TAG, "Falha ao adquirir permissão persistente para $path: ${e.message}")
+                LocalLogger.error("Falha ao adquirir permissão persistente para $path: ${e.message}", tag = TAG)
             }
         }
 
@@ -141,7 +142,7 @@ class MusicFolderService @Inject constructor(
 
                     Log.d(TAG, "🧹 Removidos ${toRemove.size} itens da biblioteca (pasta: $path)")
                 } catch (e: Exception) {
-                    Log.e(TAG, "Erro ao limpar itens da pasta $path: ${e.message}")
+                    LocalLogger.error("Erro ao limpar itens da pasta $path: ${e.message}", tag = TAG)
                 }
             }
         }

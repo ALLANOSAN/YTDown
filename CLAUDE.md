@@ -63,9 +63,14 @@ over ADB (logcat assertions, not instrumentation).
 
 ### Kotlin ↔ Python bridge
 
-Python is the source of truth for downloading and tagging. `android/app/src/main/python/ytdown.py` is
-the only facade Kotlin should call; it re-exports from `download.py`, `fetch.py`, `metadata.py`,
-`runtime.py`, `enrich.py`, `metal_archives.py`.
+Python is the source of truth for downloading and tag *writing*. `android/app/src/main/python/ytdown.py`
+is the only facade Kotlin should call; it re-exports from `download.py`, `fetch.py`, `metadata.py`,
+`runtime.py`, `metal_archives.py`.
+
+Metadata *lookup* is Kotlin-side, not Python: `MusicBrainzService` → `CoverArtArchiveService` /
+`LastfmService` → `FanArtTvService`, orchestrated by `core/media/MediaImportProcessor.kt`, which then
+calls Python (Mutagen) to write the tags. The old `enrich.py::search_metadata` path was removed — it
+only returned title/artist/album, with no track number, year, or cover-art IDs.
 
 - Callers: `core/business/YtDlpWrapper.kt`, `PythonBridge.kt`, `core/artwork/PythonMetadataBridge.kt`
   (`Python.getInstance().getModule("ytdown")`).
@@ -138,7 +143,15 @@ logcat), not bare `Log.e`.
 
 ## Stale docs
 
-`.planning/codebase/*.md` and `.agent/ARCHITECTURE.md` are generated snapshots from 2026-05-09. They are
-useful for the Python layer but predate most Kotlin work (e.g. TESTING.md claims no tests exist).
-`implementation_plan.md` proposes dropping Chaquopy for `youtubedl-android` + `jaudiotagger` — that
-migration has **not** started; the Python layer is still live.
+`.planning/codebase/*.md` and `.agent/ARCHITECTURE.md` are git-ignored local snapshots from 2026-05-09
+that **contradict the current code** — TESTING.md claims no tests exist (there are 121). Do not trust
+them; this file is the source of truth. `implementation_plan.md` (proposing a drop of Chaquopy for
+`youtubedl-android` + `jaudiotagger`, a migration that never started) was deleted for the same reason.
+
+## Errors and logging
+
+`LocalLogger` is the single funnel: `LocalLogger.error(msg, throwable, tag)` writes to logcat **and**
+Crashlytics, after redacting URLs (which carry `api_key`) and device paths via `LocalLogger.sanitize`.
+It is an `object`, so it needs no DI — do not call `android.util.Log.e` directly. `ObservabilityService.
+trackError` delegates to it and only adds Crashlytics custom keys. Flow tracing belongs in
+`LocalLogger.debug`, not in `error`, or it floods the crash reports.

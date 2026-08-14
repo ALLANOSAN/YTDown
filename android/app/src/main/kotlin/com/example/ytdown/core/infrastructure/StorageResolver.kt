@@ -9,6 +9,7 @@ import android.provider.MediaStore
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
+import com.example.ytdown.utils.LocalLogger
 
 @Singleton
 class StorageResolver @Inject constructor(private val context: Context) {
@@ -123,7 +124,7 @@ class StorageResolver @Inject constructor(private val context: Context) {
             val uri = Uri.parse(uriString)
             context.contentResolver.delete(uri, null, null)
         } catch (e: Exception) {
-            android.util.Log.e("StorageResolver", "Falha ao deletar arquivo público: $uriString", e)
+            LocalLogger.error("Falha ao deletar arquivo público: $uriString", e, "StorageResolver")
         }
     }
 }

@@ -12,6 +12,7 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import javax.inject.Inject
 import javax.inject.Singleton
+import com.example.ytdown.utils.LocalLogger
 
 /**
  * BassPlaybackEngine - O motor de reprodução profissional baseado em BASS.
@@ -27,7 +28,7 @@ class BassPlaybackEngine @Inject constructor(
     private val audioFocus: AudioFocusManager
 ) {
     init {
-        android.util.Log.e("BassPlaybackEngine", "ENGINE CREATED")
+        LocalLogger.debug("ENGINE CREATED", tag = "BassPlaybackEngine")
     }
 
     // Propriedade lazy para evitar dependência circular na inicialização
@@ -107,7 +108,7 @@ class BassPlaybackEngine @Inject constructor(
         if (channel == 0) {
             val error = BASS.BASS_ErrorGetCode()
             val msg = BassErrorMapper.getErrorMessage(error)
-            Log.e(TAG, "Erro ao criar stream: $msg")
+            LocalLogger.error("Erro ao criar stream: $msg", tag = TAG)
             controller.setError(msg)
             return
         }
@@ -165,7 +166,7 @@ class BassPlaybackEngine @Inject constructor(
             }
 
             val msg = BassErrorMapper.getErrorMessage(error)
-            Log.e(TAG, "Playback failed definitively: $msg")
+            LocalLogger.error("Playback failed definitively: $msg", tag = TAG)
             controller.setError(msg)
         }
     }
@@ -197,7 +198,7 @@ class BassPlaybackEngine @Inject constructor(
         if (channel == 0) {
             val error = BASS.BASS_ErrorGetCode()
             val msg = BassErrorMapper.getErrorMessage(error)
-            Log.e(TAG, "Erro ao criar stream em prepare(): $msg")
+            LocalLogger.error("Erro ao criar stream em prepare(): $msg", tag = TAG)
             controller.setError(msg)
             return
         }
@@ -235,7 +236,7 @@ class BassPlaybackEngine @Inject constructor(
                         handle
                     } else 0
                 } catch (e: Exception) {
-                    Log.e(TAG, "Erro SAF: ${e.message}")
+                    LocalLogger.error("Erro SAF: ${e.message}", tag = TAG)
                     0
                 }
             }
@@ -290,7 +291,7 @@ class BassPlaybackEngine @Inject constructor(
                     return true
                 } else {
                     val error = BASS.BASS_ErrorGetCode()
-                    Log.e(TAG, "Resume failed, error: $error")
+                    LocalLogger.error("Resume failed, error: $error", tag = TAG)
                     // Não setar erro aqui — o caller fará o fallback recriando o stream
                     return false
                 }

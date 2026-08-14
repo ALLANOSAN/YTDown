@@ -16,7 +16,9 @@ import java.util.regex.Pattern
 class MetadataService @Inject constructor() {
     private val client = OkHttpClient()
     private val gson = Gson()
-    private val lastFmKey = "c0bc9642cd67227a10ce0a129981513b"
+    // Mesma chave que o LastfmService já consumia via BuildConfig; estava
+    // duplicada como literal aqui, indo pro git e pro DEX do APK.
+    private val lastFmKey = com.example.ytdown.BuildConfig.LASTFM_API_KEY
     
     private val artworkCache = LruCache<String, Map<String, String?>>(100)
     

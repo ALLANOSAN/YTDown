@@ -8,9 +8,11 @@ import com.example.ytdown.services.CoverArtArchiveService
 import com.example.ytdown.services.DatabaseService
 import com.example.ytdown.services.LastfmService
 import com.example.ytdown.services.MusicBrainzService
+import com.example.ytdown.utils.MetadataUtils
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
+import com.example.ytdown.utils.LocalLogger
 
 /**
  * Botão "Capas" — Baixa capa do álbum e foto do artista.
@@ -53,16 +55,39 @@ class ArtworkEnricher @Inject constructor(
                 continue
             }
 
-            val artist = item.artist?.trim() ?: ""
-            val album = item.album?.trim() ?: ""
-            if (artist.isBlank()) {
+            // "Desconhecido"/"Unknown"/"YTDown" são sentinelas gravados pelo
+            // scanner, não metadados. Tratados como valor real eles viram
+            // `artist:"Desconhecido"` no MusicBrainz (0 resultados) e o botão
+            // termina sem achar capa nenhuma.
+            val knownArtist = MetadataUtils.sanitizeArtist(item.artist)
+            val knownAlbum = item.album?.trim().orEmpty()
+                .takeUnless { MetadataUtils.isUnknownMetadata(it) }
+                .orEmpty()
+            val title = item.title.trim()
+            if (title.isBlank()) {
                 skipped++
                 continue
             }
 
             try {
-                // 1. Buscar MusicBrainz para pegar releaseId e artistId
-                val mbResult = musicBrainzService.searchRecording(item.title.trim(), artist)
+                // 1. Buscar MusicBrainz para pegar releaseId e artistId.
+                //    Sem artista confiável, busca só por título — a cláusula de
+                //    artista é omitida pela query.
+                var mbResult = musicBrainzService.searchRecording(title, knownArtist)
+                if (mbResult == null && knownArtist.isNotBlank()) {
+                    val fallback = musicBrainzService.searchRecording(title, "")
+                    if (fallback != null && knownArtist.equals(fallback.artist, ignoreCase = true)) {
+                        mbResult = fallback
+                    }
+                }
+
+                // MusicBrainz é a fonte de verdade; o banco só entra quando ele falha
+                val artist = MetadataUtils.sanitizeArtist(mbResult?.artist).ifBlank { knownArtist }
+                val album = mbResult?.album?.trim()?.ifBlank { null } ?: knownAlbum
+                if (artist.isBlank()) {
+                    skipped++
+                    continue
+                }
 
                 var albumArtPath: String? = null
                 var artistArtPath: String? = null
@@ -71,7 +96,7 @@ class ArtworkEnricher @Inject constructor(
                 val releaseGroupId = mbResult?.releaseGroupId
                 val releaseId = mbResult?.releaseId
                 if (releaseGroupId != null || releaseId != null) {
-                    val albumCacheKey = artworkCacheManager.getCacheKey(artist, album.ifBlank { "YTDown" })
+                    val albumCacheKey = artworkCacheManager.getCacheKey(artist, album)
                     val cached = artworkCacheManager.getCachedAlbumArt(albumCacheKey)
                     if (cached != null) {
                         albumArtPath = cached.absolutePath
@@ -90,7 +115,7 @@ class ArtworkEnricher @Inject constructor(
 
                 // 2.5 Last.fm/iTunes/Deezer (fallback quando CAA nao tem)
                 if (albumArtPath == null && artist.isNotBlank()) {
-                    val albumCacheKey = artworkCacheManager.getCacheKey(artist, album.ifBlank { "YTDown" })
+                    val albumCacheKey = artworkCacheManager.getCacheKey(artist, album)
                     val cached = artworkCacheManager.getCachedAlbumArt(albumCacheKey)
                     if (cached != null) {
                         albumArtPath = cached.absolutePath
@@ -101,7 +126,7 @@ class ArtworkEnricher @Inject constructor(
                             coverUrl = lastfmService.getAlbumCover(artist, album)
                         }
                         if (coverUrl == null) {
-                            coverUrl = lastfmService.getTrackCover(artist, item.title.trim())
+                            coverUrl = lastfmService.getTrackCover(artist, title)
                         }
 
                         if (coverUrl != null) {
@@ -119,7 +144,7 @@ class ArtworkEnricher @Inject constructor(
                                     albumArtPath = saved?.absolutePath
                                 }
                             } catch (e: Exception) {
-                                android.util.Log.e("ArtworkEnricher", "Erro ao baixar capa do Last.fm: ${e.message}")
+                                LocalLogger.error("Erro ao baixar capa do Last.fm: ${e.message}", tag = "ArtworkEnricher")
                             }
                         }
                     }
@@ -142,12 +167,13 @@ class ArtworkEnricher @Inject constructor(
                 }
 
                 // 4. Gravar capa do álbum no arquivo via Mutagen (NÃO a foto do artista)
+                val finalTitle = mbResult?.title?.trim()?.ifBlank { null } ?: title
                 if (albumArtPath != null) {
                     pythonMetadataBridge.writeFullMetadata(
                         path = targetPath,
-                        title = item.title.trim(),
+                        title = finalTitle,
                         artist = artist,
-                        album = album.ifBlank { "Álbum Desconhecido" },
+                        album = album,
                         year = mbResult?.year,
                         albumArt = albumArtPath,
                         trackNumber = mbResult?.trackNumber,
@@ -155,8 +181,12 @@ class ArtworkEnricher @Inject constructor(
                     )
                 }
 
-                // 5. Atualizar banco de dados
+                // 5. Atualizar banco de dados — o que foi gravado no arquivo e o
+                //    que a biblioteca mostra não podem divergir
                 val updatedItem = item.copy(
+                    title = if (albumArtPath != null) finalTitle else item.title,
+                    artist = artist,
+                    album = album.ifBlank { item.album.orEmpty() },
                     albumArtPath = albumArtPath ?: item.albumArtPath,
                     artistArtPath = artistArtPath ?: item.artistArtPath
                 )
@@ -165,7 +195,7 @@ class ArtworkEnricher @Inject constructor(
 
                 android.util.Log.d("ArtworkEnricher", "✅ Capas: ${item.title} (album=${albumArtPath != null}, artist=${artistArtPath != null})")
             } catch (e: Exception) {
-                android.util.Log.e("ArtworkEnricher", "❌ Erro: ${item.title}: ${e.message}")
+                LocalLogger.error("❌ Erro: ${item.title}: ${e.message}", tag = "ArtworkEnricher")
                 failed++
             }
         }

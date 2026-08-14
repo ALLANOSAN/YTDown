@@ -124,7 +124,8 @@ enum class InteractionType {
     FAVORITED,   // Marcado como favorito
     UNFAVORITED, // Desmarcado favorito
     REPLAYED,    // Reproduzido novamente
-    SHARED       // Compartilhado
+    SHARED,      // Compartilhado
+    UNKNOWN      // Valor gravado por outra versão do app — fica fora das estatísticas
 }
 
 /**

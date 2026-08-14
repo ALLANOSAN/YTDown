@@ -40,6 +40,20 @@ class MusicBrainzService @Inject constructor() {
         private const val REQUEST_DELAY_MS = 1100L
         private const val CONNECT_TIMEOUT = 10000
         private const val READ_TIMEOUT = 10000
+
+        private fun escapeLucenePhrase(value: String): String =
+            value.replace("\\", "\\\\").replace("\"", "\\\"")
+
+        /**
+         * Monta a query Lucene de recording. Sem artista a cláusula é omitida —
+         * buscar `artist:""` depende de o servidor tolerar frase vazia.
+         */
+        internal fun buildRecordingQuery(title: String, artist: String): String {
+            val recording = "recording:\"${escapeLucenePhrase(title.trim())}\""
+            val cleanArtist = artist.trim()
+            if (cleanArtist.isEmpty()) return recording
+            return "$recording AND artist:\"${escapeLucenePhrase(cleanArtist)}\""
+        }
     }
 
     suspend fun searchArtistId(name: String): String? = withContext(Dispatchers.IO) {
@@ -64,7 +78,7 @@ class MusicBrainzService @Inject constructor() {
     ): MusicBrainzRecording? = withContext(Dispatchers.IO) {
         return@withContext try {
             delay(1100L) // Rate limit
-            val query = "recording:\"$title\" AND artist:\"$artist\""
+            val query = buildRecordingQuery(title, artist)
             val url = "https://musicbrainz.org/ws/2/recording/?query=${java.net.URLEncoder.encode(query, "UTF-8")}&fmt=json&inc=artists+releases+release-groups"
 
             val request = Request.Builder()

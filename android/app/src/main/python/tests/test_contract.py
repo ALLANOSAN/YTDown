@@ -14,14 +14,16 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import ytdown
 from helpers import _failure_payload
 
-# Os 10 pontos que o Kotlin chama hoje (YtDlpWrapper.kt e PythonMetadataBridge.kt).
+# Os 8 pontos que o Kotlin chama hoje (YtDlpWrapper.kt e PythonMetadataBridge.kt).
+# search_metadata saiu junto com enrich.py: o enriquecimento passou a ser feito
+# pelo MusicBrainzService/MediaImportProcessor do lado Kotlin, que traz também
+# faixa, disco, ano e os IDs da capa — coisas que o enrich.py não devolvia.
 EXPORTS_ESPERADOS = {
     "download_video",
     "fetch_video_info",
     "rewrite_file_metadata",
     "check_yt_dlp_update",
     "update_yt_dlp_if_needed",
-    "search_metadata",
     "get_band_details",
     "get_similar_bands",
     "get_band_albums",

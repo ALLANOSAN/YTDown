@@ -98,11 +98,11 @@ class PythonMetadataBridge @Inject constructor() {
             val result = module.callAttr("extract_metadata_from_filename", filename).toString()
             val json = JSONObject(result)
             mapOf(
-                "artist" to json.optString("artist", "Unknown"),
+                "artist" to json.optString("artist", ""),
                 "title" to json.optString("title", filename)
             )
         } catch (e: Exception) {
-            mapOf("artist" to "Unknown", "title" to filename)
+            mapOf("artist" to "", "title" to filename)
         }
     }
 

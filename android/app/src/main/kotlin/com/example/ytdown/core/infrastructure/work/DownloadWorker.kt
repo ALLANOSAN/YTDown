@@ -12,12 +12,13 @@ import com.example.ytdown.core.business.DownloadEngine
 import com.example.ytdown.core.business.DownloadRepository
 import com.example.ytdown.core.domain.*
 import com.example.ytdown.core.infrastructure.NotificationHelper
-import com.example.ytdown.core.infrastructure.persistence.SongDao
+import com.example.ytdown.utils.MetadataUtils
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import java.io.File
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.*
+import com.example.ytdown.utils.LocalLogger
 
 @HiltWorker
 class DownloadWorker
@@ -26,8 +27,7 @@ constructor(
         @Assisted context: Context,
         @Assisted params: WorkerParameters,
         private val repository: DownloadRepository,
-        private val engine: DownloadEngine,
-        private val songDao: SongDao
+        private val engine: DownloadEngine
 ) : CoroutineWorker(context, params) {
 
     private val notificationHelper = NotificationHelper(context)
@@ -58,7 +58,7 @@ constructor(
     private var lastDbUpdateTime = 0L
 
     override suspend fun doWork(): Result {
-        android.util.Log.e("DownloadWorker", "🚀 Queue worker iniciado!")
+        LocalLogger.debug("🚀 Queue worker iniciado!", tag = "DownloadWorker")
 
         // Libera itens travados de um worker anterior abortado (sem graça).
         runCatching { repository.resetStuckDownloading() }
@@ -83,10 +83,10 @@ constructor(
             android.util.Log.d("DOWNLOAD_FLOW", "✅ Fila concluída. Itens processados: $count")
             Result.success()
         } catch (e: CancellationException) {
-            android.util.Log.e("DOWNLOAD_FLOW", "🛑 Worker CANCELADO — encerrando fila (itens pendentes podem ser reagendados)")
+            LocalLogger.debug("🛑 Worker CANCELADO — encerrando fila (itens pendentes podem ser reagendados)", tag = "DOWNLOAD_FLOW")
             Result.failure()
         } catch (e: Exception) {
-            android.util.Log.e("DOWNLOAD_FLOW", "❌ Erro inesperado no Worker: ${e.message}", e)
+            LocalLogger.error("❌ Erro inesperado no Worker: ${e.message}", e, "DOWNLOAD_FLOW")
             Result.failure()
         } finally {
             progressScope.cancel()
@@ -155,7 +155,7 @@ constructor(
                     }
 
             if (downloadResult == null) {
-                android.util.Log.e("DOWNLOAD_FLOW", "⚠️ Timeout de 30 min atingido para $title!")
+                LocalLogger.error("⚠️ Timeout de 30 min atingido para $title!", tag = "DOWNLOAD_FLOW")
                 updateFinalStatus(id, success = false)
                 return
             }
@@ -189,37 +189,19 @@ constructor(
                             applicationContext,
                             com.example.ytdown.core.infrastructure.di.ImportProcessorEntryPoint::class.java
                         ).mediaImportProcessor()
+                        // downloadId: o SongEntity é chaveado pelo caminho temporário,
+                        // que não bate com o outputPath do item — o process()
+                        // sincroniza a biblioteca pelo id.
                         importProcessor.process(
                             tempFilePath,
                             originalTitle = title,
-                            knownArtist = metadata.artist.value.takeIf { it.isNotBlank() && !it.equals("Unknown", ignoreCase = true) && !it.equals("Desconhecido", ignoreCase = true) },
-                            knownAlbum = metadata.album.value.takeIf { it.isNotBlank() && !it.equals("Unknown Album", ignoreCase = true) },
-                            forceEnrichment = true
+                            knownArtist = MetadataUtils.sanitizeArtist(metadata.artist.value).takeIf { it.isNotBlank() },
+                            knownAlbum = metadata.album.value.takeIf { it.isNotBlank() && !MetadataUtils.isUnknownMetadata(it) && !it.equals("Unknown Album", ignoreCase = true) },
+                            forceEnrichment = true,
+                            downloadId = id
                         )
-
-                        // Sincronizar artwork paths do SongEntity para o DownloadItemEntity (tabela downloads)
-                        try {
-                            val song = songDao.getByPath(tempFilePath)
-                            if (song != null) {
-                                val download = repository.find(id)
-                                if (download != null) {
-                                    repository.persist(
-                                        download.copy(
-                                            albumArtPath = song.albumArtwork ?: download.albumArtPath,
-                                            artistArtPath = song.artistArtwork ?: download.artistArtPath,
-                                            title = song.title,
-                                            artist = song.artist,
-                                            album = song.album
-                                        )
-                                    )
-                                }
-                                android.util.Log.d("DOWNLOAD_FLOW", "Sync artwork: ${song.artist} - ${song.title} | albumArt=${song.albumArtwork != null} artistArt=${song.artistArtwork != null}")
-                            }
-                        } catch (e: Exception) {
-                            android.util.Log.e("DOWNLOAD_FLOW", "Erro no sync de artwork: ${e.message}")
-                        }
                     } catch (e: Exception) {
-                        android.util.Log.e("STORAGE_DEBUG", "⚠️ Erro no processamento de metadados: ${e.message}")
+                        LocalLogger.error("⚠️ Erro no processamento de metadados: ${e.message}", tag = "STORAGE_DEBUG")
                     }
 
                     // Limpar arquivo temporário
@@ -227,19 +209,19 @@ constructor(
 
                     updateFinalStatus(id, success = true, outputPath = finalDestPath, exportedPath = exportedUri?.toString())
                 } catch (e: Exception) {
-                    android.util.Log.e("STORAGE_DEBUG", "❌ Falha ao exportar para MediaStore: ${e.message}")
+                    LocalLogger.error("❌ Falha ao exportar para MediaStore: ${e.message}", tag = "STORAGE_DEBUG")
                     updateFinalStatus(id, success = false)
                 }
             } else {
-                android.util.Log.e("DOWNLOAD_FLOW", "❌ Download falhou no engine para $title.")
+                LocalLogger.error("❌ Download falhou no engine para $title.", tag = "DOWNLOAD_FLOW")
                 updateFinalStatus(id, success = false)
             }
         } catch (e: CancellationException) {
             // Item cancelado: interrompe o worker inteiro (o resto da fila fica "pending").
-            android.util.Log.e("DOWNLOAD_FLOW", "🛑 Item cancelado: $title")
+            LocalLogger.debug("🛑 Item cancelado: $title", tag = "DOWNLOAD_FLOW")
             throw e
         } catch (e: Exception) {
-            android.util.Log.e("DOWNLOAD_FLOW", "❌ Erro no item $title: ${e.message}", e)
+            LocalLogger.error("❌ Erro no item $title: ${e.message}", e, "DOWNLOAD_FLOW")
             updateFinalStatus(id, success = false)
         }
     }

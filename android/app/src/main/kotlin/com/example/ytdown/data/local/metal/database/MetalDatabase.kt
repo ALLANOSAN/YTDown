@@ -200,26 +200,30 @@ abstract class MetalDatabase : RoomDatabase() {
 }
 class Converters {
     
+    // Enum.valueOf lança para qualquer string fora das constantes. Como isto é
+    // TypeConverter, roda a cada leitura da coluna: uma linha com valor de outra
+    // versão do app derrubaria a query inteira. Fallback, igual ao toLongList
+    // logo abaixo.
     @TypeConverter
     fun fromSyncStatus(status: SyncStatus): String = status.name
-    
+
     @TypeConverter
-    fun toSyncStatus(value: String): SyncStatus = 
-        SyncStatus.valueOf(value)
-    
+    fun toSyncStatus(value: String): SyncStatus =
+        SyncStatus.entries.firstOrNull { it.name == value } ?: SyncStatus.STALE
+
     @TypeConverter
     fun fromDownloadStatus(status: DownloadStatus): String = status.name
-    
+
     @TypeConverter
     fun toDownloadStatus(value: String): DownloadStatus =
-        DownloadStatus.valueOf(value)
-    
+        DownloadStatus.entries.firstOrNull { it.name == value } ?: DownloadStatus.NOT_DOWNLOADED
+
     @TypeConverter
     fun fromInteractionType(type: InteractionType): String = type.name
-    
+
     @TypeConverter
     fun toInteractionType(value: String): InteractionType =
-        InteractionType.valueOf(value)
+        InteractionType.entries.firstOrNull { it.name == value } ?: InteractionType.UNKNOWN
     
     @TypeConverter
     fun fromStringList(list: List<String>): String = 

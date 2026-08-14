@@ -8,6 +8,7 @@ import com.example.ytdown.core.infrastructure.work.DownloadWorker
 import kotlinx.coroutines.flow.Flow
 import java.util.UUID
 import javax.inject.Inject
+import com.example.ytdown.utils.LocalLogger
 
 /**
  * Agenda downloads para o [DownloadWorker].
@@ -44,7 +45,7 @@ class DownloadScheduler @Inject constructor(
         options: DownloadOptions,
         artworkUrl: String? = null
     ) {
-        android.util.Log.e("DownloadScheduler", "🔍 Scheduling: Artist=${meta.artist.value}, Album=${meta.album.value}, Title=${meta.title.value}")
+        LocalLogger.debug("🔍 Scheduling: Artist=${meta.artist.value}, Album=${meta.album.value}, Title=${meta.title.value}", tag = "DownloadScheduler")
         val id = UUID.randomUUID().toString()
 
         repository.persist(buildEntity(id, url.value, path, meta, options, artworkUrl))
@@ -137,15 +138,8 @@ class DownloadScheduler @Inject constructor(
         artworkUrl: String? = null,
         createdAt: Long = System.currentTimeMillis()
     ): DownloadItemEntity {
-        // Nome do arquivo: Artista - Album - Titulo.ext (apenas para referência; o worker
-        // usa o título real do vídeo via template do yt-dlp).
-        val fileName = "${meta.artist.value} - ${meta.album.value} - ${meta.title.value}"
-            .replace(Regex("[<>:\"/\\\\|?*]"), "_")
-            .trim()
-
-        @Suppress("UNUSED_VARIABLE")
-        val finalPath = "${path.value}/$fileName.${options.format}"
-
+        // O título é guardado cru de propósito — é dado de exibição. Quem monta
+        // nome de arquivo (YtDlpWrapper, StorageService) sanitiza na hora de usar.
         return DownloadItemEntity(
             id = id,
             url = url,

@@ -14,6 +14,7 @@ import dagger.assisted.AssistedInject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
+import com.example.ytdown.utils.LocalLogger
 
 /**
  * Botão "Adicionar ID3" — Enriquecimento completo de metadados via MusicBrainz.
@@ -103,7 +104,7 @@ class BatchMetadataFixWorker @AssistedInject constructor(
                 android.util.Log.d("BatchMetadataFix", "✅ ID3 atualizado: $finalArtist - $finalTitle (ano=$year, faixa=$trackNumber)")
                 successCount++
             } catch (e: Exception) {
-                android.util.Log.e("BatchMetadataFix", "❌ Erro ao corrigir ${song.title}: ${e.message}")
+                LocalLogger.error("❌ Erro ao corrigir ${song.title}: ${e.message}", tag = "BatchMetadataFix")
                 errorCount++
             }
         }

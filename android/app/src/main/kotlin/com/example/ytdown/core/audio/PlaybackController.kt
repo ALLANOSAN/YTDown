@@ -19,6 +19,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.apply
 import kotlin.collections.map
+import com.example.ytdown.utils.LocalLogger
 
 /**
  * PlaybackUiState - ÚNICA fonte de verdade para o estado do player.
@@ -108,7 +109,7 @@ class PlaybackController @Inject constructor(
     private var controllerConnected = false
 
     init {
-        Log.e(TAG, "CONTROLLER CREATED - connecting MediaController")
+        LocalLogger.debug("CONTROLLER CREATED - connecting MediaController", tag = TAG)
         connectMediaController()
     }
 
@@ -138,11 +139,11 @@ class PlaybackController @Inject constructor(
                     controllerConnected = true
                     Log.d(TAG, "✅ MediaController conectado ao MediaPlaybackService")
                 } catch (e: Exception) {
-                    Log.e(TAG, "❌ Falha ao obter MediaController: ${e.message}")
+                    LocalLogger.error("❌ Falha ao obter MediaController: ${e.message}", tag = TAG)
                 }
             }, MoreExecutors.directExecutor())
         } catch (e: Exception) {
-            Log.e(TAG, "❌ Erro ao conectar MediaController: ${e.message}")
+            LocalLogger.error("❌ Erro ao conectar MediaController: ${e.message}", tag = TAG)
         }
     }
 

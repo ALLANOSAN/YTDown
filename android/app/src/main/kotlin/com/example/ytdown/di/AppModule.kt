@@ -38,8 +38,10 @@ object AppModule {
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): AppDatabase =
             Room.databaseBuilder(context, AppDatabase::class.java, "ytdown.db")
+                    // Sem fallbackToDestructiveMigration: ele apagava a biblioteca
+                    // inteira em silêncio a cada bump de schema sem migração.
+                    // O AppDatabaseMigrationsTest garante a cadeia em tempo de build.
                     .addMigrations(*AppDatabase.ALL_MIGRATIONS)
-                    .fallbackToDestructiveMigration()
                     .build()
 
     @Provides

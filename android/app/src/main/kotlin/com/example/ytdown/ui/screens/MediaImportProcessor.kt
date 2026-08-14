@@ -5,7 +5,9 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
+import com.example.ytdown.core.business.LibrarySync
 import com.example.ytdown.core.domain.SongEntity
+import com.example.ytdown.core.infrastructure.persistence.DownloadDao
 import com.example.ytdown.core.infrastructure.persistence.SongDao
 import com.example.ytdown.core.metadata.MetadataExtractor
 import com.example.ytdown.core.artwork.FanArtTvService
@@ -14,6 +16,8 @@ import com.example.ytdown.core.artwork.PythonMetadataBridge
 import com.example.ytdown.core.metadata.model.MusicBrainzRecording
 import com.example.ytdown.services.*
 import com.example.ytdown.services.LastfmService
+import com.example.ytdown.utils.LocalLogger
+import com.example.ytdown.utils.MetadataUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -28,6 +32,7 @@ class MediaImportProcessor @Inject constructor(
     private val artworkCacheManager: ArtworkCacheManager,
     private val pythonMetadataBridge: PythonMetadataBridge,
     private val songDao: SongDao,
+    private val downloadDao: DownloadDao,
     private val lastfmService: LastfmService
 ) {
     /**
@@ -47,13 +52,17 @@ class MediaImportProcessor @Inject constructor(
      * @param knownArtist Artista conhecido (do BottomSheet, etc.) — evita depender do filename parser
      * @param knownAlbum Album conhecido (do BottomSheet, etc.)
      * @param forceEnrichment Se true, ignora tags existentes no arquivo e busca MusicBrainz
+     * @param downloadId Se informado, o item da biblioteca com esse id recebe os
+     *   metadados enriquecidos ao final (o SongEntity é chaveado por caminho, e
+     *   o caminho pode não bater com o outputPath do download — ex: arquivo temp)
      */
     suspend fun process(
         audioPath: String,
         originalTitle: String? = null,
         knownArtist: String? = null,
         knownAlbum: String? = null,
-        forceEnrichment: Boolean = false
+        forceEnrichment: Boolean = false,
+        downloadId: String? = null
     ) {
         withContext(Dispatchers.IO) {
             val file = File(audioPath)
@@ -68,9 +77,12 @@ class MediaImportProcessor @Inject constructor(
 
             if (!forceEnrichment) {
                 existingMeta = pythonMetadataBridge.readExistingMetadata(audioPath)
-                hasTitle = !existingMeta["title"].isNullOrBlank()
-                hasArtist = !existingMeta["artist"].isNullOrBlank()
-                hasAlbum = !existingMeta["album"].isNullOrBlank()
+                // Tag sentinela ("Unknown", "Desconhecido", "YTDown") não conta
+                // como metadado: senão arquivo marcado por build antigo nunca
+                // se recupera — o PASSO 0 pula o enriquecimento pra sempre.
+                hasTitle = !MetadataUtils.isUnknownMetadata(existingMeta["title"])
+                hasArtist = !MetadataUtils.isUnknownMetadata(existingMeta["artist"])
+                hasAlbum = !MetadataUtils.isUnknownMetadata(existingMeta["album"])
                 hasArtwork = existingMeta["has_artwork"] == "true"
 
                 // Se o arquivo ja tem os 3 campos + capa no cache, podemos pular tudo
@@ -104,7 +116,7 @@ class MediaImportProcessor @Inject constructor(
                             artistArtwork = artworkCacheManager.getCachedArtistArt(artworkCacheManager.getArtistCacheKey(artist))?.absolutePath,
                             addedAt = System.currentTimeMillis()
                         )
-                        songDao.insert(entity)
+                        persistSong(entity, downloadId)
                         return@withContext
                     }
                 }
@@ -119,13 +131,18 @@ class MediaImportProcessor @Inject constructor(
             // Se knownArtist esta preenchido e originalTitle comeca com "Artista - ", remove o prefixo
             var resolvedTitle = originalTitle
                 ?: if (!forceEnrichment && hasTitle) existingMeta["title"]!!
-                else filenameMeta["title"]
-                ?: file.nameWithoutExtension
+                else MetadataUtils.cleanFilenameTitle(
+                    filenameMeta["title"] ?: file.nameWithoutExtension
+                )
 
-            val resolvedArtist = knownArtist
-                ?: if (!forceEnrichment && hasArtist) existingMeta["artist"]!!
-                else filenameMeta["artist"]?.trim()
-                ?: ""
+            // sanitizeArtist: "Unknown"/"Desconhecido" são sentinelas, não artista.
+            // Se vazarem, a query do MusicBrainz zera e o guard de fallback
+            // rejeita o match correto — sem álbum, ano, faixa nem capa.
+            val resolvedArtist = MetadataUtils.sanitizeArtist(
+                knownArtist
+                    ?: if (!forceEnrichment && hasArtist) existingMeta["artist"]!!
+                    else filenameMeta["artist"]
+            )
 
             // Detecta e remove prefixo "Artista - " do titulo quando knownArtist esta presente
             if (resolvedArtist.isNotBlank()) {
@@ -251,8 +268,8 @@ class MediaImportProcessor @Inject constructor(
                                     "Capa salva do Last.fm/fallback: ${bytes.size} bytes")
                             }
                         } catch (e: Exception) {
-                            android.util.Log.e("ImportProcessor",
-                                "Erro ao baixar capa do fallback: ${e.message}")
+                            LocalLogger.error(
+                                "Erro ao baixar capa do fallback: ${e.message}", e, "ImportProcessor")
                         }
                     } else {
                         android.util.Log.d("ImportProcessor",
@@ -294,15 +311,15 @@ class MediaImportProcessor @Inject constructor(
                         discNumber = mbResult?.discNumber
                     )
                 } catch (e: Exception) {
-                    android.util.Log.e("ImportProcessor",
-                        "Erro ao gravar metadados: ${e.message}")
+                    LocalLogger.error(
+                        "Erro ao gravar metadados: ${e.message}", e, "ImportProcessor")
                 }
             }
 
             // -- PASSO 6: DATABASE (SongEntity) --
             val entity = SongEntity(
                 path = audioPath,
-                title = finalTitle.ifBlank { file.nameWithoutExtension },
+                title = finalTitle.ifBlank { MetadataUtils.cleanFilenameTitle(file.nameWithoutExtension) },
                 artist = finalArtist.ifBlank { "" },
                 album = finalAlbum.ifBlank { "" },
                 duration = duration,
@@ -310,10 +327,24 @@ class MediaImportProcessor @Inject constructor(
                 artistArtwork = artistArtPath,
                 addedAt = System.currentTimeMillis()
             )
-            songDao.insert(entity)
+            persistSong(entity, downloadId)
             android.util.Log.d("ImportProcessor",
                 "Processamento concluido: ${finalArtist.ifBlank { "?" }} - $finalTitle | capa=${albumArtPath != null}")
         }
+    }
+
+    /**
+     * Grava o SongEntity e, quando o chamador informou um downloadId, propaga os
+     * metadados para o item da biblioteca — senão o arquivo fica enriquecido mas
+     * a lista continua mostrando "Desconhecido".
+     */
+    private suspend fun persistSong(entity: SongEntity, downloadId: String?) {
+        songDao.insert(entity)
+        if (downloadId == null) return
+        val download = downloadDao.getById(downloadId) ?: return
+        downloadDao.upsert(LibrarySync.merge(download, entity))
+        android.util.Log.d("ImportProcessor",
+            "Sync biblioteca: ${entity.artist} - ${entity.title} | capa=${entity.albumArtwork != null}")
     }
 
     suspend fun processFolder(folderPath: String) = withContext(Dispatchers.IO) {

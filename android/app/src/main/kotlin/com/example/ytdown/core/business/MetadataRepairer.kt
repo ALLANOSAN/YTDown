@@ -1,17 +1,28 @@
 package com.example.ytdown.core.business
 
-import com.example.ytdown.DownloadMetadataManager
-import com.example.ytdown.core.domain.*
+import com.example.ytdown.core.media.MediaImportProcessor
 import com.example.ytdown.services.DatabaseService
+import com.example.ytdown.utils.MetadataUtils
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
+import com.example.ytdown.utils.LocalLogger
 
+/**
+ * Botão "Reparar Tags" — reenriquece a biblioteca inteira.
+ *
+ * Delega ao MediaImportProcessor, que é o pipeline completo:
+ *   MusicBrainz (título, artista, álbum, ano, faixa, disco)
+ *   → Cover Art Archive / Last.fm (capa) → FanArt.tv (foto do artista)
+ *   → Mutagen (grava tudo no arquivo) → banco.
+ *
+ * A implementação anterior usava enrich.py, que só devolve título/artista/álbum
+ * — sem número de faixa, sem ano e sem os IDs necessários pra buscar a capa.
+ */
 @Singleton
 class MetadataRepairer @Inject constructor(
     private val databaseService: DatabaseService,
-    private val metadataManager: DownloadMetadataManager,
-    private val ytDlp: YtDlpWrapper
+    private val importProcessor: MediaImportProcessor
 ) {
     suspend fun repairAll(
         onProgress: (Float, String) -> Unit
@@ -28,45 +39,37 @@ class MetadataRepairer @Inject constructor(
             processed++
             onProgress(processed / items.size.toFloat(), "Processando: ${item.title}")
 
-            if (item.outputPath.isBlank() || !File(item.outputPath).exists()) {
+            // SAF (content://) não dá pra reescrever por caminho direto
+            val targetPath = item.outputPath
+            if (targetPath.isBlank() || targetPath.startsWith("content://") || !File(targetPath).exists()) {
                 failed++
                 continue
             }
 
             // Pular arquivos que ja tem tags completas
-            val hasTitle = !item.title.isNullOrBlank() &&
-                !item.title.equals("Unknown", ignoreCase = true) &&
-                !item.title.equals("Desconhecido", ignoreCase = true)
-            val hasArtist = !item.artist.isNullOrBlank() &&
-                !item.artist.equals("Unknown", ignoreCase = true) &&
-                !item.artist.equals("Desconhecido", ignoreCase = true)
-            val hasAlbum = !item.album.isNullOrBlank() &&
-                !item.album.equals("Unknown Album", ignoreCase = true) &&
-                !item.album.equals("Álbum Desconhecido", ignoreCase = true)
-            if (hasTitle && hasArtist && hasAlbum) {
-                android.util.Log.d("MetadataRepairer", "Pulando ${item.title} — ja tem tags completas")
+            val hasTitle = !MetadataUtils.isUnknownMetadata(item.title)
+            val hasArtist = !MetadataUtils.isUnknownMetadata(item.artist)
+            val hasAlbum = !MetadataUtils.isUnknownMetadata(item.album)
+            if (hasTitle && hasArtist && hasAlbum && item.albumArtPath != null) {
+                android.util.Log.d("MetadataRepairer", "Pulando ${item.title} — ja tem tags e capa")
                 skipped++
                 continue
             }
 
-            var finalTitle = item.title.trim()
-            var finalArtist = item.artist?.trim().orEmpty()
-            var finalAlbum = item.album?.trim().orEmpty()
-
-            val enriched = ytDlp.fetchMetadataFromSource(finalArtist, finalTitle)
-            if (enriched != null) {
-                finalTitle = enriched.optString("title", finalTitle)
-                finalArtist = enriched.optString("artist", finalArtist)
-                finalAlbum = enriched.optString("album", finalAlbum)
+            try {
+                importProcessor.process(
+                    audioPath = targetPath,
+                    originalTitle = MetadataUtils.cleanFilenameTitle(item.title),
+                    knownArtist = MetadataUtils.sanitizeArtist(item.artist).takeIf { it.isNotBlank() },
+                    knownAlbum = item.album?.trim()?.takeUnless { MetadataUtils.isUnknownMetadata(it) },
+                    forceEnrichment = true,
+                    downloadId = item.id
+                )
+                repaired++
+            } catch (e: Exception) {
+                LocalLogger.error("Falha ao reparar ${item.title}: ${e.message}", tag = "MetadataRepairer")
+                failed++
             }
-
-            val result = metadataManager.rewriteMetadata(
-                path = FilePath(item.outputPath),
-                metadata = MediaMetadata(MediaTitle(finalTitle), ArtistName(finalArtist), AlbumName(finalAlbum)),
-                artworkUrl = null
-            )
-
-            if (result.isSuccess()) repaired++ else failed++
         }
         return Triple(repaired, failed, skipped)
     }

@@ -25,6 +25,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
+import com.example.ytdown.utils.LocalLogger
 
 /**
  * MediaPlaybackService - Serviço de reprodução baseado em BASS + Media3.
@@ -172,7 +173,7 @@ class MediaPlaybackService : MediaSessionService() {
                 try {
                     actionDispatcher.play()
                 } catch (e: Exception) {
-                    Log.e(TAG, "Auto-restart failed: ${e.message}")
+                    LocalLogger.error("Auto-restart failed: ${e.message}", tag = TAG)
                 }
             }
         }

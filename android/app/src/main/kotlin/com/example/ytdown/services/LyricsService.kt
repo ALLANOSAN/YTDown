@@ -7,6 +7,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import javax.inject.Inject
 import javax.inject.Singleton
+import com.example.ytdown.utils.LocalLogger
 
 @Singleton
 class LyricsService @Inject constructor() {
@@ -38,7 +39,7 @@ class LyricsService @Inject constructor() {
                 gson.fromJson(body, LyricsResponse::class.java)
             }
         } catch (e: Exception) {
-            android.util.Log.e("LyricsService", "Erro ao buscar letras: ${e.message}")
+            LocalLogger.error("Erro ao buscar letras: ${e.message}", tag = "LyricsService")
             null
         }
     }

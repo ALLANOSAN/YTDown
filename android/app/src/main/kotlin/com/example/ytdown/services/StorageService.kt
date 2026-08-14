@@ -12,6 +12,7 @@ import android.provider.MediaStore
 import java.io.File
 import java.io.IOException
 import com.example.ytdown.core.domain.*
+import com.example.ytdown.utils.FileNameSanitizer
 import com.example.ytdown.utils.LocalLogger
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -93,9 +94,16 @@ class StorageService @javax.inject.Inject constructor() {
             val sourceFile = validateSourceFile(sourcePath) ?: return null
             diagnostics["sourceSizeBytes"] = sourceFile.length()
 
-            var fileName = displayName
+            // displayName vem do título do vídeo (cru do YouTube). Sem sanitizar,
+            // "../../../../DCIM/x" escapa da pasta de destino no caminho legacy,
+            // que monta o alvo com File(dir, nome) e sobrescreve com overwrite=true.
+            // Sanitiza aqui, na fronteira, pra cobrir os dois caminhos de export.
+            var fileName = FileNameSanitizer.safeFileName(displayName)
             if (fileName.isBlank()) {
-                fileName = sourceFile.name
+                fileName = FileNameSanitizer.safeFileName(sourceFile.name)
+            }
+            if (fileName.isBlank()) {
+                fileName = "ytdown_${System.currentTimeMillis()}"
             }
 
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
@@ -152,7 +160,7 @@ class StorageService @javax.inject.Inject constructor() {
         return try {
             val sourceFile = File(sourcePath)
             if (!sourceFile.exists()) {
-                android.util.Log.e(TAG, "Source file not found: $sourcePath")
+                LocalLogger.error("Source file not found: $sourcePath", tag = TAG)
                 return false
             }
 
@@ -167,7 +175,7 @@ class StorageService @javax.inject.Inject constructor() {
             android.util.Log.d(TAG, "Sync successful: $sourcePath -> $exportedPath")
             true
         } catch (e: Exception) {
-            android.util.Log.e(TAG, "Sync failed: ${e.message}", e)
+            LocalLogger.error("Sync failed: ${e.message}", e, TAG)
             false
         }
     }

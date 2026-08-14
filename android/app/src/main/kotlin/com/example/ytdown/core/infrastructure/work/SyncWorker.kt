@@ -9,6 +9,7 @@ import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import com.example.ytdown.utils.LocalLogger
 
 @HiltWorker
 class SyncWorker @AssistedInject constructor(
@@ -22,7 +23,7 @@ class SyncWorker @AssistedInject constructor(
             scannerService.fullSync()
             Result.success()
         } catch (e: Exception) {
-            android.util.Log.e("SyncWorker", "Erro na sincronização automática: ${e.message}")
+            LocalLogger.error("Erro na sincronização automática: ${e.message}", tag = "SyncWorker")
             Result.retry()
         }
     }

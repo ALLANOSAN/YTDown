@@ -95,7 +95,10 @@ def _write_mp3_id3_tags(
     except ID3NoHeaderError:
         tags = ID3()
 
-    for frame_id in ("TIT2", "TPE1", "TALB", "TPE2", "COMM", "APIC", "USLT"):
+    # APIC/USLT ficam de fora: valor None significa "não mexi nisso", não
+    # "apague". Apagar aqui destruía a capa embutida em todo rewrite sem
+    # artwork (botão Reparar Tags, renomear artista/álbum em lote).
+    for frame_id in ("TIT2", "TPE1", "TALB", "TPE2", "COMM"):
         tags.delall(frame_id)
 
     tags.add(TIT2(encoding=3, text=str(title)))
@@ -114,10 +117,12 @@ def _write_mp3_id3_tags(
         tags.add(TPOS(encoding=3, text=str(disc_number)))
 
     if lyrics:
+        tags.delall("USLT")
         tags.add(USLT(encoding=3, lang="por", desc="Lyrics", text=str(lyrics)))
 
     image_data = _download_thumbnail_bytes(thumbnail_url)
     if image_data:
+        tags.delall("APIC")
         tags.add(
             APIC(
                 encoding=3,
@@ -130,6 +135,34 @@ def _write_mp3_id3_tags(
 
     tags.save(filepath, v2_version=3)
     return json.dumps({"success": True})
+
+
+_LEADING_DIGITS_RE = re.compile(r"\d+")
+# trkn/disk do MP4 são pares de uint16 — acima disso o mutagen recusa a tag
+# com "invalid numeric pair" e leva a gravação inteira junto.
+_MP4_NUMBER_MAX = 65535
+
+
+def _parse_mp4_number(value):
+    """
+    trkn/disk do MP4 são tuplas de int. O MusicBrainz devolve "B1" (lado do
+    vinil) e "5/12" — int() direto estourava e derrubava a gravação INTEIRA
+    do arquivo, deixando ele sem nenhuma tag e sem capa.
+
+    Devolve o primeiro número representável no campo, ou None. Fora da faixa
+    ou com dígitos demais (int() do Python levanta acima de 4300) vira None:
+    perder o número da faixa é aceitável, perder todas as tags não.
+    """
+    if value is None:
+        return None
+    match = _LEADING_DIGITS_RE.search(str(value))
+    if not match:
+        return None
+    digits = match.group()
+    if len(digits) > len(str(_MP4_NUMBER_MAX)):
+        return None
+    number = int(digits)
+    return number if number <= _MP4_NUMBER_MAX else None
 
 
 def _write_mp4_m4a_tags(
@@ -145,13 +178,16 @@ def _write_mp4_m4a_tags(
     MP4 = mutagen_mp4.MP4
     MP4Cover = mutagen_mp4.MP4Cover
 
-    try:
-        audio = MP4(filepath)
-    except Exception:
-        audio = MP4()
+    # Sem fallback para MP4(): sem filename o save() sempre estourava com
+    # "Missing filename or fileobj argument", escondendo o erro real (arquivo
+    # inexistente, container inválido) do payload e do Crashlytics.
+    audio = MP4(filepath)
 
-    # Limpa tags anteriores
-    for key in ("©nam", "©ART", "©alb", "©day", "trkn", "disk", "©lyr", "covr", "aART", "©gen"):
+    # Limpa só o que é sempre reescrito. Campos opcionais (©day, trkn, disk,
+    # ©lyr, covr) e ©gen ficam de fora: valor None significa "não mexi nisso",
+    # não "apague" — apagar aqui destruía capa, ano, faixa e gênero em todo
+    # rewrite parcial. A atribuição abaixo já sobrescreve quando há valor novo.
+    for key in ("©nam", "©ART", "©alb", "aART"):
         try:
             del audio[key]
         except KeyError:
@@ -165,13 +201,19 @@ def _write_mp4_m4a_tags(
     if year:
         audio["©day"] = [str(year)]
 
-    if track_number:
-        # trkn é uma tupla (track_number, total_tracks)
-        audio["trkn"] = [(int(track_number), 0)]
-
-    if disc_number:
-        # disk é uma tupla (disc_number, total_discs)
-        audio["disk"] = [(int(disc_number), 0)]
+    # None = "não mexi"; valor informado mas irrepresentável (ex: "A") remove a
+    # tag em vez de manter um número antigo errado — e nunca falha o write.
+    for key, raw in (("trkn", track_number), ("disk", disc_number)):
+        if raw is None:
+            continue
+        parsed = _parse_mp4_number(raw)
+        if parsed is not None:
+            audio[key] = [(parsed, 0)]  # tupla (número, total)
+        else:
+            try:
+                del audio[key]
+            except KeyError:
+                pass
 
     if lyrics:
         audio["©lyr"] = [str(lyrics)]
@@ -188,22 +230,43 @@ def _write_mp4_m4a_tags(
     return json.dumps({"success": True})
 
 
-def update_music_metadata(audio_path, metadata_json):
+_BRACKET_GROUP_RE = re.compile(r"[(\[]([^)\]]*)[)\]]")
+_JUNK_TOKEN_RE = re.compile(
+    r"^(?:mp3|m4a|aac|ogg|opus|wav|flac|webm|mp4|\d{2,4}(?:k|kb|kbps|kbit)?|k|kb|kbps|kbit|bps)$",
+    re.IGNORECASE,
+)
+# Pelo menos um token precisa ser "forte" (formato ou bitrate com unidade),
+# senão "(2011)" seria confundido com lixo e o ano do título sumiria.
+_STRONG_JUNK_TOKEN_RE = re.compile(
+    r"^(?:mp3|m4a|aac|ogg|opus|wav|flac|webm|mp4|\d{2,4}(?:k|kb|kbps|kbit)|k|kb|kbps|kbit|bps)$",
+    re.IGNORECASE,
+)
+# "01. ", "3 - ", "02) " — numeração com pontuação é sempre faixa
+_PUNCTUATED_TRACK_RE = re.compile(r"^\d{1,3}\s*[.\-_)]+\s*")
+# "02 " — número com zero à esquerda é faixa; "50 Ways" e "99 Problems" não são
+_PADDED_TRACK_RE = re.compile(r"^0\d{0,2}\s+")
+
+
+def _strip_filename_junk(name):
     """
-    Atualiza metadados gerais usando o pipeline Mutagen existente.
-    metadata_json: string JSON contendo {title, artist, album, genre, year, track_number}
+    Remove numeração de faixa e sufixos de formato/bitrate deixados por rippers,
+    ex: "02 Get Back To The Bible(m4a 128k)" -> "Get Back To The Bible".
     """
-    try:
-        data = json.loads(metadata_json)
-        # Reutiliza lógica existente (_write_mp3_id3_tags ou _write_mp4_m4a_tags)
-        # Adaptada para aceitar um dict de metadados
-        title = data.get("title")
-        artist = data.get("artist")
-        album = data.get("album")
-        # ... (implementar conforme o padrão existente de _write_*)
-        return json.dumps({"success": True})
-    except Exception as e:
-        return json.dumps({"success": False, "error": str(e)})
+
+    def _drop_if_junk(match):
+        tokens = [t for t in re.split(r"[\s,._-]+", match.group(1)) if t]
+        is_junk = (
+            bool(tokens)
+            and all(_JUNK_TOKEN_RE.match(t) for t in tokens)
+            and any(_STRONG_JUNK_TOKEN_RE.match(t) for t in tokens)
+        )
+        return "" if is_junk else match.group(0)
+
+    cleaned = _BRACKET_GROUP_RE.sub(_drop_if_junk, name)
+    cleaned = _PUNCTUATED_TRACK_RE.sub("", cleaned, count=1)
+    cleaned = _PADDED_TRACK_RE.sub("", cleaned, count=1)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return cleaned or name.strip()
 
 
 def extract_metadata_from_filename(filename):
@@ -213,9 +276,7 @@ def extract_metadata_from_filename(filename):
     """
     try:
         name = os.path.splitext(filename)[0]
-
-        # Remover padrões de numeração (ex: 01. ou 01 -)
-        name = re.sub(r"^\d+[\s.-]+", "", name)
+        name = _strip_filename_junk(name)
 
         # Padrões comuns com regex
         patterns = [
@@ -231,9 +292,11 @@ def extract_metadata_from_filename(filename):
                 data = match.groupdict()
                 return json.dumps(data)
 
-        return json.dumps({"artist": "Unknown", "title": name})
+        # Artista vazio = "não sei", nunca um sentinela textual: "Unknown" vira
+        # `artist:"Unknown"` na query do MusicBrainz e zera o enrichment.
+        return json.dumps({"artist": "", "title": name})
     except Exception as e:
-        return json.dumps({"artist": "Unknown", "title": filename})
+        return json.dumps({"artist": "", "title": filename})
 
 
 def embed_album_art(audio_path, cover_path):
@@ -350,7 +413,9 @@ def read_file_metadata(filepath):
             track = str(tags.get("TRCK", ""))
             disc = str(tags.get("TPOS", ""))
             year = str(tags.get("TDRC", ""))
-            has_artwork = "APIC" in tags
+            # O frame vem com chave "APIC:Cover" (id + desc), então `"APIC" in tags`
+            # é sempre False. getall() casa pelo id do frame.
+            has_artwork = bool(tags.getall("APIC"))
             return json.dumps({
                 "success": True,
                 "title": title or "", "artist": artist or "", "album": album or "",

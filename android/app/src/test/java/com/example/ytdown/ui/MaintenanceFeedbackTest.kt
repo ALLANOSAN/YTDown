@@ -44,6 +44,32 @@ class MaintenanceFeedbackTest {
         assertFalse("nao pode dizer concluido: $msg", msg.contains("Nada a fazer"))
     }
 
+    /**
+     * "626 falharam" nao distinguia falha real de arquivo que o app nao alcanca
+     * (exportado so para SAF, ou sumido do disco). Sem separar, nao da para
+     * saber se o problema e o pipeline ou o armazenamento.
+     */
+    @Test
+    fun `arquivo inalcancavel nao e contado como falha`() {
+        val msg = MaintenanceFeedback.reparo(
+            total = 626, repaired = 0, skipped = 0, failed = 0, semArquivo = 626
+        )
+        assertFalse("nao pode dizer que falhou: $msg", msg.contains("falharam"))
+        assertTrue("deveria explicar o motivo: $msg", msg.contains("626"))
+        assertTrue("deveria citar arquivo: $msg", msg.contains("arquivo", ignoreCase = true))
+    }
+
+    @Test
+    fun `mistura de resultados aparece separada`() {
+        val msg = MaintenanceFeedback.reparo(
+            total = 10, repaired = 4, skipped = 3, failed = 1, semArquivo = 2
+        )
+        assertTrue(msg, msg.contains("4 de 10"))
+        assertTrue(msg, msg.contains("3 já estavam completas"))
+        assertTrue(msg, msg.contains("1 falharam"))
+        assertTrue(msg, msg.contains("2 sem arquivo"))
+    }
+
     @Test
     fun `erro vira mensagem legivel`() {
         assertEquals(

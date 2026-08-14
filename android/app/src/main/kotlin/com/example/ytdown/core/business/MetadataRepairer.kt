@@ -26,24 +26,40 @@ class MetadataRepairer @Inject constructor(
 ) {
     suspend fun repairAll(
         onProgress: (Float, String) -> Unit
-    ): Triple<Int, Int, Int> {
+    ): RepairSummary {
         val items = databaseService.getLibraryAudios()
-        if (items.isEmpty()) return Triple(0, 0, 0)
+        if (items.isEmpty()) return RepairSummary(0, 0, 0, 0)
 
         var repaired = 0
         var failed = 0
         var skipped = 0
+        var semArquivo = 0
         var processed = 0
 
         for (item in items) {
             processed++
             onProgress(processed / items.size.toFloat(), "Processando: ${item.title}")
 
-            // SAF (content://) não dá pra reescrever por caminho direto
-            val targetPath = item.outputPath
-            if (targetPath.isBlank() || targetPath.startsWith("content://") || !File(targetPath).exists()) {
-                failed++
-                continue
+            // SAF agora e suportado: o MediaImportProcessor copia para temp,
+            // enriquece e devolve. Sem isso, biblioteca adicionada pelo seletor
+            // de pastas do Android era 100% recusada ("626 falharam").
+            val targetPath = when (
+                val alvo = RepairTarget.resolver(item.outputPath, item.exportedPath) {
+                    it.startsWith("content://") || File(it).exists()
+                }
+            ) {
+                is RepairTarget.Arquivo -> alvo.path
+                RepairTarget.Saf -> item.exportedPath?.takeIf { it.startsWith("content://") }
+                    ?: item.outputPath
+                RepairTarget.SemArquivo -> {
+                    LocalLogger.debug(
+                        "Arquivo inexistente: ${item.title} (out=${item.outputPath}, " +
+                            "exp=${item.exportedPath})",
+                        tag = "MetadataRepairer"
+                    )
+                    semArquivo++
+                    continue
+                }
             }
 
             // Pular so o que ja esta LIMPO. Checar apenas "campo preenchido"
@@ -70,10 +86,21 @@ class MetadataRepairer @Inject constructor(
                 )
                 repaired++
             } catch (e: Exception) {
-                LocalLogger.error("Falha ao reparar ${item.title}: ${e.message}", tag = "MetadataRepairer")
+                LocalLogger.error("Falha ao reparar ${item.title}", e, "MetadataRepairer")
                 failed++
             }
         }
-        return Triple(repaired, failed, skipped)
+        return RepairSummary(repaired, failed, skipped, semArquivo)
     }
 }
+
+/**
+ * Quatro desfechos distintos, não três: "sem arquivo" (só SAF ou sumido do
+ * disco) não é falha, e misturar os dois produzia "626 falharam" sem causa.
+ */
+data class RepairSummary(
+    val repaired: Int,
+    val failed: Int,
+    val skipped: Int,
+    val semArquivo: Int
+)

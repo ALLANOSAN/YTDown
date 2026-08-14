@@ -201,16 +201,11 @@ class FileSystemScannerService @Inject constructor(
 
         // 3. Pipeline completo de metadados (MusicBrainz → Cover Art → FanArt → Mutagen)
         try {
-            if (path.startsWith("content://")) {
-                // SAF: copiar → processar com Mutagen → copiar de volta
-                processSafFile(path, title, item.id)
-            } else {
-                // Arquivo físico: processar direto.
-                // O process() já propaga o resultado pro DownloadItemEntity.
-                if (File(path).exists()) {
-                    android.util.Log.d("FileSystemScanner", "🔄 Enrichment completo para: $title")
-                    importProcessor.process(path, title, downloadId = item.id)
-                }
+            // process() resolve SAF sozinho (copia para temp, enriquece, devolve)
+            // e propaga o resultado pro DownloadItemEntity via downloadId.
+            if (path.startsWith("content://") || File(path).exists()) {
+                LocalLogger.debug("Enrichment completo para: $title", tag = "FileSystemScanner")
+                importProcessor.process(path, title, downloadId = item.id)
             }
         } catch (e: Exception) {
             android.util.Log.w("FileSystemScanner", "⚠️ Enrichment falhou para $title: ${e.message}")
@@ -232,50 +227,6 @@ class FileSystemScannerService @Inject constructor(
         } catch (e: Exception) {
             false
         }
-    }
-
-    /**
-     * Processa arquivo SAF (content://): copia para temp → Mutagen grava metadados → copia de volta.
-     */
-    private suspend fun processSafFile(safUri: String, title: String, downloadId: String) = withContext(Dispatchers.IO) {
-        val uri = android.net.Uri.parse(safUri)
-        val inputStream = context.contentResolver.openInputStream(uri) ?: return@withContext
-
-        val ext = safUri.substringAfterLast(".").takeIf { it.length <= 4 } ?: "mp3"
-        val tempFile = File.createTempFile("scanner_enrich_", ".$ext", context.cacheDir)
-
-        // 1. Copiar SAF → temp
-        inputStream.use { input ->
-            tempFile.outputStream().use { output ->
-                input.copyTo(output)
-            }
-        }
-
-        android.util.Log.d("FileSystemScanner", "📎 SAF copiado para temp: ${tempFile.name}")
-
-        // 2. Processar temp com pipeline completo (MusicBrainz → Cover Art → FanArt → Mutagen).
-        //    O downloadId faz o process() sincronizar o item da biblioteca, que
-        //    aponta pra URI SAF e não pro caminho temporário.
-        importProcessor.process(tempFile.absolutePath, title, downloadId = downloadId)
-        android.util.Log.d("FileSystemScanner", "✅ Enrichment SAF concluído para: $title")
-
-        // 4. Copiar temp enriquecido de volta para SAF
-        try {
-            val outputStream = context.contentResolver.openOutputStream(uri, "w")
-            if (outputStream != null) {
-                outputStream.use { output ->
-                    tempFile.inputStream().use { input ->
-                        input.copyTo(output)
-                    }
-                }
-                android.util.Log.d("FileSystemScanner", "✅ Metadados gravados no arquivo SAF: $title")
-            }
-        } catch (e: Exception) {
-            android.util.Log.w("FileSystemScanner", "⚠️ Não foi possível gravar no SAF (metadados ficam só no banco): ${e.message}")
-        }
-
-        // 5. Limpar temp
-        tempFile.delete()
     }
 
     private fun findAudioFiles(dir: File): List<File> {

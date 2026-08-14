@@ -257,12 +257,14 @@ class SystemViewModel @Inject constructor(
             _state.update { it.copy(isRepairing = true, repairProgress = 0f) }
             try {
                 val total = databaseService.getLibraryAudios().size
-                val (repaired, failed, skipped) = metadataRepairer.repairAll { progress, message ->
+                val r = metadataRepairer.repairAll { progress, message ->
                     _state.update { it.copy(repairProgress = progress, lastMessage = message) }
                 }
                 _state.update { it.copy(
                     isRepairing = false,
-                    lastMessage = MaintenanceFeedback.reparo(total, repaired, skipped, failed)
+                    lastMessage = MaintenanceFeedback.reparo(
+                        total, r.repaired, r.skipped, r.failed, r.semArquivo
+                    )
                 ) }
             } catch (e: Exception) {
                 _state.update { it.copy(

@@ -65,6 +65,15 @@ class MediaImportProcessor @Inject constructor(
         downloadId: String? = null
     ) {
         withContext(Dispatchers.IO) {
+            // SAF (content://) não é regravável por caminho: copia para temp,
+            // enriquece o temp e devolve. A capacidade existia presa dentro do
+            // FileSystemScannerService, então o botão "Reparar Tags" desistia de
+            // toda biblioteca adicionada pelo seletor de pastas do Android.
+            if (audioPath.startsWith("content://")) {
+                processarViaSaf(audioPath, originalTitle, knownArtist, knownAlbum, forceEnrichment, downloadId)
+                return@withContext
+            }
+
             val file = File(audioPath)
             if (!file.exists()) return@withContext
 
@@ -340,6 +349,51 @@ class MediaImportProcessor @Inject constructor(
             persistSong(entity, downloadId)
             android.util.Log.d("ImportProcessor",
                 "Processamento concluido: ${finalArtist.ifBlank { "?" }} - $finalTitle | capa=${albumArtPath != null}")
+        }
+    }
+
+    /**
+     * Enriquece um arquivo acessível só por `content://`.
+     *
+     * Copia para o cache, roda o pipeline normal sobre a cópia e devolve o
+     * resultado para a URI. Se a devolução falhar (permissão revogada, provedor
+     * somente-leitura), os metadados ainda ficam no banco — melhor que nada.
+     */
+    private suspend fun processarViaSaf(
+        safUri: String,
+        originalTitle: String?,
+        knownArtist: String?,
+        knownAlbum: String?,
+        forceEnrichment: Boolean,
+        downloadId: String?
+    ) = withContext(Dispatchers.IO) {
+        val uri = android.net.Uri.parse(safUri)
+        val entrada = try {
+            context.contentResolver.openInputStream(uri)
+        } catch (e: Exception) {
+            LocalLogger.error("SAF ilegível: $safUri", e, "ImportProcessor")
+            null
+        } ?: return@withContext
+
+        val ext = safUri.substringAfterLast(".").takeIf { it.length in 1..4 } ?: "mp3"
+        val temp = File.createTempFile("enrich_", ".$ext", context.cacheDir)
+        try {
+            entrada.use { input -> temp.outputStream().use { input.copyTo(it) } }
+
+            process(temp.absolutePath, originalTitle, knownArtist, knownAlbum, forceEnrichment, downloadId)
+
+            try {
+                context.contentResolver.openOutputStream(uri, "w")?.use { output ->
+                    temp.inputStream().use { it.copyTo(output) }
+                } ?: LocalLogger.warning("SAF sem stream de escrita: $safUri", tag = "ImportProcessor")
+            } catch (e: Exception) {
+                LocalLogger.error(
+                    "Metadados ficaram só no banco, SAF não aceitou escrita: $safUri",
+                    e, "ImportProcessor"
+                )
+            }
+        } finally {
+            temp.delete()
         }
     }
 

@@ -92,16 +92,22 @@
         </service>
 
         <!--
-            MediaButtonReceiver - Necessário para botões de hardware (headset/Bluetooth)
-            Traduz eventos de mídia (play/pause/next/previous) para o MediaSessionService
+            NÃO declarar MediaButtonReceiver aqui.
+
+            O MediaPlaybackService (MediaSessionService do Media3) já declara
+            android.intent.action.MEDIA_BUTTON no próprio intent-filter acima, e é
+            ele quem precisa receber os eventos: a contagem de múltiplos toques do
+            botão do fone vive em MediaSessionImpl$MediaPlayPauseKeyHandler
+            (setPendingPlayPauseTask / hasPendingPlayPauseTask), que espera pelo
+            2º e 3º clique dentro de uma janela de tempo.
+
+            Havia aqui um androidx.media.session.MediaButtonReceiver — receiver da
+            biblioteca LEGADA (androidx.media), que não conhece o Media3 e não é
+            usada em nenhum ponto do código. Registrado para a mesma action, ele
+            disputava a entrega do broadcast; quando ganhava, o evento não chegava
+            ao handler do Media3. Resultado: 1 toque (pause) funcionava, mas 2
+            toques (próxima) e 3 toques (anterior) nunca eram contados.
         -->
-        <receiver
-            android:name="androidx.media.session.MediaButtonReceiver"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.MEDIA_BUTTON" />
-            </intent-filter>
-        </receiver>
 
         <!--
             WorkManager foreground service — obrigatório no Android 14+ (API 34+).

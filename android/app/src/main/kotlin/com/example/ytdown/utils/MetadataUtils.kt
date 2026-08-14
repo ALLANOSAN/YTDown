@@ -120,6 +120,34 @@ object MetadataUtils {
     }
 
     /**
+     * O item da biblioteca ainda precisa passar pelo enriquecimento?
+     *
+     * Não basta o campo estar PREENCHIDO. "02 Get Back To The Bible(m4a 128k)"
+     * não é sentinela, então o critério antigo (só `isUnknownMetadata`) o dava
+     * como pronto e o botão "Reparar Tags" pulava para sempre justamente o caso
+     * que ele existe para consertar.
+     *
+     * O teste do título é ele mesmo contra [cleanFilenameTitle]: se a limpeza
+     * muda alguma coisa, o que está gravado ainda é nome de arquivo, não título.
+     * Como `cleanFilenameTitle` preserva "50 Ways...", "Song (Live)" e afins,
+     * título legítimo não é marcado como sujo — o que importa, senão todo scan
+     * reprocessaria a biblioteca inteira e martelaria o MusicBrainz.
+     */
+    fun needsMetadataRepair(
+        title: String?,
+        artist: String?,
+        album: String?,
+        hasArtwork: Boolean
+    ): Boolean {
+        if (!hasArtwork) return true
+        if (isUnknownMetadata(title) || isUnknownMetadata(artist) || isUnknownMetadata(album)) {
+            return true
+        }
+        val atual = title.orEmpty().trim()
+        return cleanFilenameTitle(atual) != atual
+    }
+
+    /**
      * Converte sentinelas de "sem artista" em string vazia.
      *
      * O parser de filename devolve "Unknown" quando não acha separador. Tratado

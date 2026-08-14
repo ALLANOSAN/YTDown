@@ -1,6 +1,8 @@
 package com.example.ytdown.utils
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -107,6 +109,63 @@ class MetadataUtilsTest {
     fun `underscore comum continua virando espaco`() {
         assertEquals("Some Song", MetadataUtils.normalizeMetadataText("Some_Song"))
         assertEquals("A B C", MetadataUtils.normalizeMetadataText("A__B___C"))
+    }
+
+    /**
+     * O botao "Reparar Tags" pulava item cujo titulo apenas EXISTE. Um titulo
+     * como "02 Get Back To The Bible(m4a 128k)" nao e sentinela, entao passava
+     * como "ja tem tag" e nunca era corrigido — justamente o caso que o botao
+     * deveria resolver.
+     */
+    @Test
+    fun `titulo com lixo de nome de arquivo precisa de reparo`() {
+        assertTrue(
+            MetadataUtils.needsMetadataRepair(
+                "02 Get Back To The Bible(m4a 128k)", "Petra", "Petra", hasArtwork = true
+            )
+        )
+        assertTrue(MetadataUtils.needsMetadataRepair("01. Song Name", "A", "B", hasArtwork = true))
+        assertTrue(MetadataUtils.needsMetadataRepair("Song [320kbps]", "A", "B", hasArtwork = true))
+        assertTrue(MetadataUtils.needsMetadataRepair("Song_a1b2c3d4", "A", "B", hasArtwork = true))
+    }
+
+    @Test
+    fun `metadado limpo e completo nao precisa de reparo`() {
+        assertFalse(
+            MetadataUtils.needsMetadataRepair(
+                "Get Back to the Bible", "Petra", "Petra", hasArtwork = true
+            )
+        )
+    }
+
+    /** Se marcar titulo legitimo como sujo, todo scan reprocessa tudo e martela o MusicBrainz. */
+    @Test
+    fun `titulo legitimo nao e confundido com lixo`() {
+        for (titulo in listOf(
+            "50 Ways to Leave Your Lover",
+            "99 Problems",
+            "Song (Live)",
+            "Bohemian Rhapsody (Remastered 2011)",
+            "AC/DC Live"
+        )) {
+            assertFalse(
+                "marcou como sujo: $titulo",
+                MetadataUtils.needsMetadataRepair(titulo, "Artista", "Album", hasArtwork = true)
+            )
+        }
+    }
+
+    @Test
+    fun `sentinela em qualquer campo precisa de reparo`() {
+        assertTrue(MetadataUtils.needsMetadataRepair("", "A", "B", hasArtwork = true))
+        assertTrue(MetadataUtils.needsMetadataRepair("Song", "Desconhecido", "B", hasArtwork = true))
+        assertTrue(MetadataUtils.needsMetadataRepair("Song", "A", "YTDown", hasArtwork = true))
+        assertTrue(MetadataUtils.needsMetadataRepair("Song", null, "B", hasArtwork = true))
+    }
+
+    @Test
+    fun `falta de capa precisa de reparo`() {
+        assertTrue(MetadataUtils.needsMetadataRepair("Song", "A", "B", hasArtwork = false))
     }
 
     @Test

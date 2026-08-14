@@ -85,8 +85,14 @@ class MediaImportProcessor @Inject constructor(
                 hasAlbum = !MetadataUtils.isUnknownMetadata(existingMeta["album"])
                 hasArtwork = existingMeta["has_artwork"] == "true"
 
-                // Se o arquivo ja tem os 3 campos + capa no cache, podemos pular tudo
-                if (hasTitle && hasArtist && hasAlbum) {
+                // Mesmo criterio do botao Reparar Tags: campo preenchido nao
+                // basta. Titulo que ainda e nome de arquivo ("02 Nome(m4a 128k)")
+                // nao e sentinela e passava por aqui como "ja tem metadados".
+                val jaLimpo = !MetadataUtils.needsMetadataRepair(
+                    existingMeta["title"], existingMeta["artist"], existingMeta["album"],
+                    hasArtwork = true // a capa e checada logo abaixo, via cache
+                )
+                if (jaLimpo) {
                     val artist = existingMeta["artist"]!!
                     val album = existingMeta["album"]!!
                     val cacheKey = artworkCacheManager.getCacheKey(artist, album)
@@ -129,11 +135,15 @@ class MediaImportProcessor @Inject constructor(
 
             // title: originalTitle > existingMeta > filenameMeta > nome do arquivo
             // Se knownArtist esta preenchido e originalTitle comeca com "Artista - ", remove o prefixo
-            var resolvedTitle = originalTitle
-                ?: if (!forceEnrichment && hasTitle) existingMeta["title"]!!
-                else MetadataUtils.cleanFilenameTitle(
-                    filenameMeta["title"] ?: file.nameWithoutExtension
-                )
+            // cleanFilenameTitle em TODAS as origens, inclusive na tag existente:
+            // ela pode carregar lixo de nome de arquivo ("02 Nome(m4a 128k)") e
+            // usar isso como semente da busca no MusicBrainz zera o resultado.
+            // A limpeza e idempotente — titulo ja limpo passa intacto.
+            var resolvedTitle = MetadataUtils.cleanFilenameTitle(
+                originalTitle
+                    ?: if (!forceEnrichment && hasTitle) existingMeta["title"]!!
+                    else filenameMeta["title"] ?: file.nameWithoutExtension
+            )
 
             // sanitizeArtist: "Unknown"/"Desconhecido" são sentinelas, não artista.
             // Se vazarem, a query do MusicBrainz zera e o guard de fallback

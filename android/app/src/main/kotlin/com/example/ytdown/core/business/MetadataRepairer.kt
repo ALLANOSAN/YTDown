@@ -46,12 +46,15 @@ class MetadataRepairer @Inject constructor(
                 continue
             }
 
-            // Pular arquivos que ja tem tags completas
-            val hasTitle = !MetadataUtils.isUnknownMetadata(item.title)
-            val hasArtist = !MetadataUtils.isUnknownMetadata(item.artist)
-            val hasAlbum = !MetadataUtils.isUnknownMetadata(item.album)
-            if (hasTitle && hasArtist && hasAlbum && item.albumArtPath != null) {
-                android.util.Log.d("MetadataRepairer", "Pulando ${item.title} — ja tem tags e capa")
+            // Pular so o que ja esta LIMPO. Checar apenas "campo preenchido"
+            // deixava passar titulo que ainda e nome de arquivo, tipo
+            // "02 Get Back To The Bible(m4a 128k)" — o proprio caso que este
+            // botao existe para consertar.
+            if (!MetadataUtils.needsMetadataRepair(
+                    item.title, item.artist, item.album, item.albumArtPath != null
+                )
+            ) {
+                LocalLogger.debug("Pulando ${item.title} — ja limpo e com capa", tag = "MetadataRepairer")
                 skipped++
                 continue
             }

@@ -71,10 +71,12 @@ fun LibraryScreen(
                 }
             }
         },
-        containerColor = Color.Transparent
+        containerColor = Color.Transparent,
+        // Este Scaffold e aninhado: o de RootApp.kt ja consome os insets das
+        // barras do sistema. Sem zerar aqui, o padding entra duas vezes, a area
+        // util encolhe e a lista passa a rolar sem precisar.
+        contentWindowInsets = WindowInsets(0)
     ) { pad ->
-        // O padding do Scaffold estava sendo ignorado: o conteudo ficava por
-        // baixo da topBar e da barra do sistema.
         Column(modifier = Modifier.fillMaxSize().padding(pad)) {
             LibrarySearchBar(
                 query = searchQuery,

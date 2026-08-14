@@ -1,8 +1,9 @@
-gradle-wrapper.jar
+# O wrapper do Gradle (gradlew, gradlew.bat e gradle-wrapper.jar) TEM de ser
+# versionado — e o que faz o build ser reproduzivel sem Gradle instalado.
+# Estava ignorado por heranca do template Flutter e o CI quebrava com
+# "chmod: cannot access 'android/gradlew'".
 /.gradle
 /captures/
-/gradlew
-/gradlew.bat
 /local.properties
 GeneratedPluginRegistrant.java
 .cxx/

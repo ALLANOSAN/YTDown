@@ -23,8 +23,11 @@ jobs:
         with:
           python-version: "3.12"
 
+      # Mesma lista do bloco chaquopy.pip em android/app/build.gradle, menos
+      # yt-dlp (baixado em runtime). metal_archives.py importa bs4 e cloudscraper
+      # no topo, e ytdown.py importa metal_archives — sem eles a suíte nem carrega.
       - name: Instalar dependências
-        run: pip install mutagen requests
+        run: pip install mutagen requests beautifulsoup4 cloudscraper
 
       # Sem pytest.ini nem tests/__init__.py a descoberta automática falha;
       # cada arquivo é executado direto, e o loop propaga a primeira falha.

@@ -42,6 +42,10 @@ fun DownloadDiagnosticsScreen(
     val failedCount = (diagnosticsStats["failed"] as? Int) ?: 0
 
     Scaffold(
+        // Scaffold aninhado: o de RootApp.kt ja consome os insets das barras
+        // do sistema. Sem zerar, o padding entra duas vezes. A altura da
+        // topBar continua vindo no `padding` normalmente.
+        contentWindowInsets = WindowInsets(0),
         topBar = {
             TopAppBar(
                 title = { Text("Diagnóstico de Downloads", color = Color.White) },

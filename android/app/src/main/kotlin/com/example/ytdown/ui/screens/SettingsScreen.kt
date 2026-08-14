@@ -96,6 +96,10 @@ fun SettingsScreen(
     }
 
     Scaffold(
+            // Scaffold aninhado: o de RootApp.kt ja consome os insets das barras
+            // do sistema. Sem zerar, o padding entra duas vezes. A altura da
+            // topBar continua vindo no `padding` normalmente.
+            contentWindowInsets = WindowInsets(0),
             topBar = {
                 TopAppBar(
                         title = { Text(stringResource(R.string.settings_title), color = Color.White, style = MaterialTheme.typography.titleLarge) },

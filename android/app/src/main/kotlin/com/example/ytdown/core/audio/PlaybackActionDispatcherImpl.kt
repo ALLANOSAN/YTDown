@@ -16,6 +16,24 @@ class PlaybackActionDispatcherImpl @Inject constructor(
 
     companion object {
         private const val TAG = "PlaybackActionDispatcher"
+
+        /** BASS_ATTRIB_VOL espera 0..1; fora disso o comportamento é indefinido. */
+        fun coerceVolume(volume: Float): Float =
+            if (volume.isNaN()) 0f else volume.coerceIn(0f, 1f)
+    }
+
+    /**
+     * Volume vindo da sessão de mídia (Now Bar, Bluetooth, mute do sistema).
+     *
+     * Precisa passar pelo engine: `PlaybackController.updateVolume` só mexe no
+     * StateFlow, e o BASS só relê esse valor quando cria um stream — mudar o
+     * volume com música tocando não mudava o áudio. `engine.setVolume` aplica
+     * BASS_ATTRIB_VOL no canal ativo e atualiza o estado.
+     */
+    fun setVolume(volume: Float) {
+        val alvo = coerceVolume(volume)
+        Log.d(TAG, "setVolume($volume) -> $alvo")
+        engine.setVolume(alvo)
     }
 
     fun play() {

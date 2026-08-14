@@ -219,8 +219,19 @@ class BassMediaSessionAdapter @Inject constructor(
         return Futures.immediateVoidFuture()
     }
 
-    override fun handleSetVolume(volume: Float): ListenableFuture<*> {
-        playbackController.updateVolume(volume)
+    /**
+     * Sobrecarga com `volumeOperationType` — a de um argumento só está deprecada.
+     *
+     * O tipo é ignorado de propósito: o Media3 já resolve o float antes de
+     * chamar (mute passa 0f, unmute passa o `unmuteVolume` guardado, setVolume
+     * passa o valor pedido), e o BASS só tem volume linear. Verificado no
+     * bytecode do SimpleBasePlayer 1.11.0.
+     *
+     * Vai pelo dispatcher, não pelo controller: `updateVolume` só mexe no
+     * StateFlow e o BASS não releria isso com música tocando.
+     */
+    override fun handleSetVolume(volume: Float, volumeOperationType: Int): ListenableFuture<*> {
+        actionDispatcher.setVolume(volume)
         return Futures.immediateVoidFuture()
     }
 

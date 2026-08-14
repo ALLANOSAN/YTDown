@@ -6,7 +6,9 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
+import androidx.annotation.OptIn
 import androidx.media3.common.SimpleBasePlayer
+import androidx.media3.common.util.UnstableApi
 import com.example.ytdown.core.domain.DownloadItemEntity
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
@@ -26,6 +28,13 @@ import javax.inject.Singleton
  *
  * Para Android 16 Live Island (Now Bar) + MediaSession + Notification.
  */
+// SimpleBasePlayer e boa parte da superficie do Media3 sao @UnstableApi por
+// design — esta classe existe justamente para fronteá-la.
+//
+// @OptIn e nao @UnstableApi: o segundo marcaria a propria classe como instavel
+// e a exigencia cascatearia para todo consumidor (AppModule, e dai por diante).
+// @OptIn declara a adesao so aqui. Mesmo padrao ja usado em MediaPlaybackService.
+@OptIn(UnstableApi::class)
 @Singleton
 class BassMediaSessionAdapter @Inject constructor(
     private val playbackController: PlaybackController,

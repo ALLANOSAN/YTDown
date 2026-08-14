@@ -11,6 +11,7 @@ import android.os.PowerManager
 import android.util.Log
 import androidx.annotation.OptIn
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
@@ -158,7 +159,15 @@ class MediaPlaybackService : MediaSessionService() {
             addAction("android.intent.action.BOOT_COMPLETED")
         }
         try {
-            registerReceiver(quickBootReceiver, filter)
+            // RECEIVER_EXPORTED e obrigatorio desde o Android 14 (targetSdk 36).
+            // QUICKBOOT_POWERON e WAKE_LOCK_TIMEOUT nao sao protected broadcasts:
+            // vem do sistema/OEM, entao o receiver precisa aceitar remetente
+            // externo — NOT_EXPORTED mataria a protecao Xiaomi em silencio.
+            // Sem a flag o registerReceiver lancava SecurityException e caia no
+            // catch abaixo, ou seja, a protecao ja nao registrava no Android 14+.
+            ContextCompat.registerReceiver(
+                this, quickBootReceiver, filter, ContextCompat.RECEIVER_EXPORTED
+            )
             Log.d(TAG, "Xiaomi Protection: Auto-restart receiver registered")
         } catch (e: Exception) {
             Log.w(TAG, "Failed to register auto-restart receiver: ${e.message}")

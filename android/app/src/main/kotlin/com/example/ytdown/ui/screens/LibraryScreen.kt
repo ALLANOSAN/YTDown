@@ -73,7 +73,9 @@ fun LibraryScreen(
         },
         containerColor = Color.Transparent
     ) { pad ->
-        Column(modifier = Modifier.fillMaxSize()) {
+        // O padding do Scaffold estava sendo ignorado: o conteudo ficava por
+        // baixo da topBar e da barra do sistema.
+        Column(modifier = Modifier.fillMaxSize().padding(pad)) {
             LibrarySearchBar(
                 query = searchQuery,
                 onQueryChange = {

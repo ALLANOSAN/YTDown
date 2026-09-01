@@ -38,8 +38,15 @@ PATH. `abiFilters` are `arm64-v8a` and `x86_64` only, so `armeabi-v7a`/`x86` cop
 in `jniLibs/` are never packaged.
 
 Debug builds carry `applicationIdSuffix ".native"` — the installed package is
-**`com.example.ytdown.native`**, not `com.example.ytdown`. The ADB scripts in `scripts/test_automation/`
-hardcode the unsuffixed name and need adjusting when driving a debug install.
+**`com.example.ytdown.native`**, not `com.example.ytdown`. The Activity class does *not* move with it:
+it stays `com.example.ytdown.MainActivity`, so `am start` needs the absolute component
+(`com.example.ytdown.native/com.example.ytdown.MainActivity`) — the relative `/.MainActivity` form
+resolves to `com.example.ytdown.native.MainActivity`, which does not exist.
+
+The ADB scripts in `scripts/test_automation/` already handle both sides:
+`common.resolve_package()` prefers the installed `.native` variant and `common.start_app_activity()`
+forces the absolute name. `test_common.py` (10 tests, pure `unittest`, no device needed) locks that
+down — run it after touching `common.py`.
 
 ## Tests
 
@@ -65,7 +72,20 @@ cd android
 ```
 
 **On-device smoke tests** — `python3 scripts/test_automation/run_tests.py` drives a connected device
-over ADB (logcat assertions, not instrumentation).
+over ADB (logcat assertions, not instrumentation). It does *not* download anything; it only checks app
+state.
+
+Expect 1/3 on Android 16 even when the app is healthy — verified on 2026-09-01. Both "failures" are
+harness bugs, not defects:
+
+- Any single falsy check exits the script with 1, and it prints those as `WARN`. In
+  `test_media_session.py` the only falsy one is `lock_screen`, which reads a device setting that
+  returns `null`.
+- `test_download_flow.py` greps `dumpsys window windows` for `mCurrentFocus`; on Android 16 that
+  subcommand no longer prints it. Plain `dumpsys window | grep mCurrentFocus` does.
+
+Before believing a red result, check `adb logcat -b crash` — an empty crash buffer plus a focused
+`MainActivity` means the app is fine and the script is not.
 
 ## Architecture
 

@@ -29,6 +29,10 @@ Two files are required for the build to succeed and both are git-ignored:
   exposed as `BuildConfig.LASTFM_API_KEY`. `build.sh` aborts if it's missing.
 - `android/app/google-services.json` — required by the Firebase/Crashlytics Gradle plugins.
 
+Plugin versions are declared once in `android/build.gradle.kts` (the root build is Kotlin DSL; the
+app module `android/app/build.gradle` is Groovy): AGP 9.3.1, Kotlin Compose plugin 2.3.21, KSP 2.3.11,
+Hilt 2.60.1, Chaquopy 17.0.0. `kotlin.jvm.target=21` in `gradle.properties`.
+
 Chaquopy invokes the host interpreter named `python3.14` (`buildPython "python3.14"`); it must be on
 PATH. `abiFilters` are `arm64-v8a` and `x86_64` only, so `armeabi-v7a`/`x86` copies of `libbass.so`
 in `jniLibs/` are never packaged.
@@ -39,8 +43,8 @@ hardcode the unsuffixed name and need adjusting when driving a debug install.
 
 ## Tests
 
-**Python** (the real test suite). No pytest config and no `tests/__init__.py`, so discovery fails —
-run files individually from the python source dir:
+**Python** — 76 tests across 11 files. No pytest config and no `tests/__init__.py`, so discovery
+fails — run files individually from the python source dir:
 
 ```bash
 cd android/app/src/main/python
@@ -48,7 +52,11 @@ PYTHONPATH=. python3 tests/test_runtime.py
 PYTHONPATH=. python3 tests/test_metadata.py -k test_id3_injection
 ```
 
-**Kotlin** — JUnit4 + Mockito + Robolectric, under `android/app/src/test/java/`:
+`tests/test_playlist_network.py` hits YouTube for real and self-skips unless `YTDOWN_NETWORK_TESTS=1`
+is set. It exists to catch yt-dlp behaviour changes in `extract_flat`/`noplaylist` that mocks can't.
+
+**Kotlin** — 133 tests across 26 files; JUnit4 + Mockito + Robolectric, under
+`android/app/src/test/java/`:
 
 ```bash
 cd android
@@ -64,13 +72,15 @@ over ADB (logcat assertions, not instrumentation).
 ### Kotlin ↔ Python bridge
 
 Python is the source of truth for downloading and tag *writing*. `android/app/src/main/python/ytdown.py`
-is the only facade Kotlin should call; it re-exports from `download.py`, `fetch.py`, `metadata.py`,
-`runtime.py`, `metal_archives.py`.
+is the only facade Kotlin should call; it re-exports from `download.py`, `fetch.py`, `metadata.py`
+and `runtime.py`.
 
 Metadata *lookup* is Kotlin-side, not Python: `MusicBrainzService` → `CoverArtArchiveService` /
-`LastfmService` → `FanArtTvService`, orchestrated by `core/media/MediaImportProcessor.kt`, which then
-calls Python (Mutagen) to write the tags. The old `enrich.py::search_metadata` path was removed — it
-only returned title/artist/album, with no track number, year, or cover-art IDs.
+`LastfmService` → `FanArtTvService`, orchestrated by `MediaImportProcessor` (package
+`com.example.ytdown.core.media`, but the file sits at `ui/screens/MediaImportProcessor.kt` — see
+*Package vs. directory* below), which then calls Python (Mutagen) to write the tags. The old
+`enrich.py::search_metadata` path was removed — it only returned title/artist/album, with no track
+number, year, or cover-art IDs.
 
 - Callers: `core/business/YtDlpWrapper.kt`, `PythonBridge.kt`, `core/artwork/PythonMetadataBridge.kt`
   (`Python.getInstance().getModule("ytdown")`).
@@ -96,6 +106,35 @@ never held only in memory, so the queue survives process death.
 The manifest removes `WorkManagerInitializer` from `androidx.startup` — `YTDownApplication` implements
 `Configuration.Provider` with `HiltWorkerFactory`. A new worker must be `@HiltWorker`.
 
+**Playlists expand exactly once, in `fetch_video_info`.** `download_video` writes to a single fixed
+`output_path` with no per-track placeholder, so if yt-dlp re-expands the playlist there the N tracks
+all land on the *same* file and silently overwrite each other. Hence `noplaylist: True` in
+`download.py` (non-negotiable) and an explicit refusal of bare `/playlist?list=X` URLs, which ignore
+that flag. `fetch.py` uses `extract_flat: "in_playlist"` — not `True`, which returns
+`{_type: "url", title: None}` and collapses a shared album link into one "Sem título" item. Mix/radio
+(`list=RD...`) never expands: YouTube generates those entries indefinitely.
+
+### Artwork and tag repair
+
+The two buttons in `SettingsScreen.kt` ("Reparar Tags" → `repairAllMetadata()`, "Capas" →
+`enrichAllArtwork()`) run over the whole library, so they are the easiest place to corrupt every file
+at once. Two rules hold the design:
+
+- `ArtworkEnricher` and `MetadataRepairer` depend on **ports**, not concrete services —
+  `RecordingLookup`, `CoverSource`, `TagWriter`, `BibliotecaDeAudio`, `TagRewriter`
+  (`core/business/ArtworkPorts.kt`, bound in `di/ArtworkModule.kt`). The point is testability:
+  `PythonMetadataBridge` calls `Python.getInstance()` and cannot run in a unit test, which used to
+  make the entire scan unverifiable.
+- The *decisions* live in pure objects with no I/O: `ArtworkPolicy`, `ReparoDeCapaPolicy`
+  (`core/artwork/`) and `ReparoDeTagsPolicy` (`core/business/`). `AcaoDeReparo.SEM_FONTE` exists
+  because MusicBrainz silence under rate limit is not evidence — acting on it rewrote covers from
+  stale album names.
+
+`MusicBrainzService.pickOriginalRecording` picks the oldest non-compilation release, not
+`recordings[0].releases[0]`; the latter wrote greatest-hits albums and their covers into the library.
+`parseSearchResponse` distinguishes a throttled response (`{"error": ...}`, sometimes with HTTP 200)
+from a genuine miss, and `searchRecording` retries with backoff instead of reporting "not found".
+
 ### Playback (BASS, not ExoPlayer)
 
 - `BassCore` — singleton over `com.un4seen.bass.BASS` (JNI, `java/com/un4seen/bass/BASS.java` +
@@ -113,12 +152,13 @@ Bluetooth A2DP can suspend the audio device during long pauses, which makes BASS
 
 ### Persistence
 
-Two independent Room databases:
+One Room database: `AppDatabase` (`ytdown.db`) — downloads and library; explicit `ALL_MIGRATIONS`
+plus `fallbackToDestructiveMigration()`. Schemas are exported to `app/schemas` and bundled into debug
+assets.
 
-- `AppDatabase` (`ytdown.db`) — downloads and library; explicit `ALL_MIGRATIONS` plus
-  `fallbackToDestructiveMigration()`. Schemas are exported to `app/schemas` and bundled into debug assets.
-- `MetalDatabase` (`data/local/metal/`) — the metal-discovery feature (artists, albums, listening
-  history, Paging 3 `RemoteMediator` over MusicBrainz + Cover Art Archive).
+(There used to be a second, `MetalDatabase`, for a metal-discovery feature. That whole feature —
+screens, ViewModels, repositories, the Paging 3 `RemoteMediator` and `metal_archives.py` — was removed
+on 2026-09-01 after its tab and route were deleted. Don't reintroduce references to it.)
 
 ### UI layering
 
@@ -136,17 +176,36 @@ logcat), not bare `Log.e`.
 - Conventional-commit prefixes (`feat:`, `fix:`, `refactor:`), lowercase, no accents in the subject line.
 - Domain primitives are `@JvmInline value class`es in `core/domain/BinaryTypes.kt` (`VideoUrl`,
   `FilePath`, `ExitCode`) — pass those, not raw `String`.
-- `ksp.useKSP2=false` in `gradle.properties` is deliberate (Hilt 2.56 + AGP 8 compatibility); Hilt
-  versions are force-pinned in `app/build.gradle`. Don't bump one without the other.
+- The stack is AGP 9.3.1 + KSP 2.3.11 + Hilt 2.60.1, all pinned in `android/build.gradle.kts`. There
+  is no `resolutionStrategy`/`force` block and no `ksp.useKSP2` flag any more — KSP2 is on by
+  default. `gradle.properties` still carries a comment about the old KSP2 workaround; it documents a
+  setting that no longer exists.
 - `.gitignore` excludes `*.so`, `build.sh`, `scripts/`, `.planning/`, `.agent/` — several tracked-looking
   files are local-only.
+
+### Package vs. directory
+
+Six files declare a package that does not match the directory they live in. Kotlin allows it, but
+`find`/`Read` on the package path fails and greps for the "expected" location come back empty:
+
+| File on disk | Declared package |
+|---|---|
+| `ui/screens/MediaImportProcessor.kt` | `core.media` |
+| `ui/screens/MetadataExtractor.kt` | `core.metadata` |
+| `ui/screens/SongEntity.kt` | `core.domain` |
+| `ui/screens/SongDao.kt` | `core.infrastructure.persistence` |
+| `ui/screens/DatabaseModule.kt` | `di` |
+| `core/business/MusicBrainzRecording.kt` | `core.metadata.model` |
+
+Locate these by class name, not by path.
 
 ## Stale docs
 
 `.planning/codebase/*.md` and `.agent/ARCHITECTURE.md` are git-ignored local snapshots from 2026-05-09
-that **contradict the current code** — TESTING.md claims no tests exist (there are 121). Do not trust
-them; this file is the source of truth. `implementation_plan.md` (proposing a drop of Chaquopy for
-`youtubedl-android` + `jaudiotagger`, a migration that never started) was deleted for the same reason.
+that **contradict the current code** — TESTING.md claims no tests exist (there are 209: 133 Kotlin +
+76 Python). Do not trust them; this file is the source of truth. `implementation_plan.md` (proposing
+a drop of Chaquopy for `youtubedl-android` + `jaudiotagger`, a migration that never started) was
+deleted for the same reason.
 
 ## Errors and logging
 

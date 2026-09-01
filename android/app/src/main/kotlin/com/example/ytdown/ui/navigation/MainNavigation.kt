@@ -10,7 +10,6 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.NavType
 import androidx.navigation.navArgument
-import com.example.ytdown.ui.BandDetailsViewModel
 import com.example.ytdown.ui.DownloadViewModel
 import com.example.ytdown.ui.LibraryViewModel
 import com.example.ytdown.core.audio.BassFXEngine
@@ -18,8 +17,6 @@ import com.example.ytdown.ui.PlaybackViewModel
 import com.example.ytdown.ui.SystemViewModel
 import com.example.ytdown.ui.screens.*
 import com.example.ytdown.ui.screens.EqualizerScreen
-import com.example.ytdown.ui.screens.BandDetailsScreen
-import com.example.ytdown.providers.browserProvider
 
 @Composable
 fun MainNavigation(
@@ -67,20 +64,6 @@ fun MainNavigation(
                 viewModel.fetchVideoDetails(context, videoUrl)
                 navController.navigate(Screen.Home.route)
             })
-        }
-        composable(
-            route = Screen.BandDetails.route,
-            arguments = listOf(navArgument("bandName") { type = NavType.StringType })
-        ) { backStackEntry ->
-            val bandName = backStackEntry.arguments?.getString("bandName") ?: ""
-            BandDetailsScreen(
-                onBack = { navController.popBackStack() },
-                onSearchYouTube = { query ->
-                    val searchUrl = "https://m.youtube.com/results?search_query=${java.net.URLEncoder.encode(query, "UTF-8")}"
-                    browserProvider.setUrl(searchUrl)
-                    navController.navigate(Screen.Browser.route)
-                }
-            )
         }
         composable(Screen.Player.route) {
             PlayerFullScreen(

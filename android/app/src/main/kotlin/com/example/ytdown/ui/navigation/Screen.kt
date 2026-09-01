@@ -16,13 +16,4 @@ sealed class Screen(val route: String) {
     object PlaylistById : Screen("playlist_by_id/{playlistId}") {
         fun createRoute(id: String) = "playlist_by_id/$id"
     }
-    
-    // Novas rotas para descoberta de Metal
-    object BandDetails : Screen("band_details/{bandName}") {
-        fun createRoute(bandName: String) = "band_details/${bandName.replace("/", "_")}"
-    }
-    object AlbumDownload : Screen("album_download/{bandName}/{albumName}") {
-        fun createRoute(bandName: String, albumName: String) = 
-            "album_download/${bandName.replace("/", "_")}/${albumName.replace("/", "_")}"
-    }
 }

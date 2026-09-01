@@ -17,7 +17,6 @@
         <domain includeSubdomains="true">googlevideo.com</domain>
         <domain includeSubdomains="true">googleapis.com</domain>
         <domain includeSubdomains="true">i.ytimg.com</domain>
-        <domain includeSubdomains="true">metal-archives.com</domain>
     </domain-config>
 </network-security-config>
 

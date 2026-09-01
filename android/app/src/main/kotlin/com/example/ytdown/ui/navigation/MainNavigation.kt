@@ -68,16 +68,6 @@ fun MainNavigation(
                 navController.navigate(Screen.Home.route)
             })
         }
-        composable(Screen.MetalDiscovery.route) {
-            val enhancedMetalViewModel: com.example.ytdown.ui.EnhancedMetalViewModel = hiltViewModel()
-            com.example.ytdown.ui.screens.metal.EnhancedMetalScreen(
-                viewModel = enhancedMetalViewModel,
-                onBandClick = { bandName ->
-                    navController.navigate(Screen.BandDetails.createRoute(bandName))
-                },
-                onNavigateToProfile = { }
-            )
-        }
         composable(
             route = Screen.BandDetails.route,
             arguments = listOf(navArgument("bandName") { type = NavType.StringType })

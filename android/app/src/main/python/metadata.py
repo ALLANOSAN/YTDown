@@ -347,6 +347,14 @@ def embed_album_art(audio_path, cover_path):
             pic.data = image_data
             audio.add_picture(pic)
             audio.save()
+        else:
+            # Sem ramo de embed o arquivo fica sem capa. Reportar sucesso aqui
+            # fazia o chamador acreditar que a capa entrou no arquivo quando ela
+            # seguiu so no cache — a falha silenciosa nao aparecia nem no log.
+            return json.dumps({
+                "success": False,
+                "error": f"Formato sem suporte a capa: {audio_path.rsplit('.', 1)[-1]}",
+            })
         return json.dumps({"success": True})
     except Exception as e:
         return json.dumps({"success": False, "error": str(e)})

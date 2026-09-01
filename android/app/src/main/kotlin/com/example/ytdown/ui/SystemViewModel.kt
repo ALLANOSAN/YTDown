@@ -45,6 +45,7 @@ class SystemViewModel @Inject constructor(
     private val lyricsService: LyricsService,
     private val workManager: WorkManager,
     private val libraryExporter: LibraryExporter,
+    private val libraryRenamer: com.example.ytdown.core.business.LibraryRenamer,
     private val metadataRepairer: MetadataRepairer,
     private val artworkEnricher: ArtworkEnricher,
     private val ytDlp: YtDlpWrapper,
@@ -109,10 +110,10 @@ class SystemViewModel @Inject constructor(
     }
 
     fun updateAlbumBatch(artist: String? = null, oldAlbum: String, newAlbum: String, photo: String?) { 
-        viewModelScope.launch { libraryRepository.updateAlbumInBatch(artist, oldAlbum, newAlbum, photo) } 
+        viewModelScope.launch { libraryRenamer.updateAlbumInBatch(artist, oldAlbum, newAlbum, photo) } 
     }
     fun updateArtistBatch(oldName: String, newName: String, photo: String?) { 
-        viewModelScope.launch { libraryRepository.updateArtistInBatch(oldName, newName, photo) } 
+        viewModelScope.launch { libraryRenamer.updateArtistInBatch(oldName, newName, photo) } 
     }
 
     fun updateTrackName(song: DownloadItemEntity, newName: String) {

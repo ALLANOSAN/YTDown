@@ -1,7 +1,6 @@
 package com.example.ytdown.core.business
 
-import com.example.ytdown.core.media.MediaImportProcessor
-import com.example.ytdown.services.DatabaseService
+import com.example.ytdown.core.artwork.AcaoDeReparo
 import com.example.ytdown.utils.MetadataUtils
 import java.io.File
 import javax.inject.Inject
@@ -21,13 +20,14 @@ import com.example.ytdown.utils.LocalLogger
  */
 @Singleton
 class MetadataRepairer @Inject constructor(
-    private val databaseService: DatabaseService,
-    private val importProcessor: MediaImportProcessor
+    private val biblioteca: BibliotecaDeAudio,
+    private val lookup: RecordingLookup,
+    private val enriquecedor: EnriquecedorDeItem,
 ) {
     suspend fun repairAll(
         onProgress: (Float, String) -> Unit
     ): RepairSummary {
-        val items = databaseService.getLibraryAudios()
+        val items = biblioteca.itens()
         if (items.isEmpty()) return RepairSummary(0, 0, 0, 0)
 
         var repaired = 0
@@ -62,27 +62,37 @@ class MetadataRepairer @Inject constructor(
                 }
             }
 
-            // Pular so o que ja esta LIMPO. Checar apenas "campo preenchido"
-            // deixava passar titulo que ainda e nome de arquivo, tipo
-            // "02 Get Back To The Bible(m4a 128k)" — o proprio caso que este
-            // botao existe para consertar.
-            if (!MetadataUtils.needsMetadataRepair(
-                    item.title, item.artist, item.album, item.albumArtPath != null
+            // Olhar so as strings nao basta: "Heavy Righteous Metal" e limpo e
+            // e coletanea. So comparando com o album que o MusicBrainz devolve
+            // da para saber que a faixa esta gravada com o disco errado — era
+            // por isso que este botao pulava justamente esses itens.
+            val mbResult = lookup.buscar(
+                MetadataUtils.cleanFilenameTitle(item.title),
+                MetadataUtils.sanitizeArtist(item.artist),
+            )
+
+            val acao = ReparoDeTagsPolicy.decidir(
+                title = item.title,
+                artist = item.artist,
+                album = item.album,
+                temCapa = item.albumArtPath != null,
+                albumDoMusicBrainz = mbResult?.album,
+            )
+            if (acao == AcaoDeReparo.NADA || acao == AcaoDeReparo.SEM_FONTE) {
+                LocalLogger.debug(
+                    "Pulando ${item.title} — $acao", tag = "MetadataRepairer"
                 )
-            ) {
-                LocalLogger.debug("Pulando ${item.title} — ja limpo e com capa", tag = "MetadataRepairer")
                 skipped++
                 continue
             }
 
             try {
-                importProcessor.process(
+                enriquecedor.enriquecer(
                     audioPath = targetPath,
-                    originalTitle = MetadataUtils.cleanFilenameTitle(item.title),
-                    knownArtist = MetadataUtils.sanitizeArtist(item.artist).takeIf { it.isNotBlank() },
-                    knownAlbum = item.album?.trim()?.takeUnless { MetadataUtils.isUnknownMetadata(it) },
-                    forceEnrichment = true,
-                    downloadId = item.id
+                    title = MetadataUtils.cleanFilenameTitle(item.title),
+                    artist = MetadataUtils.sanitizeArtist(item.artist).takeIf { it.isNotBlank() },
+                    album = item.album?.trim()?.takeUnless { MetadataUtils.isUnknownMetadata(it) },
+                    downloadId = item.id,
                 )
                 repaired++
             } catch (e: Exception) {

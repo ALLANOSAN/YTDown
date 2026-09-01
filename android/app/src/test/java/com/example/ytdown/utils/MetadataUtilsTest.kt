@@ -174,4 +174,83 @@ class MetadataUtilsTest {
         assertEquals("Petra", MetadataUtils.sanitizeArtist("  Petra  "))
         assertEquals("Unknown Mortal Orchestra", MetadataUtils.sanitizeArtist("Unknown Mortal Orchestra"))
     }
+
+    /**
+     * O titulo vinha do YouTube com o artista em caixa alta ("WHITECROSS - ...").
+     * O codigo antigo testava o prefixo com `startsWith(ignoreCase = true)` mas
+     * removia com `removePrefix`, que e case-sensitive e devolve a string
+     * intacta quando nao casa exato. A query ia para o MusicBrainz como
+     * `recording:"WHITECROSS - Love On The Line"` e zerava o resultado.
+     */
+    @Test
+    fun `remove prefixo do artista mesmo com caixa diferente`() {
+        assertEquals(
+            "Love On The Line",
+            MetadataUtils.stripArtistPrefix("WHITECROSS - Love On The Line", "Whitecross")
+        )
+    }
+
+    /**
+     * 4 dos 171 recordings do Whitecross no MusicBrainz usam o apostrofo
+     * tipografico U+2019 ("Angel\u2019s Disguise", "I Keep Prayin\u2019"), enquanto
+     * outros usam ASCII ("It's Already Done"). O titulo vindo do YouTube traz
+     * ASCII, entao toda comparacao exata falhava justamente nessas faixas.
+     * O MusicBrainz tambem alterna caixa ("Enough Is Enough" / "Enough is Enough").
+     */
+    @Test
+    fun `apostrofo tipografico e ASCII normalizam para a mesma forma`() {
+        val tipografico = MetadataUtils.normalizeForMatch("Angel\u2019s Disguise")
+
+        assertEquals("angel's disguise", tipografico)
+        assertEquals(MetadataUtils.normalizeForMatch("Angel's Disguise"), tipografico)
+    }
+
+    /**
+     * "Track 07 My Love" chega assim do arquivo baixado. O prefixo nao e
+     * sentinela nem numero solto, entao passava por needsMetadataRepair como
+     * titulo valido e ia inteiro para a query do MusicBrainz —
+     * `recording:"Track 07 My Love"` nao acha nada, e o arquivo termina sem
+     * album, sem ano e com a capa errada.
+     */
+    @Test
+    fun `remove prefixo Track NN do titulo`() {
+        assertEquals("My Love", MetadataUtils.cleanFilenameTitle("Track 07 My Love"))
+    }
+
+    /**
+     * A quebra que este teste pega: um padrao sem `\b` engoliria "Tracks",
+     * "Tracking", "Trackless" — e o titulo legitimo perderia a primeira palavra.
+     */
+    @Test
+    fun `palavra que apenas comeca com Track e preservada`() {
+        assertEquals(
+            "Tracks of My Tears",
+            MetadataUtils.cleanFilenameTitle("Tracks of My Tears")
+        )
+        assertEquals("Track Star", MetadataUtils.cleanFilenameTitle("Track Star"))
+    }
+
+    /**
+     * A quebra que este teste pega: limpar ate sobrar nada. "Track 07" sem
+     * titulo depois e tudo que se sabe da faixa; devolver vazio apagaria a
+     * unica identificacao que o item tem na biblioteca.
+     */
+    @Test
+    fun `titulo que e so o rotulo da faixa nao vira vazio`() {
+        assertEquals("Track 07", MetadataUtils.cleanFilenameTitle("Track 07"))
+    }
+
+    /**
+     * A quebra que este teste pega: se needsMetadataRepair nao enxergar o
+     * rotulo como sujeira, o botao Reparar Tags continua pulando essas faixas e
+     * a biblioteca nunca se conserta sozinha — mesmo com a limpeza corrigida.
+     */
+    @Test
+    fun `titulo com rotulo de faixa e marcado para reparo`() {
+        assertTrue(
+            MetadataUtils.needsMetadataRepair(
+                "Track 07 My Love", "Whitecross", "Triumphant Return", hasArtwork = true
+            )
+        )
+    }
 }

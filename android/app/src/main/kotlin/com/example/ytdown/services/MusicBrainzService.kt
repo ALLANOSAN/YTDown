@@ -1,15 +1,12 @@
 package com.example.ytdown.services
 
 import com.example.ytdown.core.metadata.model.MusicBrainzRecording
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import org.json.JSONArray
-import java.net.URL
-import java.net.HttpURLConnection
-import okhttp3.OkHttpClient
-import okhttp3.Request
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -30,16 +27,36 @@ import javax.inject.Singleton
  * - /ws/2/area - Países e regiões
  */
 @Singleton
-class MusicBrainzService @Inject constructor() {
+class MusicBrainzService internal constructor(
+    private val http: MusicBrainzHttpClient,
+    private val io: CoroutineDispatcher,
+) {
 
-    private val client = OkHttpClient()
+    @Inject
+    constructor() : this(
+        OkHttpMusicBrainzClient(userAgent = USER_AGENT),
+        Dispatchers.IO,
+    )
+
+    /** Resultado da leitura de uma resposta de busca do MusicBrainz. */
+    internal sealed interface SearchOutcome {
+        data class Ok(val recordings: JSONArray) : SearchOutcome
+        data object RateLimited : SearchOutcome
+        data object Empty : SearchOutcome
+    }
+
+    /** Par (recording, release) escolhido como origem da faixa. */
+    internal data class ReleaseChoice(
+        val recording: JSONObject,
+        val release: JSONObject,
+    )
 
     companion object {
         private const val USER_AGENT = "YTDown/1.0.0 (allanosan@email.com)"
         private const val BASE = "https://musicbrainz.org/ws/2"
         private const val REQUEST_DELAY_MS = 1100L
-        private const val CONNECT_TIMEOUT = 10000
-        private const val READ_TIMEOUT = 10000
+        private const val MAX_TENTATIVAS = 3
+        private const val BACKOFF_MS = 1500L
 
         private fun escapeLucenePhrase(value: String): String =
             value.replace("\\", "\\\\").replace("\"", "\\\"")
@@ -48,6 +65,69 @@ class MusicBrainzService @Inject constructor() {
          * Monta a query Lucene de recording. Sem artista a cláusula é omitida —
          * buscar `artist:""` depende de o servidor tolerar frase vazia.
          */
+        /**
+         * Le a resposta de busca distinguindo estrangulamento de ausencia real.
+         *
+         * O MusicBrainz responde ao rate limit com `{"error": "...busy..."}` — e
+         * nem sempre com status 5xx: a mesma query devolveu 503 com corpo valido
+         * e 200 com corpo de erro. Colapsar os dois em "sem resultado" fazia a
+         * banda parecer inexistente de forma intermitente.
+         */
+        internal fun parseSearchResponse(body: String?, httpCode: Int): SearchOutcome {
+            val json = body?.takeIf { it.isNotBlank() }?.let {
+                runCatching { JSONObject(it) }.getOrNull()
+            }
+            if (json != null && json.has("error")) return SearchOutcome.RateLimited
+            if (httpCode !in 200..299) return SearchOutcome.RateLimited
+            val recordings = json?.optJSONArray("recordings") ?: return SearchOutcome.Empty
+            if (recordings.length() == 0) return SearchOutcome.Empty
+            return SearchOutcome.Ok(recordings)
+        }
+
+        /**
+         * Escolhe de qual gravacao/lancamento a faixa saiu originalmente.
+         *
+         * A coletanea nem sempre esta dentro de um recording: para "Enough Is
+         * Enough" do Whitecross cada recording traz um release so, e o primeiro
+         * da lista e "The Very Best Of Whitecross". Pegar `recordings[0]`
+         * gravava a coletanea como album. A selecao percorre todos os pares
+         * (recording, release), descarta os tipos rejeitados e fica com a data
+         * mais antiga — o lancamento original, nao a regravacao nem a coletanea.
+         */
+        internal fun pickOriginalRecording(
+            recordings: JSONArray,
+            artist: String,
+        ): ReleaseChoice? {
+            val pares = mutableListOf<ReleaseChoice>()
+            for (i in 0 until recordings.length()) {
+                val recording = recordings.optJSONObject(i) ?: continue
+                val releases = recording.optJSONArray("releases") ?: continue
+                for (j in 0 until releases.length()) {
+                    releases.optJSONObject(j)?.let { pares.add(ReleaseChoice(recording, it)) }
+                }
+            }
+            if (pares.isEmpty()) return null
+            val originais = pares.filter { par ->
+                secondaryTypes(par.release).none { it in TIPOS_REJEITADOS }
+            }
+            // Sem nenhum original a coletanea ainda e melhor que album vazio.
+            val candidatos = originais.ifEmpty { pares }
+            return candidatos.minByOrNull { par ->
+                // Data vazia vai para o fim: sem data nao da para provar que e a origem.
+                par.release.optString("date").ifBlank { "9999" }
+            }
+        }
+
+        /** Secondary-types que nunca sao o album de origem da faixa. */
+        private val TIPOS_REJEITADOS = setOf("compilation")
+
+        private fun secondaryTypes(release: JSONObject): List<String> {
+            val tipos = release.optJSONObject("release-group")
+                ?.optJSONArray("secondary-types")
+                ?: return emptyList()
+            return (0 until tipos.length()).map { tipos.optString(it).lowercase() }
+        }
+
         internal fun buildRecordingQuery(title: String, artist: String): String {
             val recording = "recording:\"${escapeLucenePhrase(title.trim())}\""
             val cleanArtist = artist.trim()
@@ -56,7 +136,7 @@ class MusicBrainzService @Inject constructor() {
         }
     }
 
-    suspend fun searchArtistId(name: String): String? = withContext(Dispatchers.IO) {
+    suspend fun searchArtistId(name: String): String? = withContext(io) {
         try {
             delay(REQUEST_DELAY_MS)
             val query = java.net.URLEncoder.encode(name, "UTF-8")
@@ -75,30 +155,33 @@ class MusicBrainzService @Inject constructor() {
     suspend fun searchRecording(
         title: String,
         artist: String
-    ): MusicBrainzRecording? = withContext(Dispatchers.IO) {
+    ): MusicBrainzRecording? = withContext(io) {
         return@withContext try {
             delay(1100L) // Rate limit
             val query = buildRecordingQuery(title, artist)
             val url = "https://musicbrainz.org/ws/2/recording/?query=${java.net.URLEncoder.encode(query, "UTF-8")}&fmt=json&inc=artists+releases+release-groups"
 
-            val request = Request.Builder()
-                .url(url)
-                .header("User-Agent", USER_AGENT)
-                .build()
+            // Sob rate limit a resposta e um corpo de erro, as vezes com HTTP 200.
+            // Desistir na primeira fazia a banda parecer inexistente.
+            var recordings: JSONArray? = null
+            for (tentativa in 0 until MAX_TENTATIVAS) {
+                if (tentativa > 0) delay(BACKOFF_MS * tentativa)
+                val resposta = http.get(url)
+                when (val resultado = parseSearchResponse(resposta.body, resposta.code)) {
+                    is SearchOutcome.Ok -> {
+                        recordings = resultado.recordings
+                        break
+                    }
+                    SearchOutcome.Empty -> return@withContext null
+                    SearchOutcome.RateLimited -> continue
+                }
+            }
+            val encontrados = recordings ?: return@withContext null
 
-            val response = client.newCall(request).execute()
-            if (!response.isSuccessful) return@withContext null
-
-            val body = response.body?.string() ?: return@withContext null
-            val json = JSONObject(body)
-            val recordings = json.optJSONArray("recordings") ?: return@withContext null
-
-            if (recordings.length() == 0) return@withContext null
-
-            val item = recordings.getJSONObject(0)
+            val escolha = pickOriginalRecording(encontrados, artist) ?: return@withContext null
+            val item = escolha.recording
             val recordingMbid = item.optString("id")
-            val releases = item.optJSONArray("releases")
-            val release = releases?.optJSONObject(0)
+            val release: JSONObject? = escolha.release
             val releaseMbid = release?.optString("id")
             val releaseGroupId = release?.optJSONObject("release-group")?.optString("id")
             
@@ -156,7 +239,7 @@ class MusicBrainzService @Inject constructor() {
     /**
      * Busca todas as tags populares de metal
      */
-    suspend fun getPopularMetalTags(): List<String> = withContext(Dispatchers.IO) {
+    suspend fun getPopularMetalTags(): List<String> = withContext(io) {
         listOf(
             "black metal", "death metal", "power metal", "thrash metal",
             "heavy metal", "doom metal", "symphonic metal", "gothic metal",
@@ -167,12 +250,12 @@ class MusicBrainzService @Inject constructor() {
         )
     }
 
-    suspend fun getArtistDetails(mbid: String): MBBandDetails? = withContext(Dispatchers.IO) {
+    suspend fun getArtistDetails(mbid: String): MBBandDetails? = withContext(io) {
         val json = lookupArtist(mbid, inc = "tags,genres,aliases,url-rels") ?: return@withContext null
         parseArtistDetails(json)
     }
 
-    suspend fun getArtistReleaseGroups(mbid: String): List<MBReleaseGroup> = withContext(Dispatchers.IO) {
+    suspend fun getArtistReleaseGroups(mbid: String): List<MBReleaseGroup> = withContext(io) {
         delay(REQUEST_DELAY_MS)
         val url = "$BASE/release-group/?artist=$mbid&fmt=json"
         val json = fetchJson(url) ?: return@withContext emptyList()
@@ -198,7 +281,7 @@ class MusicBrainzService @Inject constructor() {
      * @param mbid MusicBrainz ID do artista
      * @return Lista de tags do artista
      */
-    suspend fun getArtistTags(mbid: String): List<String> = withContext(Dispatchers.IO) {
+    suspend fun getArtistTags(mbid: String): List<String> = withContext(io) {
         val details = getArtistDetails(mbid)
         details?.tags ?: emptyList()
     }
@@ -209,7 +292,7 @@ class MusicBrainzService @Inject constructor() {
      * @param artistName Nome do artista
      * @return Lista de tags do artista
      */
-    suspend fun getArtistTagsByName(artistName: String): List<String> = withContext(Dispatchers.IO) {
+    suspend fun getArtistTagsByName(artistName: String): List<String> = withContext(io) {
         try {
             val mbid = searchArtistId(artistName) ?: return@withContext emptyList()
             getArtistTags(mbid)
@@ -224,7 +307,7 @@ class MusicBrainzService @Inject constructor() {
      * @param limit Número máximo de resultados (padrão: 25, máximo: 100)
      * @see <a href="https://musicbrainz.org/doc/MusicBrainz_API">MusicBrainz API</a>
      */
-    suspend fun searchArtists(query: String, limit: Int = 25): List<MBArtist> = withContext(Dispatchers.IO) {
+    suspend fun searchArtists(query: String, limit: Int = 25): List<MBArtist> = withContext(io) {
         delay(REQUEST_DELAY_MS)
         val effectiveLimit = limit.coerceIn(1, 100)
         val url = "$BASE/artist/?query=$query&fmt=json&limit=$effectiveLimit"
@@ -242,7 +325,7 @@ class MusicBrainzService @Inject constructor() {
      * @param limit Número máximo de resultados (padrão: 25, máximo: 100)
      * @see <a href="https://musicbrainz.org/doc/MusicBrainz_API/Search">MusicBrainz Search</a>
      */
-    suspend fun searchArtistsByTag(tag: String, limit: Int = 25): List<MBArtist> = withContext(Dispatchers.IO) {
+    suspend fun searchArtistsByTag(tag: String, limit: Int = 25): List<MBArtist> = withContext(io) {
         delay(REQUEST_DELAY_MS)
         val effectiveLimit = limit.coerceIn(1, 100)
         // Busca usando a sintaxe de tag do MusicBrainz
@@ -260,7 +343,7 @@ class MusicBrainzService @Inject constructor() {
      * @param bandName Nome da banda
      * @return Lista de bandas similares
      */
-    suspend fun discoverSimilarBands(bandName: String): MBDiscoveryResponse = withContext(Dispatchers.IO) {
+    suspend fun discoverSimilarBands(bandName: String): MBDiscoveryResponse = withContext(io) {
         try {
             val artistId = searchArtistId(bandName) ?: return@withContext MBDiscoveryResponse(
                 success = false,
@@ -313,7 +396,7 @@ class MusicBrainzService @Inject constructor() {
     /**
      * Busca informações de país/região
      */
-    suspend fun getArea(areaId: String): MBArea? = withContext(Dispatchers.IO) {
+    suspend fun getArea(areaId: String): MBArea? = withContext(io) {
         try {
             delay(REQUEST_DELAY_MS)
             val url = "$BASE/area/$areaId?fmt=json"
@@ -365,24 +448,11 @@ class MusicBrainzService @Inject constructor() {
         return fetchJson("$BASE/artist/$mbid?inc=$inc&fmt=json")
     }
 
-    private fun fetchJson(urlString: String): JSONObject? {
-        return try {
-            val conn = URL(urlString).openConnection() as HttpURLConnection
-            conn.apply {
-                requestMethod = "GET"
-                setRequestProperty("User-Agent", USER_AGENT)
-                setRequestProperty("Accept", "application/json")
-                connectTimeout = CONNECT_TIMEOUT
-                readTimeout = READ_TIMEOUT
-            }
-            if (conn.responseCode == 429) return null
-            if (conn.responseCode != 200) return null
-            val body = conn.inputStream.bufferedReader().readText()
-            conn.disconnect()
-            JSONObject(body)
-        } catch (_: Exception) {
-            null
-        }
+    private suspend fun fetchJson(urlString: String): JSONObject? {
+        val resposta = http.get(urlString)
+        if (resposta.code != 200) return null
+        val body = resposta.body ?: return null
+        return runCatching { JSONObject(body) }.getOrNull()
     }
 
     private fun parseArtist(json: JSONObject): MBArtist {

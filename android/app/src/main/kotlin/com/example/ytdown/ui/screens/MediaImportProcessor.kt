@@ -10,6 +10,8 @@ import com.example.ytdown.core.domain.SongEntity
 import com.example.ytdown.core.infrastructure.persistence.DownloadDao
 import com.example.ytdown.core.infrastructure.persistence.SongDao
 import com.example.ytdown.core.metadata.MetadataExtractor
+import com.example.ytdown.core.artwork.AcaoDeCapa
+import com.example.ytdown.core.artwork.ArtworkPolicy
 import com.example.ytdown.core.artwork.FanArtTvService
 import com.example.ytdown.core.artwork.ArtworkCacheManager
 import com.example.ytdown.core.artwork.PythonMetadataBridge
@@ -117,7 +119,31 @@ class MediaImportProcessor @Inject constructor(
                         }
                     }
 
-                    if (cachedFile != null) {
+                    val acaoDeCapa = ArtworkPolicy.decidir(
+                        tagsLimpas = true,
+                        capaNoArquivo = hasArtwork,
+                        capaNoCache = cachedFile != null,
+                    )
+
+                    // Capa que existe so no cache precisa entrar no arquivo: sem
+                    // isso o SongEntity apontava para o cache (e o player do app
+                    // mostrava a capa) enquanto o arquivo seguia sem APIC, e em
+                    // qualquer outro player a faixa aparecia sem capa nenhuma.
+                    if (acaoDeCapa == AcaoDeCapa.EMBUTIR_DO_CACHE && cachedFile != null) {
+                        val embutiu = pythonMetadataBridge.embedAlbumArtwork(
+                            audioPath, cachedFile.absolutePath
+                        )
+                        android.util.Log.d("ImportProcessor",
+                            "Capa do cache embutida no arquivo: $embutiu — $audioPath")
+                        if (!embutiu) {
+                            LocalLogger.warning(
+                                "Capa ficou so no cache, Mutagen recusou o arquivo: $audioPath",
+                                tag = "ImportProcessor"
+                            )
+                        }
+                    }
+
+                    if (cachedFile != null && acaoDeCapa != AcaoDeCapa.ENRIQUECER) {
                         android.util.Log.d("ImportProcessor", "Arquivo com metadados e capa: ${existingMeta["title"]} — pulando enriquecimento")
 
                         val duration = metadataExtractor.extract(audioPath).duration
@@ -165,9 +191,8 @@ class MediaImportProcessor @Inject constructor(
 
             // Detecta e remove prefixo "Artista - " do titulo quando knownArtist esta presente
             if (resolvedArtist.isNotBlank()) {
-                val prefix = "$resolvedArtist - "
-                if (resolvedTitle.startsWith(prefix, ignoreCase = true)) {
-                    val stripped = resolvedTitle.removePrefix(prefix).trim()
+                val stripped = MetadataUtils.stripArtistPrefix(resolvedTitle, resolvedArtist)
+                if (stripped != resolvedTitle) {
                     android.util.Log.d("ImportProcessor",
                         "Titulo continha prefixo do artista: \"$resolvedTitle\" -> \"$stripped\"")
                     resolvedTitle = stripped
@@ -196,7 +221,11 @@ class MediaImportProcessor @Inject constructor(
                         "MusicBrainz sem resultados c/ artista. Tentando só com título: \"$resolvedTitle\"")
                     val fallback = musicBrainzService.searchRecording(resolvedTitle, "")
                     // Só aceita o fallback se o artista do resultado bater com o conhecido
-                    if (fallback != null && resolvedArtist.equals(fallback.artist, ignoreCase = true)) {
+                    // Comparacao normalizada: o MusicBrainz mistura apostrofo U+2019
+                    // com ASCII e alterna caixa no catalogo da mesma banda.
+                    if (fallback != null && MetadataUtils.normalizeForMatch(resolvedArtist) ==
+                        MetadataUtils.normalizeForMatch(fallback.artist)
+                    ) {
                         mbResult = fallback
                         android.util.Log.d("ImportProcessor",
                             "MusicBrainz fallback aceito: \"${fallback.title}\" artista=\"${fallback.artist}\"")

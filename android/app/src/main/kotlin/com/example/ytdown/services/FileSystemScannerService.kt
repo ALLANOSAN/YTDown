@@ -337,11 +337,15 @@ class FileSystemScannerService @Inject constructor(
 
     private fun findFileInTree(root: DocumentFile, title: String, extension: String): DocumentFile? {
         val files = root.listFiles()
-        // Tenta match exato primeiro
-        val match = files.find { 
-            it.isFile && it.name?.startsWith(title, ignoreCase = true) == true && it.name?.endsWith(extension, ignoreCase = true) == true
+        // Match exato de verdade: o comentario dizia "exato" mas a regra era
+        // startsWith, e o resultado vira `exportedPath` — alvo de toda escrita
+        // posterior. "Behold" se ligava ao arquivo de "Behold the Man" e o
+        // reparo seguinte reescrevia a faixa errada.
+        val arquivos = files.filter { it.isFile }
+        val escolhido = FileMatch.escolher(arquivos.mapNotNull { it.name }, title, extension)
+        if (escolhido != null) {
+            arquivos.find { it.name == escolhido }?.let { return it }
         }
-        if (match != null) return match
 
         // Busca recursiva
         for (dir in files.filter { it.isDirectory }) {

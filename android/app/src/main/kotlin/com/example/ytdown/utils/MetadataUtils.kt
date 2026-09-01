@@ -56,6 +56,14 @@ object MetadataUtils {
     private val paddedTrackPattern = Regex("""^0\d{0,2}\s+""")
 
     /**
+     * "Track 07 My Love" — rotulo que o proprio download deixa quando a fonte
+     * nao traz titulo. Nao e sentinela nem numero solto, entao passava intacto
+     * para a query do MusicBrainz e zerava o resultado: sem album, sem ano e
+     * com a capa errada. O `\b` impede casar "Tracks of My Tears".
+     */
+    private val trackLabelPattern = Regex("""^track\b\s*\d{1,3}\s*[.\-_)]*\s*""", RegexOption.IGNORE_CASE)
+
+    /**
      * Limpa um título derivado de NOME DE ARQUIVO.
      *
      * Remove numeração de faixa e sufixos de formato/bitrate que rippers e sites
@@ -77,6 +85,7 @@ object MetadataUtils {
         }
 
         val withoutTrack = withoutJunk
+            .replaceFirst(trackLabelPattern, "")
             .replaceFirst(punctuatedTrackPattern, "")
             .replaceFirst(paddedTrackPattern, "")
 
@@ -145,6 +154,32 @@ object MetadataUtils {
         }
         val atual = title.orEmpty().trim()
         return cleanFilenameTitle(atual) != atual
+    }
+
+    /**
+     * Forma canonica para comparar titulo/artista entre fontes diferentes.
+     *
+     * O MusicBrainz mistura o apostrofo tipografico U+2019 ("Angel\u2019s Disguise")
+     * com o ASCII ("It's Already Done") no catalogo da mesma banda, e alterna a
+     * caixa ("Enough Is Enough" / "Enough is Enough"). O titulo vindo do YouTube
+     * traz sempre ASCII, entao comparar as strings cruas rejeitava match correto.
+     */
+    fun normalizeForMatch(value: String): String =
+        value.replace('\u2019', '\'').lowercase()
+
+    /**
+     * Remove o prefixo "Artista - " do titulo, ignorando caixa.
+     *
+     * `removePrefix` do Kotlin nao aceita ignoreCase e devolve a string intacta
+     * quando nao casa exato — combinado com um `startsWith(ignoreCase = true)`
+     * o titulo do YouTube em caixa alta ("WHITECROSS - ...") seguia inteiro
+     * para a query do MusicBrainz e zerava o resultado.
+     */
+    fun stripArtistPrefix(title: String, artist: String): String {
+        if (artist.isBlank()) return title
+        val prefix = "${artist.trim()} - "
+        if (!title.startsWith(prefix, ignoreCase = true)) return title
+        return title.substring(prefix.length).trim()
     }
 
     /**

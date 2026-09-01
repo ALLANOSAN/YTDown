@@ -73,7 +73,12 @@ android/app/outputs/
 android/app/intermediates/
 # android/app/schemas/ NAO entra aqui: os schemas exportados do Room sao
 # a base para escrever a proxima migracao e para o AppDatabaseMigrationsTest.
-/scripts/
+# /scripts/* (nao /scripts/) para o negativo abaixo funcionar: git nao
+# reinclui arquivo dentro de diretorio ignorado. O harness de smoke test e
+# versionado; o resto de scripts/ segue local.
+/scripts/*
+!/scripts/test_automation/
+scripts/test_automation/__pycache__/
 # .github/* (nao .github/) para o negativo abaixo funcionar: git nao
 # reinclui arquivo dentro de diretorio ignorado.
 .github/*

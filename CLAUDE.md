@@ -75,16 +75,25 @@ cd android
 over ADB (logcat assertions, not instrumentation). It does *not* download anything; it only checks app
 state.
 
-Expect 1/3 on Android 16 even when the app is healthy — verified on 2026-09-01. Both "failures" are
-harness bugs, not defects:
+It gives 3/3 on a healthy app — verified on Android 16 (SDK 36) on 2026-09-01. It used to give 1/3
+on a healthy app; the four checks that lied were fixed the same day, and the shape of those bugs is
+worth knowing before writing a new check:
 
-- Any single falsy check exits the script with 1, and it prints those as `WARN`. In
-  `test_media_session.py` the only falsy one is `lock_screen`, which reads a device setting that
-  returns `null`.
-- `test_download_flow.py` greps `dumpsys window windows` for `mCurrentFocus`; on Android 16 that
-  subcommand no longer prints it. Plain `dumpsys window | grep mCurrentFocus` does.
+- **`dumpsys window windows` no longer prints `mCurrentFocus` on Android 16.** Plain `dumpsys window`
+  does. Use `common.get_focused_package()`.
+- **logcat truncates the process name to 15 chars**, so `com.example.ytdown.native` appears as
+  `e.ytdown.native` and grepping the full package never matches. Filter by PID:
+  `common.get_app_logcat()`.
+- **`adb pull` prints "1 file pulled"**, not the file. A check asserting on that output was asserting
+  on the pull message. Read the file on the device: `common.dump_ui_hierarchy()`.
+- **A device preference is not an app health signal.** `lock_screen_show_media` returns `null` when
+  untouched and used to fail the whole suite. `common.resumir_checks(obrigatorios, informativos)`
+  decides the exit code from required checks only and prints the rest as `INFO`.
 
-Before believing a red result, check `adb logcat -b crash` — an empty crash buffer plus a focused
+Those four helpers live in `common.py` and are covered by `test_common.py` — 23 pure `unittest` tests
+that mock `run_adb` and need no device. Run it after touching `common.py`.
+
+A red result still deserves `adb logcat -b crash`: an empty crash buffer plus a focused
 `MainActivity` means the app is fine and the script is not.
 
 ## Architecture
@@ -200,8 +209,10 @@ logcat), not bare `Log.e`.
   is no `resolutionStrategy`/`force` block and no `ksp.useKSP2` flag any more — KSP2 is on by
   default. `gradle.properties` still carries a comment about the old KSP2 workaround; it documents a
   setting that no longer exists.
-- `.gitignore` excludes `*.so`, `build.sh`, `scripts/`, `.planning/`, `.agent/` — several tracked-looking
-  files are local-only.
+- `.gitignore` excludes `*.so`, `build.sh`, `.planning/`, `.agent/` and most of `scripts/` — several
+  tracked-looking files are local-only. The exception is `scripts/test_automation/`, re-included via
+  `/scripts/*` + `!/scripts/test_automation/` (the negation only works because the parent pattern
+  ends in `/*`, not `/`).
 
 ### Package vs. directory
 

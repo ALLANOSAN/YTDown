@@ -18,19 +18,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import download
 
 
-class TestNoplaylistDecision(unittest.TestCase):
-    """Bug 1: noplaylist deve ser False quando a URL contém list=."""
-
-    def test_url_de_playlist_nao_deve_ignorar_playlist(self):
-        url = "https://www.youtube.com/watch?v=x-lgM56wZ_8&list=PLkLmA1--00s7"
-        # noplaylist: 'list=' not in url → False (baixa a playlist)
-        self.assertFalse("list=" not in url)
-
-    def test_url_de_video_sem_lista_ignora_playlist(self):
-        url = "https://www.youtube.com/watch?v=x-lgM56wZ_8"
-        self.assertTrue("list=" not in url)
-
-
 class TestApplyTagsComEntriesNone(unittest.TestCase):
     """Bug 3: não deve crashar com entries None (vídeos indisponíveis)."""
 

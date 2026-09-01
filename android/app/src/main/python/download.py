@@ -5,6 +5,7 @@ from logger import ChaquopyLogger, log_failure
 from runtime import _get_yt_dlp_module
 from helpers import (
     _apply_cookies_file,
+    _is_pure_playlist_url,
     _failure_payload,
     _is_retryable_network_error,
     _resolve_metadata,
@@ -256,6 +257,17 @@ def download_video(
     progress_callback=None,
 ):
     ChaquopyLogger.info(f"Iniciando download_video: {url}", category="FLOW")
+
+    # /playlist?list=X ignora noplaylist=True e expande as N faixas, que
+    # cairiam todas no mesmo output_path. Recusa antes de baixar qualquer
+    # byte: a fila deve enviar uma faixa por vez (fetch_video_info expande).
+    if _is_pure_playlist_url(url):
+        return json.dumps(log_failure(
+            "URL de playlist não pode virar um único arquivo — "
+            "enfileire uma faixa por vez",
+            stage="playlist_url_rejeitada",
+        ))
+
     progress_data = {"percent": 0}
     downloaded_info = None
     final_filename = None
@@ -306,9 +318,12 @@ def download_video(
         "retries": 5,
         "fragment_retries": 10,
         "logger": ChaquopyLogger,
-        # ponytail: playlist share URLs (watch?v=X&list=Y) devem baixar a
-        # playlist; só ignora playlist quando a URL é de vídeo puro
-        "noplaylist": "list=" not in (url or ""),
+        # Cada chamada baixa UM vídeo para UM output_path fixo
+        # ("Artista - Album - Titulo.%(ext)s"), que não tem placeholder por
+        # faixa. Reexpandir a playlist aqui fazia as N faixas caírem no MESMO
+        # arquivo, cada uma sobrescrevendo a anterior. A expansão acontece no
+        # fetch_video_info, que gera um item de fila por faixa.
+        "noplaylist": True,
         # ponytail: vídeos indisponíveis (semi-privados/bot-check) não podem
         # abortar a playlist — pula a entry, baixa o resto
         "ignoreerrors": True,

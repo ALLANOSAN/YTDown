@@ -3,7 +3,7 @@ import re
 import time
 from datetime import datetime
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 from urllib.request import Request, urlopen
 
 _MAX_THUMBNAIL_BYTES = 6 * 1024 * 1024
@@ -271,6 +271,57 @@ def _resolve_metadata(title, artist, album, info):
         resolved_album = "YTDown"
 
     return resolved_title, resolved_artist, resolved_album
+
+
+# Mix/rádio gerados pelo YouTube (list=RD...) são infinitos: o link
+# compartilhado de um Mix deve baixar só o vídeo clicado, nunca a "playlist".
+_PREFIXOS_DE_RADIO = ("RD",)
+
+
+def _extrair_id_da_playlist(url):
+    """Devolve o valor do parâmetro list= da URL, ou None se não houver."""
+    if not url:
+        return None
+    try:
+        query = parse_qs(urlparse(url).query)
+    except ValueError:
+        return None
+    valores = query.get("list") or []
+    for valor in valores:
+        if valor:
+            return valor
+    return None
+
+
+def _is_pure_playlist_url(url):
+    """
+    True para URL que aponta só para a playlist (/playlist?list=X), sem vídeo.
+
+    Esse formato ignora noplaylist=True: o yt-dlp expande as N faixas de
+    qualquer jeito. Como o download grava num output_path único, isso faria
+    as faixas se sobrescreverem em silêncio.
+    """
+    if not _extrair_id_da_playlist(url):
+        return False
+    try:
+        query = parse_qs(urlparse(url).query)
+    except ValueError:
+        return False
+    return not any(query.get("v") or [])
+
+
+def _should_expand_playlist(url):
+    """
+    Decide se a URL deve baixar a playlist inteira ou só o vídeo.
+
+    Link compartilhado de álbum/playlist (watch?v=X&list=OLAK5uy_... ou &list=PL...)
+    expande para todas as faixas. Mix/rádio (list=RD...) não — o YouTube gera
+    entradas indefinidamente a partir do vídeo clicado.
+    """
+    playlist_id = _extrair_id_da_playlist(url)
+    if not playlist_id:
+        return False
+    return not playlist_id.upper().startswith(_PREFIXOS_DE_RADIO)
 
 
 def _map_fetch_video_info_error_message(error_msg):

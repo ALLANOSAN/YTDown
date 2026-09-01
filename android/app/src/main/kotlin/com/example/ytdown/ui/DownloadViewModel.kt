@@ -26,6 +26,25 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import com.example.ytdown.utils.LocalLogger
 
+/**
+ * Decide o título de cada item da fila de download.
+ *
+ * Numa playlist o campo de título vem pré-preenchido com o nome do ÁLBUM.
+ * Aplicá-lo a todas as faixas gerava o mesmo nome de arquivo pra todas
+ * ("Artista - Album - Album"), e uma sobrescrevia a outra na exportação.
+ * Por isso o título digitado só vale quando há um único item.
+ */
+internal object DownloadTitlePolicy {
+    private const val FALLBACK = "Sem título"
+
+    fun resolveItemTitle(sharedTitle: String, itemTitle: String, isPlaylist: Boolean): String {
+        if (isPlaylist) {
+            return itemTitle.ifBlank { FALLBACK }
+        }
+        return sharedTitle.ifBlank { itemTitle }.ifBlank { FALLBACK }
+    }
+}
+
 // FIX #9: Sealed class for proper error state exposed to UI
 sealed class DownloadUiState {
     object Idle : DownloadUiState()
@@ -485,9 +504,9 @@ constructor(
                                     ?: artworkManager.getArtistImage(currentState.artistInput)
                 }
 
-                // O titleInput editado pelo usuário vale pra todos os itens (assume que ele
-                // quis usar o mesmo título pra playlist ou ajustou pra um único vídeo).
-                // Se o usuário deixou em branco, cada item usa o título que veio do YouTube.
+                // O titleInput editado pelo usuário só sobrescreve quando há um único
+                // item: numa playlist ele é o nome do álbum, e usá-lo em todas as faixas
+                // faria todas virarem o mesmo arquivo (ver DownloadTitlePolicy).
                 val sharedTitle = currentState.titleInput
 
                 val specs = selectedItems.map { item ->
@@ -495,8 +514,11 @@ constructor(
                     val perItemMeta =
                             MediaMetadata(
                                     title = MediaTitle(
-                                            sharedTitle.ifBlank { item.title.value }
-                                                    .ifBlank { "Sem título" }
+                                            DownloadTitlePolicy.resolveItemTitle(
+                                                    sharedTitle = sharedTitle,
+                                                    itemTitle = item.title.value,
+                                                    isPlaylist = currentState.isPlaylist,
+                                            )
                                     ),
                                     artist = ArtistName(currentState.artistInput),
                                     album = AlbumName(currentState.albumInput)

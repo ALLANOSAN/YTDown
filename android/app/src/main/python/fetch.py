@@ -7,16 +7,24 @@ from helpers import (
     _failure_payload,
     _is_retryable_network_error,
     _map_fetch_video_info_error_message,
+    _should_expand_playlist,
 )
 
 
 def fetch_video_info(url, app_files_dir=None):
+    expandir_playlist = _should_expand_playlist(url)
     ydl_opts = {
         "format": "bestaudio/best",
         "quiet": True,
         "no_warnings": True,
-        "extract_flat": True,  # ✅ IMPORTANTE: Não extrai detalhes de cada item da playlist (evita timeout)
-        "noplaylist": True,    # ✅ Se for um vídeo com Mix, ignora o restante da rádio
+        # "in_playlist" e não True: achata só os itens DE DENTRO da playlist
+        # (evita timeout), mas continua resolvendo o vídeo pedido. Com True o
+        # yt-dlp devolve {_type: "url", title: None} para watch?v=X&list=Y e a
+        # playlist inteira virava um único item "Sem título".
+        "extract_flat": "in_playlist",
+        # Link compartilhado de álbum expande para todas as faixas; Mix/rádio
+        # (list=RD...) baixa só o vídeo clicado.
+        "noplaylist": not expandir_playlist,
         "socket_timeout": 20,
         "retries": 2,
         "fragment_retries": 3,

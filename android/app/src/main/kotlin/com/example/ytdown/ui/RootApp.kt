@@ -4,7 +4,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
-import androidx.compose.material.icons.outlined.Album
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.LaunchedEffect
@@ -76,7 +75,6 @@ private fun RootBottomNavigation(currentRoute: String?, onNavigate: (String) -> 
                         NavigationItem("Buscar", Screen.Home.route, Icons.Filled.Search),
                         NavigationItem("Downloads", Screen.Downloads.route, Icons.Filled.Folder),
                         NavigationItem("Biblioteca", Screen.Library.route, Icons.Filled.MusicNote),
-                        NavigationItem("Metal", Screen.MetalDiscovery.route, Icons.Outlined.Album),
                         NavigationItem("Navegador", Screen.Browser.route, Icons.Filled.Explore)
                 )
 

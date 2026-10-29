@@ -60,4 +60,29 @@ class MusicBrainzColetaneaTest {
 
         assertTrue(pedidas.single().contains("limit=100"))
     }
+
+    /**
+     * A busca e o picker usam o titulo sem marcacao de versao: com o sufixo a
+     * frase Lucene nao casava nada, e o titulo exato do recording nunca batia.
+     */
+    @Test
+    fun `busca sem a marcacao de versao do YouTube`() = runTest {
+        val pedidas = mutableListOf<String>()
+        val http = object : MusicBrainzHttpClient {
+            override suspend fun get(url: String): HttpResponse {
+                pedidas.add(url)
+                if (!url.contains("/recording/")) return HttpResponse(404, null)
+                return HttpResponse(200, """{"recordings": [{ "id": "jh", "title": "Jekyll & Hyde",
+                  "artist-credit": [{"name": "Petra", "artist": {"id": "p", "name": "Petra"}}],
+                  "releases": [{"id": "r", "title": "Jekyll & Hyde", "date": "2003-08-19",
+                    "release-group": {"id": "rg", "primary-type": "Album"}}]}]}""")
+            }
+        }
+
+        val achado = MusicBrainzService(http, StandardTestDispatcher(testScheduler))
+            .searchRecording("Jekyll & Hyde (Jekyll & Hyde Album Version)", "Petra")
+
+        assertTrue(java.net.URLDecoder.decode(pedidas.first(), "UTF-8").contains("recording:\"Jekyll & Hyde\" AND"))
+        assertEquals("Jekyll & Hyde", achado?.album)
+    }
 }

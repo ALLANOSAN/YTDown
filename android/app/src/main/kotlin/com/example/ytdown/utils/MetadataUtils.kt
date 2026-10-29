@@ -73,6 +73,33 @@ object MetadataUtils {
      * Não usar em títulos que já vêm de metadados confiáveis (yt-dlp, MusicBrainz):
      * "02 Ghosts I" e "Song (2011)" são títulos legítimos.
      */
+    // Marcacao que o YouTube poe no titulo e que nao e nome de musica.
+    // "live" fica de fora: "(Live)" e outra gravacao, nao ruido.
+    private val versionNoisePattern = Regex(
+        """\b(?:album version|single version|official|oficial|v[ií]deo|videoclipe|clipe|lyrics?|letra|legendad[oa]|[aá]udio|remaster(?:ed)?|visualizer|hd|hq|4k|explicit)\b""",
+        RegexOption.IGNORE_CASE
+    )
+    private val trailingSegmentPattern = Regex("""\s+-\s+([^-]+)$""")
+
+    /**
+     * Titulo para consultar o MusicBrainz: sem a marcacao de versao/video do
+     * YouTube. "Jekyll & Hyde (Jekyll & Hyde Album Version)" nao casava a frase
+     * Lucene e o picker nunca via titulo exato. Separado de [cleanFilenameTitle]
+     * de proposito: aquele decide quem o Reparar Tags considera sujo, e mudar
+     * o criterio reprocessaria a biblioteca inteira.
+     */
+    fun tituloParaBusca(value: String): String {
+        var titulo = bracketGroupPattern.replace(value) { m ->
+            if (versionNoisePattern.containsMatchIn(m.groupValues[1])) "" else m.value
+        }.replace(Regex("\\s+"), " ").trim()
+        while (true) {
+            val m = trailingSegmentPattern.find(titulo) ?: break
+            if (!versionNoisePattern.containsMatchIn(m.groupValues[1])) break
+            titulo = titulo.substring(0, m.range.first).trim()
+        }
+        return titulo.ifBlank { value.trim() }
+    }
+
     fun cleanFilenameTitle(value: String): String {
         val normalized = normalizeMetadataText(value)
 

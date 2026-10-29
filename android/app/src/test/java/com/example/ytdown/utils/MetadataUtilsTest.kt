@@ -271,4 +271,24 @@ class MetadataUtilsTest {
         assertEquals("Topic", MetadataUtils.sanitizeArtist("Topic"))
         assertEquals("Vevo", MetadataUtils.sanitizeArtist("Vevo"))
     }
+
+    /**
+     * "Jekyll & Hyde (Jekyll & Hyde Album Version)" nao achava nada no
+     * MusicBrainz: o sufixo e marcacao de versao do YouTube, nao parte do nome.
+     */
+    @Test
+    fun `tituloParaBusca tira marcacao de versao e de video`() {
+        assertEquals("Jekyll & Hyde", MetadataUtils.tituloParaBusca("Jekyll & Hyde (Jekyll & Hyde Album Version)"))
+        assertEquals("Numb", MetadataUtils.tituloParaBusca("Numb (Official Music Video)"))
+        assertEquals("Holiday", MetadataUtils.tituloParaBusca("Holiday [Remastered 2015]"))
+        assertEquals("Mil Faces de um Homem Leal", MetadataUtils.tituloParaBusca("Mil Faces de um Homem Leal - Clipe Oficial - HD"))
+    }
+
+    /** Parentese que e parte do nome da musica fica: "(Live)" e outra gravacao. */
+    @Test
+    fun `tituloParaBusca preserva parentese que e do nome`() {
+        assertEquals("Vida Loka (Parte 2)", MetadataUtils.tituloParaBusca("Vida Loka (Parte 2)"))
+        assertEquals("Blackout (Live)", MetadataUtils.tituloParaBusca("Blackout (Live)"))
+        assertEquals("Song (2011)", MetadataUtils.tituloParaBusca("Song (2011)"))
+    }
 }

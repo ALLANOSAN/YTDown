@@ -245,6 +245,9 @@ class MusicBrainzService internal constructor(
         title: String,
         artist: String
     ): MusicBrainzRecording? = withContext(io) {
+        // Sem a marcacao de versao do YouTube na query E no picker: com ela a
+        // frase Lucene nao casava e o titulo exato do recording nunca batia.
+        val title = MetadataUtils.tituloParaBusca(title)
         return@withContext try {
             delay(1100L) // Rate limit
             val query = buildRecordingQuery(title, artist)

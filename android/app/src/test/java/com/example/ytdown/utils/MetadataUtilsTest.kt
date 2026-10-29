@@ -253,4 +253,22 @@ class MetadataUtilsTest {
             )
         )
     }
+
+    /**
+     * Download avulso usa o nome do canal como artista. Canal oficial do
+     * YouTube Music e "Banda - Topic", o da gravadora e "BandaVEVO": nenhum
+     * dos dois casa no MusicBrainz, e o sufixo ia parar na tag do arquivo.
+     */
+    @Test
+    fun `sanitizeArtist tira o sufixo de canal do YouTube`() {
+        assertEquals("Whitecross", MetadataUtils.sanitizeArtist("Whitecross - Topic"))
+        assertEquals("Queen", MetadataUtils.sanitizeArtist("QueenVEVO"))
+        assertEquals("Linkin Park", MetadataUtils.sanitizeArtist("Linkin Park VEVO"))
+    }
+
+    @Test
+    fun `sanitizeArtist nao corta nome que so contem as letras do sufixo`() {
+        assertEquals("Topic", MetadataUtils.sanitizeArtist("Topic"))
+        assertEquals("Vevo", MetadataUtils.sanitizeArtist("Vevo"))
+    }
 }

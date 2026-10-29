@@ -192,8 +192,13 @@ object MetadataUtils {
      */
     fun sanitizeArtist(value: String?): String {
         val trimmed = (value ?: "").trim()
-        return if (isUnknownMetadata(trimmed)) "" else trimmed
+        if (isUnknownMetadata(trimmed)) return ""
+        // Nome de canal do YouTube ("Banda - Topic", "BandaVEVO") nao e
+        // artista: nao casa no MusicBrainz e o sufixo ia parar na tag.
+        return trimmed.replace(youtubeChannelSuffix, "").trim().ifEmpty { trimmed }
     }
+
+    private val youtubeChannelSuffix = Regex("""(?:\s+-\s+Topic|\s*VEVO)$""", RegexOption.IGNORE_CASE)
 
     fun isUnknownMetadata(value: String?): Boolean {
         val normalized = (value ?: "").trim().lowercase()

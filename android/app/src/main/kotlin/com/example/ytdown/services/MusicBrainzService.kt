@@ -1,6 +1,7 @@
 package com.example.ytdown.services
 
 import com.example.ytdown.core.metadata.model.MusicBrainzRecording
+import com.example.ytdown.utils.MetadataUtils
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -94,33 +95,115 @@ class MusicBrainzService internal constructor(
          * gravava a coletanea como album. A selecao percorre todos os pares
          * (recording, release), descarta os tipos rejeitados e fica com a data
          * mais antiga — o lancamento original, nao a regravacao nem a coletanea.
+         *
+         * Titulo generico casa por aproximacao com outra musica ("Baby Back Now"
+         * numa busca por "Now!" dos Scorpions, de 1965): sem conferir o titulo
+         * do recording, a mais antiga vencia. So valem recordings com o titulo
+         * buscado; sem nenhum, vale tudo (melhor que album vazio).
          */
         internal fun pickOriginalRecording(
             recordings: JSONArray,
             artist: String,
+            title: String,
         ): ReleaseChoice? {
             val pares = mutableListOf<ReleaseChoice>()
             for (i in 0 until recordings.length()) {
                 val recording = recordings.optJSONObject(i) ?: continue
+                if (!recording.optString("title").trim().equals(title.trim(), ignoreCase = true)) continue
                 val releases = recording.optJSONArray("releases") ?: continue
                 for (j in 0 until releases.length()) {
                     releases.optJSONObject(j)?.let { pares.add(ReleaseChoice(recording, it)) }
                 }
             }
-            if (pares.isEmpty()) return null
-            val originais = pares.filter { par ->
-                secondaryTypes(par.release).none { it in TIPOS_REJEITADOS }
+            // Nenhum titulo exato (ex.: sufixo "(stereo)"): aceita o titulo
+            // buscado seguido de sufixo de versao. "Vale tudo" devolvia outra
+            // musica da mesma banda e o arquivo ganhava o titulo dela.
+            if (pares.isEmpty()) {
+                for (i in 0 until recordings.length()) {
+                    val recording = recordings.optJSONObject(i) ?: continue
+                    if (!tituloComSufixoDeVersao(recording.optString("title"), title)) continue
+                    val releases = recording.optJSONArray("releases") ?: continue
+                    for (j in 0 until releases.length()) {
+                        releases.optJSONObject(j)?.let { pares.add(ReleaseChoice(recording, it)) }
+                    }
+                }
             }
-            // Sem nenhum original a coletanea ainda e melhor que album vazio.
-            val candidatos = originais.ifEmpty { pares }
+            if (pares.isEmpty()) return null
+            // `artist:"Queen"` e frase Lucene: casa "Queen Latifah" e "The Queen
+            // Tribute Band". Sem conferir o credito, a gravacao mais antiga de
+            // OUTRO artista vencia e sobrescrevia titulo e artista do arquivo.
+            // Nenhum do artista buscado: nao ha match. Quem chama mantem o que
+            // ja sabia (ou tenta o fallback so por titulo, que confere o artista).
+            val doArtista = pares.filter { artistaBate(it.recording, artist) }
+            if (doArtista.isEmpty()) return null
+            val originais = doArtista.filter { par ->
+                secondaryTypes(par.release).none { it in TIPOS_REJEITADOS } &&
+                    !deVariosArtistas(par.release)
+            }
+            // Single/broadcast do mesmo ano e mais antigo que a reemissao de
+            // estudio — e o original de 1982 esta sem data. Sem preferencia por
+            // album, o single virava a tag ("No One Like You / Toccami Toccami"
+            // em vez de "Blackout"). Album de estudio vence; sem nenhum, vale
+            // qualquer original; sem original, a coletanea ainda e melhor que
+            // album vazio.
+            val albuns = originais.filter { primaryType(it.release) == "album" }
+            val candidatos = albuns.ifEmpty { originais }.ifEmpty { doArtista }
             return candidatos.minByOrNull { par ->
                 // Data vazia vai para o fim: sem data nao da para provar que e a origem.
                 par.release.optString("date").ifBlank { "9999" }
             }
         }
 
+        /** "Love of My Life (stereo)" / "[Remastered]" / " - Live" ainda sao "Love of My Life". */
+        private fun tituloComSufixoDeVersao(encontrado: String, buscado: String): Boolean {
+            val e = MetadataUtils.normalizeForMatch(encontrado.trim())
+            val b = MetadataUtils.normalizeForMatch(buscado.trim())
+            if (b.isEmpty() || !e.startsWith(b)) return false
+            val resto = e.substring(b.length).trimStart()
+            return resto.isEmpty() || resto.first() in "([-"
+        }
+
+        /**
+         * O artista buscado e um dos creditados no recording? Sem artista
+         * buscado (fallback so por titulo) qualquer um vale — quem chama
+         * confere depois. "The " inicial e ignorado: o YouTube e o MusicBrainz
+         * divergem em "The Scorpions" / "Scorpions".
+         */
+        private fun artistaBate(recording: JSONObject, artist: String): Boolean {
+            if (artist.isBlank()) return true
+            val creditos = recording.optJSONArray("artist-credit") ?: return true
+            val buscado = chaveDeArtista(artist)
+            val nomes = (0 until creditos.length()).mapNotNull { i ->
+                creditos.optJSONObject(i)?.let { c ->
+                    c.optJSONObject("artist")?.optString("name")?.ifBlank { null }
+                        ?: c.optString("name")
+                }
+            }
+            return nomes.any { chaveDeArtista(it) == buscado }
+        }
+
+        private fun chaveDeArtista(nome: String): String =
+            MetadataUtils.normalizeForMatch(nome.trim()).removePrefix("the ").trim()
+
         /** Secondary-types que nunca sao o album de origem da faixa. */
-        private val TIPOS_REJEITADOS = setOf("compilation")
+        private val TIPOS_REJEITADOS = setOf("compilation", "live")
+
+        /** MBID fixo do artista especial "Various Artists" no MusicBrainz. */
+        private const val VARIOUS_ARTISTS_MBID = "89ad4ac3-39f7-470e-963a-56509c546377"
+
+        /**
+         * Coletanea de varios artistas nem sempre tem secondary-type
+         * "compilation": "96% Puddel Rock" so se denuncia pelo credito do
+         * lancamento, e vencia "Crazy World" em "Wind of Change".
+         */
+        private fun deVariosArtistas(release: JSONObject): Boolean {
+            val creditos = release.optJSONArray("artist-credit") ?: return false
+            return (0 until creditos.length()).any { i ->
+                val artista = creditos.optJSONObject(i)?.optJSONObject("artist")
+                artista?.optString("id") == VARIOUS_ARTISTS_MBID ||
+                    artista?.optString("name").equals("Various Artists", ignoreCase = true)
+            }
+        }
 
         private fun secondaryTypes(release: JSONObject): List<String> {
             val tipos = release.optJSONObject("release-group")
@@ -128,6 +211,11 @@ class MusicBrainzService internal constructor(
                 ?: return emptyList()
             return (0 until tipos.length()).map { tipos.optString(it).lowercase() }
         }
+
+        private fun primaryType(release: JSONObject): String =
+            release.optJSONObject("release-group")
+                ?.optString("primary-type")
+                ?.lowercase().orEmpty()
 
         internal fun buildRecordingQuery(title: String, artist: String): String {
             val recording = "recording:\"${escapeLucenePhrase(title.trim())}\""
@@ -160,7 +248,9 @@ class MusicBrainzService internal constructor(
         return@withContext try {
             delay(1100L) // Rate limit
             val query = buildRecordingQuery(title, artist)
-            val url = "https://musicbrainz.org/ws/2/recording/?query=${java.net.URLEncoder.encode(query, "UTF-8")}&fmt=json&inc=artists+releases+release-groups"
+            // limit=100: o padrao (25) devolveu 25 de 141 gravacoes de "Wind of
+            // Change" e nenhuma trazia o Crazy World — a coletanea vencia.
+            val url = "https://musicbrainz.org/ws/2/recording/?query=${java.net.URLEncoder.encode(query, "UTF-8")}&fmt=json&limit=100&inc=artists+releases+release-groups"
 
             // Sob rate limit a resposta e um corpo de erro, as vezes com HTTP 200.
             // Desistir na primeira fazia a banda parecer inexistente.
@@ -179,7 +269,7 @@ class MusicBrainzService internal constructor(
             }
             val encontrados = recordings ?: return@withContext null
 
-            val escolha = pickOriginalRecording(encontrados, artist) ?: return@withContext null
+            val escolha = pickOriginalRecording(encontrados, artist, title) ?: return@withContext null
             val item = escolha.recording
             val recordingMbid = item.optString("id")
             val release: JSONObject? = escolha.release

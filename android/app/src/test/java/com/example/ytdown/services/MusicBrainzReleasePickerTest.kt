@@ -62,7 +62,7 @@ class MusicBrainzReleasePickerTest {
 
     @Test
     fun `escolhe o album de estudio em vez da coletanea que veio em primeiro`() {
-        val escolha = MusicBrainzService.pickOriginalRecording(whitecrossLoveOnTheLine, "Whitecross")
+        val escolha = MusicBrainzService.pickOriginalRecording(whitecrossLoveOnTheLine, "Whitecross", "Love on the Line")
 
         assertEquals("Love on the Line", escolha?.release?.optString("title"))
     }
@@ -104,8 +104,87 @@ class MusicBrainzReleasePickerTest {
 
     @Test
     fun `escolhe o album de estreia entre varios recordings ignorando coletaneas`() {
-        val escolha = MusicBrainzService.pickOriginalRecording(whitecrossEnoughIsEnough, "Whitecross")
+        val escolha = MusicBrainzService.pickOriginalRecording(whitecrossEnoughIsEnough, "Whitecross", "Enough Is Enough")
 
         assertEquals("Whitecross", escolha?.release?.optString("title"))
+    }
+
+    /**
+     * Resposta real (reduzida) para `recording:"Blackout" AND artist:"Scorpions"`.
+     * A versao ao vivo de 1988 ("To Russia With Love...") e mais antiga que a
+     * reemissao de estudio do Blackout (2015) — e o original de 1982 esta sem
+     * data no MusicBrainz. Escolher pela data mais antiga gravava o ao vivo
+     * como album da faixa; ao vivo nunca e o album de origem.
+     */
+    private val scorpionsBlackoutAoVivo = JSONArray(
+        """
+        [
+          { "id": "live-rec", "title": "Blackout", "score": 100,
+            "releases": [ { "id": "rel-live", "title": "To Russia With Love and Other Savage Amusements", "date": "1988",
+              "release-group": { "primary-type": "Album", "secondary-types": ["Live"] } } ] },
+          { "id": "studio-rec", "title": "Blackout", "score": 99,
+            "releases": [ { "id": "rel-studio", "title": "Blackout", "date": "2015-11-06",
+              "release-group": { "primary-type": "Album" } } ] }
+        ]
+        """.trimIndent()
+    )
+
+    @Test
+    fun `ao vivo nao vira album de origem mesmo sendo mais antigo`() {
+        val escolha = MusicBrainzService.pickOriginalRecording(scorpionsBlackoutAoVivo, "Scorpions", "Blackout")
+
+        assertEquals("Blackout", escolha?.release?.optString("title"))
+    }
+
+    /**
+     * Resposta real (reduzida) para `recording:"No One Like You" AND
+     * artist:"Scorpions" — a faixa estourou no Blackout (1982), mas o single
+     * homonimo e do mesmo ano e o original esta sem data. Sem preferencia por
+     * album, o single (1982) vencia a reemissao de estudio e virava a tag.
+     */
+    private val scorpionsSingleVsAlbum = JSONArray(
+        """
+        [
+          { "id": "single-rec", "title": "No One Like You", "score": 100,
+            "releases": [ { "id": "rel-single", "title": "No One Like You / Toccami Toccami", "date": "1982",
+              "release-group": { "primary-type": "Single" } } ] },
+          { "id": "studio-rec", "title": "No One Like You", "score": 100,
+            "releases": [ { "id": "rel-studio", "title": "Blackout", "date": "2015-11-06",
+              "release-group": { "primary-type": "Album" } } ] }
+        ]
+        """.trimIndent()
+    )
+
+    @Test
+    fun `single nao vira album de origem havendo album de estudio`() {
+        val escolha = MusicBrainzService.pickOriginalRecording(scorpionsSingleVsAlbum, "Scorpions", "No One Like You")
+
+        assertEquals("Blackout", escolha?.release?.optString("title"))
+    }
+
+    /**
+     * Resposta real (reduzida) para `recording:"Now!" AND artist:"Scorpions" —
+     * titulo generico que casa por aproximacao com outra musica ("Baby Back
+     * Now", de 1965). Sem conferir o titulo do recording, a faixa de 1965
+     * vencia por ser a mais antiga e virava o album da tag.
+     */
+    private val scorpionsMusicaErrada = JSONArray(
+        """
+        [
+          { "id": "outra-musica", "title": "Baby Back Now", "score": 79,
+            "releases": [ { "id": "rel-1965", "title": "Hello Josephine!", "date": "1965",
+              "release-group": { "primary-type": "Album" } } ] },
+          { "id": "musica-certa", "title": "Now!", "score": 100,
+            "releases": [ { "id": "rel-studio", "title": "Blackout", "date": "2015-11-06",
+              "release-group": { "primary-type": "Album" } } ] }
+        ]
+        """.trimIndent()
+    )
+
+    @Test
+    fun `outra musica com titulo aproximado nao vira album de origem`() {
+        val escolha = MusicBrainzService.pickOriginalRecording(scorpionsMusicaErrada, "Scorpions", "Now!")
+
+        assertEquals("Blackout", escolha?.release?.optString("title"))
     }
 }

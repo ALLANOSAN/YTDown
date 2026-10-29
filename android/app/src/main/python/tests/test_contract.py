@@ -20,12 +20,15 @@ from helpers import _failure_payload
 # faixa, disco, ano e os IDs da capa — coisas que o enrich.py não devolvia.
 # get_band_details/get_similar_bands/get_band_albums saíram com o metal_archives:
 # nenhum Kotlin chamava — eram a fachada da aba Metal, removida do app.
+# check_availability entrou pelo filtro de indisponíveis (TDD 29/09/2026):
+# YtDlpWrapper.checkAvailability o chama antes de agendar. Mudança deliberada.
 EXPORTS_ESPERADOS = {
     "download_video",
     "fetch_video_info",
     "rewrite_file_metadata",
     "check_yt_dlp_update",
     "update_yt_dlp_if_needed",
+    "check_availability",
 }
 
 # Chamados direto no modulo `metadata`, sem passar pela fachada ytdown.

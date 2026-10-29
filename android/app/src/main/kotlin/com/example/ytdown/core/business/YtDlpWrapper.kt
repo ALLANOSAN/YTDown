@@ -14,6 +14,9 @@ import com.example.ytdown.utils.LocalLogger
 
 data class DownloadResult(val exitCode: ExitCode, val outputPath: String? = null)
 
+/** Resultado do probe de disponibilidade (par do check_availability Python). */
+data class AvailabilityResult(val url: String, val available: Boolean, val reason: String?)
+
 class YtDlpWrapper(
         private val env: PythonEnvironment,
         private val binaryOrchestrator: BinaryOrchestrator,
@@ -197,6 +200,63 @@ class YtDlpWrapper(
         } catch (e: Exception) {
             observabilityService.trackError("YtDlpWrapper", "Fatal error during metadata rewrite", e, mapOf("filePath" to filePath))
             ExitCode(1)
+        }
+    }
+
+    /**
+     * Sonda disponibilidade de cada URL via probe Python (extract_info rápido,
+     * sem download). Regra de segurança espelhada dos dois lados: qualquer
+     * resultado inconclusivo (probe falhou, sem resposta) volta
+     * available=true — nunca se descarta vídeo por falta de informação.
+     */
+    fun checkAvailability(urls: List<String>): Map<String, AvailabilityResult> {
+        if (urls.isEmpty()) return emptyMap()
+        return try {
+            val py = Python.getInstance()
+            val module = py.getModule("ytdown")
+            val resultJson =
+                    module.callAttr(
+                                    "check_availability",
+                                    org.json.JSONArray(urls).toString(),
+                                    binaryOrchestrator.getAppFilesDir()
+                            )
+                            .toString()
+            val result = JSONObject(resultJson)
+            if (!result.optBoolean("success", false)) {
+                observabilityService.trackError(
+                        "YtDlpWrapper",
+                        "Availability probe failed",
+                        metadata = mapOf("error" to result.optString("error", "Unknown"))
+                )
+                return urls.associateWith { AvailabilityResult(it, true, null) }
+            }
+            val out = mutableMapOf<String, AvailabilityResult>()
+            val items = result.optJSONObject("data")?.optJSONArray("results")
+            if (items != null) {
+                for (i in 0 until items.length()) {
+                    val o = items.optJSONObject(i) ?: continue
+                    val url = o.optString("url")
+                    if (url.isBlank()) continue
+                    out[url] =
+                            AvailabilityResult(
+                                    url = url,
+                                    available = o.optBoolean("available", true),
+                                    // optString em JSONObject.NULL devolve a string "null":
+                                    // checa isNull antes.
+                                    reason =
+                                            if (o.isNull("reason")) null
+                                            else
+                                                    o.optString("reason").takeIf {
+                                                        it.isNotBlank()
+                                                    }
+                            )
+                }
+            }
+            // URL sem resposta no payload = inconclusivo = agenda.
+            urls.associateWith { out[it] ?: AvailabilityResult(it, true, null) }
+        } catch (e: Exception) {
+            observabilityService.trackError("YtDlpWrapper", "Fatal error during availability probe", e)
+            urls.associateWith { AvailabilityResult(it, true, null) }
         }
     }
 

@@ -86,6 +86,7 @@ constructor(
         private val metadataManager: DownloadMetadataManager,
         private val artworkManager: ArtworkManager,
         private val scheduler: DownloadScheduler,
+        private val ytDlpWrapper: YtDlpWrapper,
         private val downloadFeedService: DownloadFeedService,
         private val libraryRepository: LibraryRepository,
         private val downloadRepository: DownloadRepository,
@@ -526,20 +527,50 @@ constructor(
                     PlaylistItem(item.url.value, perItemMeta, downloadOptions, resolvedArtworkUrl, item.playlistIndex)
                 }
 
+                // Probe de disponibilidade (estilo Snaptube: saber ANTES de baixar).
+                // Roda em IO: ~1s por URL. Indisponíveis nem entram na fila.
+                _uiState.value = DownloadUiState.Loading
+                val disponibilidade =
+                        withContext(Dispatchers.IO) {
+                            ytDlpWrapper.checkAvailability(specs.map { it.url })
+                        }
+                val particao =
+                        UnavailableSkipPolicy.partir(
+                                specs,
+                                disponibilidade.mapValues { it.value.available }
+                        )
+                val agendar = particao.agendar
+                val ignorados = particao.ignorados
+                if (ignorados.isNotEmpty()) {
+                    android.util.Log.d(
+                            "DOWNLOAD_FLOW",
+                            "⏭️ ${ignorados.size} indisponível(is) ignorado(s): " +
+                                    ignorados.joinToString { it.meta.title.value }
+                    )
+                }
+
                 // Playlists com mais de 1 item são encadeadas (download serial) para não
                 // esgotar a cota de expedited do Android e garantir que todos os vídeos rodem.
-                if (specs.size > 1) {
-                    scheduler.schedulePlaylist(folder, specs)
+                if (agendar.size > 1) {
+                    scheduler.schedulePlaylist(folder, agendar)
                 } else {
-                    specs.forEach { scheduler.schedule(VideoUrl(it.url), folder, it.meta, it.options, it.artworkUrl) }
+                    agendar.forEach { scheduler.schedule(VideoUrl(it.url), folder, it.meta, it.options, it.artworkUrl) }
                 }
-                
+
                 android.util.Log.d("DOWNLOAD_FLOW", "✅ Todos os itens foram enviados para o agendador.")
-                
+
                 _inputState.update {
                     it.copy(fetchedItems = emptyList(), urlInput = "", showDialog = false)
                 }
-                _uiState.value = DownloadUiState.Success(message = "${selectedItems.size} item(s) scheduled for download")
+                _uiState.value =
+                        DownloadUiState.Success(
+                                message = buildString {
+                                    append("${agendar.size} item(s) scheduled for download")
+                                    if (ignorados.isNotEmpty()) {
+                                        append(" — ${ignorados.size} indisponível(is) ignorado(s)")
+                                    }
+                                }
+                        )
             } catch (e: Exception) {
                 LocalLogger.error("❌ Falha crítica no fluxo de download: ${e.message}", e, "DOWNLOAD_FLOW")
                 _uiState.value = DownloadUiState.Error(message = e.message ?: "Unknown error scheduling download", throwable = e)

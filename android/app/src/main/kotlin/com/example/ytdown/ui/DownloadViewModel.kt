@@ -426,7 +426,15 @@ constructor(
                         ?: metadataManager.guessArtistFromTitle(playlistTitle ?: titleForGuess)
                                 ?: uploaderName ?: ""
 
-        val albumForPlaylist = albumField ?: playlistTitle ?: ""
+        // Titulo de playlist so e album na playlist de album do YouTube Music:
+        // "As melhores" (playlist de usuario) virou album de 19 faixas.
+        val albumForPlaylist = albumField
+                ?: com.example.ytdown.core.business.AlbumDaPlaylist.decidir(
+                        data?.optString("id"),
+                        _inputState.value.urlInput,
+                        playlistTitle
+                )
+                ?: ""
 
         val artistInput = if (isPlaylist) artistForPlaylist else artistForSingle
         val albumInput = if (isPlaylist) albumForPlaylist else albumForSingle

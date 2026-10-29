@@ -260,6 +260,12 @@ class BassMediaSessionAdapter @Inject constructor(
     fun setPlaylistFromEntities(tracks: List<DownloadItemEntity>) {
         mediaItems.clear()
         mediaItems.addAll(tracks.map { it.toMediaItem() })
+        // A lista trocou, o índice da anterior morreu aqui: sem o reset,
+        // getState() montava currentMediaItemIndex >= playlist.size() e o
+        // SimpleBasePlayer lançava IllegalArgumentException no invalidate —
+        // era o crash ao tocar a música de um grupo de 1 faixa (ex.:
+        // "Desconhecido", "The Scorpions") com outra playlist ativa antes.
+        currentIndex = 0
         invalidateState()
     }
 

@@ -45,7 +45,8 @@ class MetadataRepairer @Inject constructor(
             // de pastas do Android era 100% recusada ("626 falharam").
             val targetPath = when (
                 val alvo = RepairTarget.resolver(item.outputPath, item.exportedPath) {
-                    it.startsWith("content://") || File(it).exists()
+                    // isFile: download exportado guarda a PASTA em outputPath.
+                    it.startsWith("content://") || File(it).isFile
                 }
             ) {
                 is RepairTarget.Arquivo -> alvo.path

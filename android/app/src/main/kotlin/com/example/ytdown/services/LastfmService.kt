@@ -13,6 +13,7 @@ import okhttp3.Request
 import javax.inject.Inject
 import javax.inject.Singleton
 import com.example.ytdown.utils.LocalLogger
+import com.example.ytdown.utils.MetadataUtils
 
 @Singleton
 class LastfmService @Inject constructor(
@@ -35,7 +36,7 @@ class LastfmService @Inject constructor(
         if (artist.isBlank() || apiKey.isBlank()) return null
         return resolveCache("artist:$artist") {
             fetchLastFmImage("artist.getinfo", mapOf("artist" to artist))
-                ?: fetchItunesArtwork(artist, entity = "musicArtist")
+                ?: fetchItunesArtwork(artist, artist, entity = "musicArtist")
                 ?: fetchDeezerArtistImage(artist)
         }
     }
@@ -48,7 +49,7 @@ class LastfmService @Inject constructor(
         android.util.Log.d("LastfmService", "getAlbumCover called: artist=\"$artist\" album=\"$album\"")
         return resolveCache("album:$artist:$album") {
             fetchLastFmImage("album.getinfo", mapOf("artist" to artist, "album" to album))
-                ?: fetchItunesArtwork("$artist $album", entity = "album")
+                ?: fetchItunesArtwork("$artist $album", artist, entity = "album")
                 ?: fetchDeezerAlbumCover(artist, album)
         }
     }
@@ -57,7 +58,7 @@ class LastfmService @Inject constructor(
         if (artist.isBlank() || title.isBlank() || apiKey.isBlank()) return null
         return resolveCache("track:$artist:$title") {
             fetchLastFmImage("track.getInfo", mapOf("artist" to artist, "track" to title))
-                ?: fetchItunesArtwork("$artist $title", entity = "musicTrack")
+                ?: fetchItunesArtwork("$artist $title", artist, entity = "musicTrack")
                 ?: fetchDeezerTrackCover(artist, title)
         }
     }
@@ -127,6 +128,36 @@ class LastfmService @Inject constructor(
          *  escrevia a chave em claro no logcat a cada busca de capa. */
         internal fun redactSecrets(url: String): String =
             url.replace(apiKeyParam, "api_key=REDACTED")
+
+        /**
+         * iTunes e Deezer fazem busca textual: "David Carvalho Desesperado"
+         * devolvia em primeiro um disco de forro de "Adriano Carvalho". So vale
+         * resultado do artista buscado; sem nenhum, nao ha capa.
+         */
+        private fun mesmoArtista(encontrado: String?, buscado: String): Boolean {
+            fun chave(v: String) = MetadataUtils.normalizeForMatch(v.trim()).removePrefix("the ").trim()
+            return encontrado != null && chave(encontrado) == chave(buscado)
+        }
+
+        internal fun capaDoItunes(json: JsonObject, artista: String): String? {
+            val results = json.getAsJsonArray("results") ?: return null
+            for (element in results) {
+                val obj = element.asJsonObject
+                if (!mesmoArtista(obj["artistName"]?.asString, artista)) continue
+                val artworkUrl = obj["artworkUrl100"]?.asString
+                // Upscale de 100x100 para 300x300 (qualidade melhor pro display)
+                if (!artworkUrl.isNullOrBlank()) return artworkUrl.replace("100x100bb", "300x300bb")
+            }
+            return null
+        }
+
+        /** Busca de album traz `cover_big` na raiz; busca de faixa, dentro de `album`. */
+        internal fun capaDoDeezer(json: JsonObject, artista: String): String? {
+            val data = json.getAsJsonArray("data") ?: return null
+            return data.map { it.asJsonObject }
+                .firstOrNull { mesmoArtista(it.getAsJsonObject("artist")?.get("name")?.asString, artista) }
+                ?.let { it.getAsJsonObject("album")?.get("cover_big")?.asString ?: it.get("cover_big")?.asString }
+        }
     }
 
     private suspend fun fetchJson(url: String): JsonObject? {
@@ -152,20 +183,11 @@ class LastfmService @Inject constructor(
         }
     }
 
-    private suspend fun fetchItunesArtwork(term: String, entity: String): String? {
+    private suspend fun fetchItunesArtwork(term: String, artist: String, entity: String): String? {
         val query = java.net.URLEncoder.encode(term, "UTF-8")
         val url = "https://itunes.apple.com/search?term=$query&entity=$entity&limit=8"
         val json = fetchJson(url) ?: return null
-        val results = json.getAsJsonArray("results") ?: return null
-        for (element in results) {
-            val obj = element.asJsonObject
-            val artworkUrl = obj["artworkUrl100"]?.asString
-            if (!artworkUrl.isNullOrBlank()) {
-                // Upscale de 100x100 para 300x300 (qualidade melhor pro display)
-                return artworkUrl.replace("100x100bb", "300x300bb")
-            }
-        }
-        return null
+        return capaDoItunes(json, artist)
     }
 
     private suspend fun fetchDeezerArtistImage(artist: String): String? {
@@ -173,22 +195,22 @@ class LastfmService @Inject constructor(
         val url = "https://api.deezer.com/search/artist?q=$query&limit=5"
         val json = fetchJson(url) ?: return null
         val data = json.getAsJsonArray("data") ?: return null
-        return data.firstOrNull()?.asJsonObject?.get("picture_big")?.asString
+        return data.map { it.asJsonObject }
+            .firstOrNull { mesmoArtista(it.get("name")?.asString, artist) }
+            ?.get("picture_big")?.asString
     }
 
     private suspend fun fetchDeezerAlbumCover(artist: String, album: String): String? {
         val query = java.net.URLEncoder.encode("$artist $album", "UTF-8")
         val url = "https://api.deezer.com/search/album?q=$query&limit=5"
         val json = fetchJson(url) ?: return null
-        val data = json.getAsJsonArray("data") ?: return null
-        return data.firstOrNull()?.asJsonObject?.get("cover_big")?.asString
+        return capaDoDeezer(json, artist)
     }
 
     private suspend fun fetchDeezerTrackCover(artist: String, title: String): String? {
         val query = java.net.URLEncoder.encode("$artist $title", "UTF-8")
         val url = "https://api.deezer.com/search/track?q=$query&limit=5"
         val json = fetchJson(url) ?: return null
-        val data = json.getAsJsonArray("data") ?: return null
-        return data.firstOrNull()?.asJsonObject?.get("album")?.asJsonObject?.get("cover_big")?.asString
+        return capaDoDeezer(json, artist)
     }
 }

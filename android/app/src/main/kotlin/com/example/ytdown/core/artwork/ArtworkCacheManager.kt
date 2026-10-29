@@ -1,6 +1,7 @@
 package com.example.ytdown.core.artwork
 
 import android.content.Context
+import com.example.ytdown.utils.MetadataUtils
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -18,6 +19,15 @@ class ArtworkCacheManager @Inject constructor(
 
     fun getCacheKey(artist: String, album: String): String = md5("$artist-$album")
     fun getArtistCacheKey(artist: String): String = md5(artist)
+
+    /**
+     * Chave da capa de uma faixa. Sem album conhecido (vazio ou sentinela
+     * "YTDown") a chave e por faixa: md5("Petra-") era compartilhada por toda
+     * faixa do Petra sem album, e a primeira capa baixada ia para todas.
+     */
+    fun chaveDaCapa(artist: String, album: String, title: String): String =
+        if (MetadataUtils.isUnknownMetadata(album)) md5("$artist-faixa:$title")
+        else getCacheKey(artist, album)
 
     fun getCachedAlbumArt(cacheKey: String): File? {
         val file = File(albumCacheDir, "$cacheKey.jpg")

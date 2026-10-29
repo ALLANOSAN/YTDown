@@ -36,7 +36,7 @@ class ArtworkStateCollector @Inject constructor(
                 ArtworkState(null, mode)
             } else {
                 val image = if (mode == ArtworkMode.ALBUM) {
-                    val cacheKey = cacheManager.getCacheKey(track.artist ?: "", track.album ?: "")
+                    val cacheKey = cacheManager.chaveDaCapa(track.artist ?: "", track.album ?: "", track.title)
                     cacheManager.getCachedAlbumArt(cacheKey)?.absolutePath
                 } else {
                     val cacheKey = cacheManager.getArtistCacheKey(track.artist ?: "")

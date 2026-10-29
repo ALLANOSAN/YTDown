@@ -55,7 +55,7 @@ class ArtworkEnricherTest {
         override suspend fun fotoDoArtista(artistId: String): ByteArray? = artista
     }
 
-    private class EscritorFake : TagWriter {
+    private class EscritorFake(private val sucesso: Boolean = true) : TagWriter {
         val gravacoes = mutableListOf<Triple<String, String, String?>>()
         override suspend fun gravar(
             path: String,
@@ -68,7 +68,7 @@ class ArtworkEnricherTest {
             discNumber: String?,
         ): Boolean {
             gravacoes.add(Triple(path, album, albumArt))
-            return true
+            return sucesso
         }
     }
 
@@ -390,5 +390,71 @@ class ArtworkEnricherTest {
 
         assertEquals("nada pode ser gravado a partir de outra banda", 0, escritor.gravacoes.size)
         assertEquals(1, resultado.pulados)
+    }
+    /**
+     * A quebra que este teste pega: ignorar arquivos do Storage Access Framework (SAF).
+     * O Android 10+ retorna content:// para a pasta Music exportada pelo usuario.
+     * Se o ArtworkEnricher usar File(caminho).exists(), o arquivo parecera ter
+     * sumido e a varredura vai falhar, mesmo com a faixa tocando normalmente.
+     */
+    @Test
+    fun `arquivos no formato SAF sao processados corretamente`() = runTest {
+        val saf = item().copy(
+            exportedPath = "content://com.android.providers.downloads.documents/document/123",
+            outputPath = arquivoDeAudio.absolutePath
+        )
+        val biblioteca = BibliotecaFake(mutableListOf(saf))
+        val escritor = EscritorFake()
+        val mb = MusicBrainzRecording(
+            title = "Love on the Line",
+            artist = "Whitecross",
+            album = "Love on the Line",
+            releaseId = "1e35af1d-3a76-4d9f-ac08-51589031276f",
+            releaseGroupId = "6ee6832e-69d5-4e57-8f8c-96fbb67283bf",
+            artistId = "51f24fe4-6cb7-477a-a6ed-6be19abf99bb",
+        )
+
+        val resultado = enricher(
+            biblioteca,
+            LookupFake(mapOf("Love on the Line" to mb)),
+            FonteDeCapaFake(porRelease = capaCerta),
+            escritor,
+        ).enrichAll { _, _ -> }
+
+        assertEquals(0, resultado.falhas)
+        assertEquals(1, resultado.atualizados)
+        // O escritor Python (Mutagen) nao entende content://: a prova de que o
+        // fallback funcionou e que ele recebeu o cache local, nao o SAF.
+        assertEquals(arquivoDeAudio.absolutePath, escritor.gravacoes.single().first)
+    }
+
+    /**
+     * O retorno do `gravar` era ignorado: Mutagen recusava o arquivo (SAF sem
+     * copia interna, arquivo corrompido) e mesmo assim o banco recebia titulo,
+     * album e capa novos, contando "atualizado". A biblioteca passava a mostrar
+     * algo que o arquivo nao tem — outro player via as tags antigas.
+     */
+    @Test
+    fun `escrita recusada pelo Mutagen nao atualiza a biblioteca`() = runTest {
+        val biblioteca = BibliotecaFake(mutableListOf(item()))
+        val mb = MusicBrainzRecording(
+            title = "Love on the Line",
+            artist = "Whitecross",
+            album = "Love on the Line",
+            releaseId = "1e35af1d-3a76-4d9f-ac08-51589031276f",
+            releaseGroupId = "6ee6832e-69d5-4e57-8f8c-96fbb67283bf",
+            artistId = null,
+        )
+
+        val resultado = enricher(
+            biblioteca,
+            LookupFake(mapOf("Love on the Line" to mb)),
+            FonteDeCapaFake(porRelease = capaCerta),
+            EscritorFake(sucesso = false),
+        ).enrichAll { _, _ -> }
+
+        assertEquals(0, resultado.atualizados)
+        assertEquals(1, resultado.falhas)
+        assertTrue(biblioteca.atualizados.isEmpty())
     }
 }

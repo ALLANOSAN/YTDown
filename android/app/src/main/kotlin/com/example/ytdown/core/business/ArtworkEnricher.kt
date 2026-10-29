@@ -39,8 +39,23 @@ class ArtworkEnricher @Inject constructor(
 
             // Antes de qualquer rede: arquivo que sumiu do disco nao pode
             // gastar requisicao de uma API limitada a 1 por segundo.
-            val caminho = item.exportedPath?.takeIf { it.isNotBlank() } ?: item.outputPath
-            if (caminho.isBlank() || !File(caminho).exists()) {
+            val targetPath = when (
+                val alvo = com.example.ytdown.core.business.RepairTarget.resolver(item.outputPath, item.exportedPath) {
+                    // isFile: download exportado guarda a PASTA em outputPath.
+                    it.startsWith("content://") || File(it).isFile
+                }
+            ) {
+                is com.example.ytdown.core.business.RepairTarget.Arquivo -> alvo.path
+                com.example.ytdown.core.business.RepairTarget.Saf -> {
+                    // Fallback para a cache local se o exportado for SAF, pois
+                    // a escrita (Mutagen/Python) ainda nao suporta content://
+                    item.outputPath.takeIf { !it.startsWith("content://") && File(it).isFile }
+                        ?: item.exportedPath
+                }
+                com.example.ytdown.core.business.RepairTarget.SemArquivo -> null
+            }
+
+            if (targetPath == null || (targetPath.startsWith("content://") == false && !File(targetPath).isFile)) {
                 falhas++
                 continue
             }
@@ -90,7 +105,7 @@ class ArtworkEnricher @Inject constructor(
                 val album = mbResult?.album?.trim()?.ifBlank { null }
                     ?: item.album?.trim().orEmpty()
 
-                val chave = cache.getCacheKey(artist, album)
+                val chave = cache.chaveDaCapa(artist, album, item.title.trim())
                 val albumArtPath = cache.getCachedAlbumArt(chave)?.absolutePath
                     ?: (
                         capas.capaDoRelease(mbResult?.releaseGroupId, mbResult?.releaseId)
@@ -116,20 +131,28 @@ class ArtworkEnricher @Inject constructor(
                             ?.let { cache.saveToArtistCache(chaveArtista, it).absolutePath }
                 }
 
-                val targetPath = caminho
                 val finalTitle = mbResult?.title?.trim()?.ifBlank { null } ?: item.title.trim()
 
-                if (albumArtPath != null) {
-                    escritor.gravar(
-                        path = targetPath,
-                        title = finalTitle,
-                        artist = artist,
-                        album = album,
-                        year = mbResult?.year,
-                        albumArt = albumArtPath,
-                        trackNumber = mbResult?.trackNumber,
-                        discNumber = mbResult?.discNumber,
+                val gravou = escritor.gravar(
+                    path = targetPath,
+                    title = finalTitle,
+                    artist = artist,
+                    album = album,
+                    year = mbResult?.year,
+                    albumArt = albumArtPath,
+                    trackNumber = mbResult?.trackNumber,
+                    discNumber = mbResult?.discNumber,
+                )
+                // Mutagen recusou (content:// sem copia interna, arquivo
+                // corrompido): atualizar o banco mostraria tags que o arquivo
+                // nao tem e contaria sucesso.
+                if (!gravou) {
+                    LocalLogger.warning(
+                        "Mutagen recusou ${item.title} — biblioteca preservada",
+                        tag = "ArtworkEnricher"
                     )
+                    falhas++
+                    continue
                 }
 
                 // O que foi gravado no arquivo e o que a biblioteca mostra nao

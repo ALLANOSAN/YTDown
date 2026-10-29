@@ -123,7 +123,7 @@ fun LibraryScreen(
                             onNavigateToPlayer = onNavigateToPlayer,
                             onAddToPlaylist = { song -> songForPlaylist = song },
                             onEditName = { song -> systemViewModel.updateTrackName(song, song.title) },
-                            onSuperFix = { systemViewModel.superFixID3() },
+                            onSuperFix = { song -> systemViewModel.superFixID3(song) },
                             onAddFolder = { folderPickerLauncher.launch(null) },
                             folders = folders.toList(),
                             onRemoveFolder = { libraryViewModel.removeFolder(it) }

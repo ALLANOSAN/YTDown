@@ -34,14 +34,14 @@ class BatchMetadataFixWorker @AssistedInject constructor(
 ) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
-        val songs = databaseService.getLibraryAudios()
+        val songs = alvos(databaseService.getLibraryAudios(), inputData.getString("TARGET_ID"))
         var successCount = 0
         var errorCount = 0
 
         for (song in songs) {
             try {
-                val targetPath = song.exportedPath?.takeIf { it.isNotBlank() } ?: song.outputPath
-                if (targetPath.isBlank() || !File(targetPath).exists()) {
+                val targetPath = caminhoParaReparo(song)
+                if (targetPath == null) {
                     android.util.Log.w("BatchMetadataFix", "⚠️ Arquivo não encontrado: ${song.title}")
                     errorCount++
                     continue
@@ -64,7 +64,7 @@ class BatchMetadataFixWorker @AssistedInject constructor(
                 // 2. Cover Art Archive — capa do álbum (cache + arquivo)
                 var albumArtPath: String? = null
                 if (mbResult?.releaseGroupId != null || mbResult?.releaseId != null) {
-                    val cacheKey = artworkCacheManager.getCacheKey(finalArtist, finalAlbum)
+                    val cacheKey = artworkCacheManager.chaveDaCapa(finalArtist, finalAlbum, finalTitle)
                     val cached = artworkCacheManager.getCachedAlbumArt(cacheKey)
                     if (cached != null) {
                         albumArtPath = cached.absolutePath
@@ -111,5 +111,33 @@ class BatchMetadataFixWorker @AssistedInject constructor(
 
         android.util.Log.d("BatchMetadataFix", "🏁 Concluído: $successCount sucessos, $errorCount erros")
         Result.success()
+    }
+
+    companion object {
+        /**
+         * Recorte da biblioteca para o reparo: com alvo, so a faixa dele;
+         * sem alvo, a biblioteca inteira (botoes "reparar tudo"); alvo
+         * desconhecido nao repara nada em vez de varrer tudo por engano.
+         */
+        fun alvos(
+            biblioteca: List<com.example.ytdown.core.domain.DownloadItemEntity>,
+            targetId: String?,
+        ): List<com.example.ytdown.core.domain.DownloadItemEntity> {
+            if (targetId.isNullOrBlank()) return biblioteca
+            return biblioteca.filter { it.id == targetId }
+        }
+
+        /**
+         * Arquivo que o Mutagen consegue regravar. Download concluido tem
+         * `exportedPath` em `content://` (MediaStore): testar so ele com
+         * `File.exists()` dava "nao encontrado" para toda musica baixada.
+         */
+        fun caminhoParaReparo(
+            song: com.example.ytdown.core.domain.DownloadItemEntity,
+            // isFile, nao exists: o outputPath de download exportado e a pasta.
+            existe: (String) -> Boolean = { File(it).isFile },
+        ): String? =
+            (com.example.ytdown.core.business.RepairTarget.resolver(song.outputPath, song.exportedPath, existe)
+                as? com.example.ytdown.core.business.RepairTarget.Arquivo)?.path
     }
 }

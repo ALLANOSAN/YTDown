@@ -222,6 +222,20 @@ fun PlaylistDetailScreen(
                     if (isPlaylistId) {
                         ListItem(
                             headlineContent = { Text("Remover da Playlist") },
+                    ListItem(
+                        headlineContent = { Text("Correção Inteligente (MA)") },
+                        leadingContent = {
+                            Icon(Icons.Default.AutoFixHigh, null, tint = YTDownPurple)
+                        },
+                        modifier = Modifier.clickable {
+                            systemViewModel.superFixID3(song)
+                            showTrackMenu = null
+                        },
+                        colors = ListItemDefaults.colors(
+                            containerColor = Color.Transparent,
+                            headlineColor = Color.White
+                        )
+                    )
                             leadingContent = {
                                 Icon(Icons.Default.RemoveCircleOutline, null, tint = Color(0xFFFF6B6B))
                             },

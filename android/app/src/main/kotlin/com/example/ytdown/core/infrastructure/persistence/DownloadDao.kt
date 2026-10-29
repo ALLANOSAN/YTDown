@@ -7,13 +7,14 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface DownloadDao {
-    // Ordem de inserção (createdAt ASC) = ordem da fila/download.
-    // Assim o item que está baixando (1º da playlist) aparece no topo.
-    @Query("SELECT * FROM downloads ORDER BY createdAt ASC")
+    // Ordem de exibição (createdAt DESC) = download mais novo no topo.
+    // Igual a favoritos, histórico e playlists. A ORDEM DA FILA é outro
+    // contrato (getNextPending, FIFO por ASC) e não muda aqui.
+    @Query("SELECT * FROM downloads ORDER BY createdAt DESC")
     fun getAllDownloads(): Flow<List<DownloadItemEntity>>
 
-    // Paging3 — carrega por página, na ordem de download (antigo→novo)
-    @Query("SELECT * FROM downloads ORDER BY createdAt ASC")
+    // Paging3 — carrega por página, começando pelo mais novo.
+    @Query("SELECT * FROM downloads ORDER BY createdAt DESC")
     fun getDownloadsPaged(): PagingSource<Int, DownloadItemEntity>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)

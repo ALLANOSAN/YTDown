@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.example.ytdown.core.domain.DownloadItemEntity
+import com.example.ytdown.core.business.AgrupamentoDaBiblioteca
 import com.example.ytdown.core.infrastructure.persistence.PlaylistWithCount
 import com.example.ytdown.ui.DownloadViewModel
 import com.example.ytdown.ui.PlaybackViewModel
@@ -70,7 +71,9 @@ fun PlaylistDetailScreen(
         playlistTracks
     } else {
         allItems.filter {
-            (it.album == title || it.artist == title) && it.status == "completed"
+            (AgrupamentoDaBiblioteca.pertenceAoGrupo(it.album, title) ||
+                AgrupamentoDaBiblioteca.pertenceAoGrupo(it.artist, title)) &&
+                it.status == "completed"
         }
     }
 
@@ -219,9 +222,6 @@ fun PlaylistDetailScreen(
                             headlineColor = Color.White
                         )
                     )
-                    if (isPlaylistId) {
-                        ListItem(
-                            headlineContent = { Text("Remover da Playlist") },
                     ListItem(
                         headlineContent = { Text("Correção Inteligente (MA)") },
                         leadingContent = {
@@ -236,6 +236,9 @@ fun PlaylistDetailScreen(
                             headlineColor = Color.White
                         )
                     )
+                    if (isPlaylistId) {
+                        ListItem(
+                            headlineContent = { Text("Remover da Playlist") },
                             leadingContent = {
                                 Icon(Icons.Default.RemoveCircleOutline, null, tint = Color(0xFFFF6B6B))
                             },

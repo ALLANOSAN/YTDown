@@ -22,6 +22,7 @@ import com.example.ytdown.ui.LibraryViewModel
 import com.example.ytdown.ui.PlaybackViewModel
 import com.example.ytdown.ui.SystemViewModel
 import com.example.ytdown.core.domain.DownloadItemEntity
+import com.example.ytdown.core.business.AgrupamentoDaBiblioteca
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import com.example.ytdown.core.infrastructure.persistence.PlaylistWithCount
@@ -97,7 +98,7 @@ fun LibraryScreen(
 
                 when (selectedTab) {
                     0 -> GroupedList(
-                        groups = completedSongs.groupBy { it.artist ?: "Desconhecido" },
+                        groups = completedSongs.groupBy { AgrupamentoDaBiblioteca.chave(it.artist) },
                         icon = Icons.Default.Person,
                         onNavigate = onNavigateToDetail,
                         libraryViewModel = libraryViewModel,
@@ -105,7 +106,7 @@ fun LibraryScreen(
                         onLongClick = { name, photo -> editingItem = EditingMetadata(name, photo, true) }
                     )
                     1 -> GroupedList(
-                        groups = completedSongs.groupBy { it.album ?: "Desconhecido" },
+                        groups = completedSongs.groupBy { AgrupamentoDaBiblioteca.chave(it.album) },
                         icon = Icons.Default.Album,
                         onNavigate = onNavigateToDetail,
                         libraryViewModel = libraryViewModel,

@@ -275,6 +275,14 @@ fun SettingsScreen(
                 onClick = { if (!state.isRepairing) viewModel.enrichAllArtwork() }
             )
 
+            BentoCard(
+                modifier = Modifier.fillMaxWidth(),
+                title = "Recuperar arquivos",
+                subtitle = "Conserta m4a ilegíveis e capas trocadas",
+                icon = Icons.Default.Build,
+                onClick = { if (!state.isRepairing) viewModel.recuperarArquivos() }
+            )
+
             // Mensagens
             state.lastMessage?.let {
                 Surface(

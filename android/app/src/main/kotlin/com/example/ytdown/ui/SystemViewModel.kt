@@ -48,6 +48,7 @@ class SystemViewModel @Inject constructor(
     private val libraryRenamer: com.example.ytdown.core.business.LibraryRenamer,
     private val metadataRepairer: MetadataRepairer,
     private val artworkEnricher: ArtworkEnricher,
+    private val recuperador: com.example.ytdown.core.business.RecuperadorDeBiblioteca,
     private val ytDlp: YtDlpWrapper,
     private val orchestrator: BinaryOrchestrator,
     val progressBus: ProgressBus
@@ -305,6 +306,30 @@ class SystemViewModel @Inject constructor(
                     lastMessage = MaintenanceFeedback.erro("Busca de capas", e)
                 ) }
                 LocalLogger.error("enrichAllArtwork falhou", e, "SystemViewModel")
+            }
+        }
+    }
+
+    /** Conserta m4a estragados e capas da chave "artista sem album". */
+    fun recuperarArquivos() {
+        viewModelScope.launch {
+            _state.update { it.copy(isRepairing = true, repairProgress = 0f) }
+            try {
+                val r = recuperador.recuperar { progress, message ->
+                    _state.update { it.copy(repairProgress = progress, lastMessage = message) }
+                }
+                _state.update { it.copy(
+                    isRepairing = false,
+                    lastMessage = "Recuperação: ${r.arquivosRecuperados} arquivo(s) consertado(s), " +
+                        "${r.capasDescartadas} capa(s) errada(s) trocada(s)" +
+                        if (r.falhas > 0) ", ${r.falhas} falha(s)" else ""
+                ) }
+            } catch (e: Exception) {
+                _state.update { it.copy(
+                    isRepairing = false,
+                    lastMessage = MaintenanceFeedback.erro("Recuperação", e)
+                ) }
+                LocalLogger.error("recuperarArquivos falhou", e, "SystemViewModel")
             }
         }
     }

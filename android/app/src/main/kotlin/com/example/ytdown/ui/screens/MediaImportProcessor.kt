@@ -106,7 +106,7 @@ class MediaImportProcessor @Inject constructor(
                 if (jaLimpo) {
                     val artist = existingMeta["artist"]!!
                     val album = existingMeta["album"]!!
-                    val cacheKey = artworkCacheManager.getCacheKey(artist, album)
+                    val cacheKey = artworkCacheManager.chaveDaCapa(artist, album, existingMeta["title"].orEmpty())
                     var cachedFile = artworkCacheManager.getCachedAlbumArt(cacheKey)
 
                     // Extrai artwork embutida pro cache se necessario
@@ -257,7 +257,7 @@ class MediaImportProcessor @Inject constructor(
             var albumArtPath: String? = null
             // So tenta se tiver pelo menos um ID do MusicBrainz E artista+album nao vazios
             if (mbResult != null && (mbResult.releaseGroupId != null || mbResult.releaseId != null)) {
-                val albumCacheKey = artworkCacheManager.getCacheKey(finalArtist, finalAlbum)
+                val albumCacheKey = artworkCacheManager.chaveDaCapa(finalArtist, finalAlbum, finalTitle)
                 val cachedFile = artworkCacheManager.getCachedAlbumArt(albumCacheKey)
 
                 if (cachedFile != null) {
@@ -280,7 +280,7 @@ class MediaImportProcessor @Inject constructor(
 
             // -- PASSO 3.5: LAST.FM / ITUNES / DEEZER (Fallback de capa quando CAA nao tem) --
             if (albumArtPath == null && finalArtist.isNotBlank()) {
-                val albumCacheKey = artworkCacheManager.getCacheKey(finalArtist, finalAlbum)
+                val albumCacheKey = artworkCacheManager.chaveDaCapa(finalArtist, finalAlbum, finalTitle)
                 val cachedFile = artworkCacheManager.getCachedAlbumArt(albumCacheKey)
 
                 if (cachedFile != null) {
@@ -404,15 +404,41 @@ class MediaImportProcessor @Inject constructor(
             null
         } ?: return@withContext
 
-        val ext = safUri.substringAfterLast(".").takeIf { it.length in 1..4 } ?: "mp3"
-        val temp = File.createTempFile("enrich_", ".$ext", context.cacheDir)
+        // Copia crua primeiro: o formato sai do CONTEUDO. O metadata.py escolhe
+        // o gravador pela extensao, e tanto o texto da URI (sem ponto) quanto o
+        // MediaStore (diz audio/mpeg para m4a estragado) mentem.
+        val crua = File.createTempFile("enrich_", ".bin", context.cacheDir)
+        var temp: File? = null
         try {
-            entrada.use { input -> temp.outputStream().use { input.copyTo(it) } }
+            entrada.use { input -> crua.outputStream().use { input.copyTo(it) } }
+            val cabecalho = lerCabecalho(crua)
+            val ext = CabecalhoDeAudio.extensao(cabecalho)
+                ?: extensaoDoAudio(context.contentResolver.getType(uri), safUri)
+            if (ext == null) {
+                LocalLogger.warning("SAF com formato que o Mutagen nao grava: $safUri", tag = "ImportProcessor")
+                return@withContext
+            }
+            temp = File(context.cacheDir, crua.nameWithoutExtension + ".$ext")
+            // m4a com ID3 colado na frente (bug antigo do chute ".mp3"): corta
+            // ate o `ftyp`. Sem isso o arquivo devolvido continuava ilegivel.
+            val inicio = CabecalhoDeAudio.inicioDoMp4(cabecalho)
+            if (inicio != null) {
+                crua.inputStream().use { input ->
+                    input.skipNBytesCompat(inicio.toLong())
+                    temp.outputStream().use { input.copyTo(it) }
+                }
+                LocalLogger.warning(
+                    "m4a estragado recuperado ($inicio bytes de ID3 removidos): $safUri",
+                    tag = "ImportProcessor"
+                )
+            } else {
+                crua.copyTo(temp, overwrite = true)
+            }
 
             process(temp.absolutePath, originalTitle, knownArtist, knownAlbum, forceEnrichment, downloadId)
 
             try {
-                context.contentResolver.openOutputStream(uri, "w")?.use { output ->
+                context.contentResolver.openOutputStream(uri, "wt")?.use { output ->
                     temp.inputStream().use { it.copyTo(output) }
                 } ?: LocalLogger.warning("SAF sem stream de escrita: $safUri", tag = "ImportProcessor")
             } catch (e: Exception) {
@@ -422,7 +448,33 @@ class MediaImportProcessor @Inject constructor(
                 )
             }
         } finally {
-            temp.delete()
+            crua.delete()
+            temp?.delete()
+        }
+    }
+
+    private fun lerCabecalho(arquivo: File): ByteArray = arquivo.inputStream().use { stream ->
+        val buffer = ByteArray(CabecalhoDeAudio.BYTES_PARA_LER)
+        var lidos = 0
+        while (lidos < buffer.size) {
+            val n = stream.read(buffer, lidos, buffer.size - lidos)
+            if (n < 0) break
+            lidos += n
+        }
+        buffer.copyOf(lidos)
+    }
+
+    /** skip() pode pular menos que o pedido; skipNBytes so existe no Android 13+. */
+    private fun java.io.InputStream.skipNBytesCompat(n: Long) {
+        var restante = n
+        while (restante > 0) {
+            val pulados = skip(restante)
+            if (pulados > 0) {
+                restante -= pulados
+            } else {
+                if (read() < 0) return
+                restante--
+            }
         }
     }
 
@@ -438,6 +490,23 @@ class MediaImportProcessor @Inject constructor(
         downloadDao.upsert(LibrarySync.merge(download, entity))
         android.util.Log.d("ImportProcessor",
             "Sync biblioteca: ${entity.artist} - ${entity.title} | capa=${entity.albumArtwork != null}")
+    }
+
+    companion object {
+        /**
+         * Extensao da copia temporaria de um `content://`: pelo tipo MIME do
+         * provedor; sem ele, pelo nome do documento. So os formatos que o
+         * metadata.py grava — fora disso devolve nulo em vez de adivinhar.
+         */
+        fun extensaoDoAudio(mimeType: String?, safUri: String): String? {
+            when (mimeType?.lowercase()) {
+                "audio/mpeg", "audio/mp3" -> return "mp3"
+                "audio/mp4", "audio/m4a", "audio/x-m4a" -> return "m4a"
+            }
+            if (mimeType != null && mimeType != "application/octet-stream") return null
+            val nome = java.net.URLDecoder.decode(safUri.substringAfterLast('/'), "UTF-8")
+            return nome.substringAfterLast('.', "").lowercase().takeIf { it in setOf("mp3", "m4a", "mp4") }
+        }
     }
 
     suspend fun processFolder(folderPath: String) = withContext(Dispatchers.IO) {

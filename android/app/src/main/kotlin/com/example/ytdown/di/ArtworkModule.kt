@@ -43,6 +43,12 @@ abstract class ArtworkModule {
 
     @Binds
     @Singleton
+    abstract fun leitorDeCabecalho(
+        impl: com.example.ytdown.core.business.LeitorDeCabecalhoAndroid
+    ): com.example.ytdown.core.business.LeitorDeCabecalho
+
+    @Binds
+    @Singleton
     abstract fun tagRewriter(
         impl: com.example.ytdown.core.business.TagRewriterDownloadManager
     ): com.example.ytdown.core.business.TagRewriter
